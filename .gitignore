@@ -1,0 +1,36 @@
+# Terraform
+*.tfvars
+!*.tfvars.example
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform/
+.terraform.lock.hcl
+
+# Ansible
+*.retry
+.vault_pass
+vault_pass.txt
+
+# Secrets & credentials
+*.pem
+*.key
+*.crt
+id_rsa
+id_ed25519
+*.env
+.env*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
