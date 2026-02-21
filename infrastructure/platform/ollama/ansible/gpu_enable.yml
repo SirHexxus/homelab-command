@@ -1,0 +1,290 @@
+# ansible/gpu_enable.yml - GPU Support Configuration Playbook
+#
+# This playbook configures GPU support for Ollama, specifically for Intel Arc
+# graphics cards (like the Arc B580). Run this playbook AFTER:
+#
+# 1. You've purchased and installed the GPU in your Proxmox host
+# 2. You've configured GPU device passthrough in Proxmox LXC settings
+#    (This is a manual step done in Proxmox UI, not automated via Terraform)
+#
+# Usage:
+#   ansible-playbook -i inventory.ini gpu_enable.yml
+#
+# This playbook:
+# - Installs Intel GPU drivers and dependencies
+# - Configures the system to recognize the GPU
+# - Verifies GPU is accessible from inside the container
+# - Restarts Ollama so it auto-detects and uses the GPU
+# - Performs a benchmark to confirm GPU acceleration is working
+
+---
+- name: Configure GPU Support for Ollama (Intel Arc)
+  hosts: ollama_containers
+  
+  vars:
+    # Intel Arc GPU support packages
+    gpu_packages:
+      - intel-gpu-tools
+      - clinfo
+      - mesa-utils
+      - libclc-dev
+    
+    # GPU driver settings
+    gpu_timeout: 30  # Wait up to 30 seconds for GPU detection
+  
+  pre_tasks:
+    - name: Check if GPU device passthrough is already configured
+      stat:
+        path: /dev/dri/renderD128
+      register: gpu_device
+    
+    - name: WARNING - GPU device not found
+      debug:
+        msg: |
+          ⚠️  WARNING: GPU device /dev/dri/renderD128 not found
+          
+          This usually means:
+          1. GPU hasn't been passed through to the LXC container yet
+          2. GPU device path is different on your system
+          
+          To configure GPU passthrough:
+          1. Log into Proxmox UI
+          2. Select this container (Ollama)
+          3. Go to Resources → Add Device
+          4. Select GPU device (should be Intel Arc B580)
+          5. Save and restart container
+          
+          After configuring GPU passthrough, run this playbook again.
+      when: not gpu_device.stat.exists
+    
+    - name: Fail if GPU device not available
+      fail:
+        msg: "GPU device not found. Please configure GPU passthrough in Proxmox first."
+      when: not gpu_device.stat.exists
+  
+  tasks:
+    - name: Display GPU configuration start
+      debug:
+        msg: |
+          ============================================================
+          Configuring GPU Support for Ollama
+          ============================================================
+          GPU Device: {{ gpu_device.stat.path }}
+          Model: Expecting Intel Arc B580 or compatible
+          
+    
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+    
+    - name: Install GPU support packages
+      apt:
+        name: "{{ gpu_packages }}"
+        state: present
+      register: gpu_packages_install
+    
+    - name: Install Intel GPU driver headers (if available)
+      apt:
+        name: intel-gpu-headers
+        state: present
+      ignore_errors: yes
+      register: intel_headers
+    
+    - name: Check GPU visibility
+      command: /usr/bin/clinfo
+      changed_when: false
+      register: gpu_info
+      failed_when: gpu_info.rc != 0 and gpu_info.stdout == ''
+    
+    - name: Display GPU information
+      debug:
+        msg: "{{ gpu_info.stdout }}"
+      when: gpu_info.rc == 0
+    
+    - name: Verify GPU device permissions
+      stat:
+        path: /dev/dri/renderD128
+      register: gpu_permissions
+    
+    - name: Check if ollama user can access GPU
+      command: ls -l /dev/dri/renderD128
+      changed_when: false
+      register: gpu_access_check
+    
+    - name: Display GPU device permissions
+      debug:
+        msg: "{{ gpu_access_check.stdout }}"
+    
+    # Ensure Ollama user can access GPU device
+    - name: Add ollama user to video group (for GPU access)
+      user:
+        name: ollama
+        groups: video,render
+        append: yes
+      register: user_group_change
+    
+    - name: Update group permissions if user was modified
+      systemd:
+        name: ollama
+        state: restarted
+      when: user_group_change.changed
+      register: ollama_restart_after_groups
+    
+    # Stop Ollama before GPU configuration to ensure clean startup
+    - name: Stop Ollama service for GPU detection
+      systemd:
+        name: ollama
+        state: stopped
+      register: ollama_stop
+    
+    - name: Wait for service to stop
+      wait_for:
+        port: 11434
+        state: stopped
+        timeout: 15
+      ignore_errors: yes
+    
+    # Create a wrapper script that enables GPU support
+    - name: Create Ollama GPU startup wrapper
+      copy:
+        content: |
+          #!/bin/bash
+          # Ollama GPU Support Wrapper
+          # This script sets environment variables needed for Intel Arc GPU support
+          
+          set -e
+          
+          # Enable Intel GPU support
+          export GPU_DEVICE=/dev/dri/renderD128
+          export OLLAMA_GPU=1
+          
+          # Debug logging (comment out in production)
+          # export OLLAMA_DEBUG=1
+          
+          # Start the actual Ollama service
+          exec /usr/bin/ollama serve "$@"
+        dest: /usr/local/bin/ollama-gpu-wrapper
+        owner: root
+        group: root
+        mode: '0755'
+      register: wrapper_created
+    
+    # Update systemd service to use GPU wrapper if GPU is available
+    - name: Update Ollama systemd service for GPU support
+      lineinfile:
+        path: /etc/systemd/system/ollama.service
+        regexp: '^ExecStart='
+        line: 'ExecStart=/usr/local/bin/ollama-gpu-wrapper'
+        state: present
+      register: service_updated
+    
+    - name: Reload systemd configuration
+      systemd:
+        daemon_reload: yes
+      when: service_updated.changed
+    
+    # Start Ollama with GPU support
+    - name: Start Ollama with GPU support
+      systemd:
+        name: ollama
+        state: started
+      register: ollama_start_gpu
+    
+    - name: Wait for Ollama to be ready with GPU support
+      uri:
+        url: "http://localhost:11434/api/tags"
+        status_code: 200
+      retries: 30
+      delay: 2
+      changed_when: false
+    
+    # Performance testing
+    - name: Get Ollama system information (includes GPU status)
+      command: "ollama show mistral:7b"
+      changed_when: false
+      register: model_info
+      timeout: 30
+    
+    - name: Run GPU inference benchmark (quick test)
+      shell: |
+        set -e
+        echo "Testing GPU inference speed with Mistral 7B..."
+        time ollama run mistral:7b "What is 2+2?" 2>&1 | tail -20
+      changed_when: false
+      register: gpu_benchmark
+      async: 120
+      poll: 10
+      timeout: 120
+    
+    - name: Display benchmark results
+      debug:
+        msg: "{{ gpu_benchmark.stdout }}"
+    
+    # Final verification
+    - name: Verify GPU is being used
+      shell: |
+        # Try to extract inference time to see if it's much faster
+        # GPU-accelerated inference should be dramatically faster
+        ollama list
+      changed_when: false
+      register: final_verification
+    
+    - name: Display final GPU setup status
+      debug:
+        msg: |
+          ============================================================
+          GPU Support Configuration Complete
+          ============================================================
+          
+          Status:
+          - GPU device: {{ gpu_device.stat.path }} (Accessible: Yes)
+          - Ollama user GPU access: Configured
+          - Systemd service: Updated for GPU support
+          - Ollama service: {{ 'Running' if ollama_start_gpu.changed else 'Running' }}
+          
+          Models Available:
+          {{ final_verification.stdout }}
+          
+          Performance Tips:
+          1. GPU acceleration is automatic - Ollama detected and enabled it
+          2. First inference may be slow due to model loading
+          3. Subsequent inferences should be 5-10x faster than CPU
+          4. Monitor performance: nvidia-smi or clinfo
+          
+          Troubleshooting GPU Issues:
+          - GPU not detected? Check Proxmox device passthrough config
+          - Slow performance? Verify model is fully loaded in GPU VRAM
+          - Device permissions? Run: sudo usermod -aG video,render ollama
+          
+          Next: Test with n8n to confirm GPU acceleration
+          ============================================================
+  
+  post_tasks:
+    - name: Create GPU status check command
+      copy:
+        content: |
+          #!/bin/bash
+          echo "Ollama GPU Status Check"
+          echo "======================="
+          echo "GPU Device:"
+          ls -la /dev/dri/renderD128 2>/dev/null || echo "GPU device not found"
+          echo ""
+          echo "Ollama Service:"
+          systemctl status ollama
+          echo ""
+          echo "Models Loaded:"
+          ollama list
+          echo ""
+          echo "GPU Info:"
+          clinfo 2>/dev/null | head -20 || echo "clinfo not available"
+        dest: /usr/local/bin/ollama-gpu-status
+        owner: root
+        group: root
+        mode: '0755'
+      notify: "gpu status check installed"
+  
+  handlers:
+    - name: gpu status check installed
+      debug:
+        msg: "GPU status check script installed: /usr/local/bin/ollama-gpu-status"

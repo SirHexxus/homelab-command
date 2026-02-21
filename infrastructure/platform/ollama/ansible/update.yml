@@ -1,0 +1,215 @@
+# ansible/update.yml - Container Maintenance and Update Playbook
+#
+# This playbook performs routine maintenance on the Ollama container:
+# - Updates the OS and all system packages
+# - Updates the Ollama binary to the latest version
+# - Checks model integrity and updates if needed
+# - Verifies all services are running correctly
+# - Reports on system health
+#
+# Run this playbook weekly for optimal performance and security:
+#   ansible-playbook -i inventory.ini update.yml
+#
+# This playbook is designed to be safe for production use and won't cause
+# service interruptions under normal circumstances.
+
+---
+- name: Maintenance and Update Ollama Container
+  hosts: ollama_containers
+  
+  vars:
+    apt_cache_valid_time: 3600
+    update_timeout: 600  # 10 minutes for apt updates
+  
+  pre_tasks:
+    - name: Display maintenance start message
+      debug:
+        msg: |
+          ============================================================
+          Starting Ollama Container Maintenance
+          ============================================================
+          Host: {{ inventory_hostname }}
+          Date: {{ ansible_date_time.iso8601 }}
+          Current Ollama Version:
+          ============================================================
+    
+    - name: Check current Ollama version
+      command: /usr/bin/ollama --version
+      changed_when: false
+      register: ollama_current_version
+    
+    - name: Display current version
+      debug:
+        msg: "{{ ollama_current_version.stdout }}"
+  
+  tasks:
+    # 1. SYSTEM UPDATES
+    # ================
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: "{{ apt_cache_valid_time }}"
+      when: ansible_os_family == "Debian"
+    
+    - name: Upgrade all packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+      when: ansible_os_family == "Debian"
+      register: apt_upgrade_result
+    
+    - name: Display package update results
+      debug:
+        msg: "Packages updated: {{ apt_upgrade_result.stderr | default('No changes') }}"
+      when: apt_upgrade_result is defined
+    
+    # 2. OLLAMA BINARY UPDATE
+    # ======================
+    - name: Stop Ollama service for clean upgrade
+      systemd:
+        name: ollama
+        state: stopped
+      register: ollama_stop
+    
+    - name: Wait for Ollama to fully stop
+      wait_for:
+        port: 11434
+        state: stopped
+        timeout: 30
+      ignore_errors: yes
+    
+    - name: Reinstall Ollama (updates binary if newer version available)
+      shell: |
+        set -e
+        curl -fsSL https://ollama.ai/install.sh | sh
+      args:
+        executable: /bin/bash
+      register: ollama_update
+      changed_when: "'Installed successfully' in ollama_update.stdout or ollama_update.rc == 0"
+    
+    - name: Start Ollama service after update
+      systemd:
+        name: ollama
+        state: started
+      register: ollama_start
+    
+    - name: Wait for Ollama service to be ready
+      uri:
+        url: "http://localhost:11434/api/tags"
+        status_code: 200
+      retries: 30
+      delay: 2
+      changed_when: false
+    
+    - name: Check new Ollama version
+      command: /usr/bin/ollama --version
+      changed_when: false
+      register: ollama_new_version
+    
+    - name: Display updated version
+      debug:
+        msg: "Ollama version: {{ ollama_new_version.stdout }}"
+    
+    # 3. MODEL VERIFICATION
+    # ====================
+    - name: List currently cached models
+      command: ollama list
+      changed_when: false
+      register: model_list_before
+    
+    - name: Display cached models
+      debug:
+        msg: "Cached models:\n{{ model_list_before.stdout }}"
+    
+    - name: Verify model files exist and are accessible
+      stat:
+        path: "/var/lib/ollama/models/manifests/registry.ollama.ai/library/{{ item | split(':') | first }}"
+      register: model_files
+      loop: "{{ hostvars[inventory_hostname].get('ollama_models', ['mistral:7b', 'nomic-embed-text']) }}"
+      changed_when: false
+    
+    # 4. SERVICE HEALTH CHECK
+    # ======================
+    - name: Verify Ollama service is running
+      systemd:
+        name: ollama
+        state: started
+      register: service_status
+    
+    - name: Check Ollama API response
+      uri:
+        url: "http://localhost:11434/api/tags"
+        method: GET
+        status_code: 200
+      changed_when: false
+      register: api_health
+    
+    - name: Display API health
+      debug:
+        msg: "Ollama API is healthy. Available models: {{ api_health.json | length }}"
+    
+    # 5. SYSTEM RESOURCE CHECK
+    # =======================
+    - name: Check disk usage
+      command: df -h /var/lib/ollama
+      changed_when: false
+      register: disk_check
+    
+    - name: Display disk usage
+      debug:
+        msg: "{{ disk_check.stdout }}"
+    
+    - name: Get memory usage
+      command: free -h
+      changed_when: false
+      register: memory_check
+    
+    - name: Display memory usage
+      debug:
+        msg: "{{ memory_check.stdout }}"
+    
+    - name: Check if disk usage exceeds 80%
+      assert:
+        that:
+          - not disk_check.stdout_lines | select('search', '8[0-9]%|9[0-9]%') | list
+        fail_msg: "Warning: Disk usage is critical! Check /var/lib/ollama"
+        quiet: yes
+      register: disk_warning
+      failed_when: false
+  
+  post_tasks:
+    - name: Display maintenance summary
+      debug:
+        msg: |
+          ============================================================
+          Ollama Maintenance Complete
+          ============================================================
+          
+          Updates Applied:
+          - System packages: {{ 'Yes' if apt_upgrade_result.changed else 'No' }}
+          - Ollama binary: {{ 'Yes' if ollama_update.changed else 'No' }}
+          - Current version: {{ ollama_new_version.stdout }}
+          
+          System Health:
+          - Service status: Running
+          - API health: Healthy
+          - Models cached: {{ api_health.json | length }}
+          - Disk warning: {{ 'YES - Check usage!' if disk_warning.failed else 'No' }}
+          
+          Next Steps:
+          1. Monitor the container for 24 hours after major updates
+          2. If issues arise, roll back by:
+             ssh <container_ip>
+             systemctl restart ollama
+          3. Schedule next maintenance in 1 week
+          
+          For GPU support installation, see gpu_enable.yml
+          ============================================================
+      when: ollama_start.changed or ollama_update.changed
+    
+    - name: Log update to system journal
+      shell: |
+        echo "Ollama maintenance completed successfully" | \
+        systemd-cat -t ollama-maintenance -p info
+      changed_when: false

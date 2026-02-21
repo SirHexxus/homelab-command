@@ -1,0 +1,322 @@
+# ansible/provision.yml - Main Provisioning Playbook
+#
+# This playbook orchestrates the complete setup of the Ollama container.
+# It calls separate roles (modular playbooks) for different components:
+# - System updates and dependencies
+# - Ollama installation and configuration
+# - Model pre-download and caching
+# - Systemd service setup for automatic startup
+#
+# Run this playbook after Terraform creates the container:
+#   ansible-playbook -i inventory.ini provision.yml
+#
+# The -i flag specifies the inventory file (defines which hosts to configure)
+# This playbook is idempotent: running it multiple times produces the same result
+
+---
+- name: Provision Ollama AI Inference Container
+  hosts: ollama_containers
+  
+  # These settings apply to all tasks in this playbook unless overridden
+  vars:
+    # Operating system and package management
+    apt_cache_valid_time: 3600  # Cache package list for 1 hour
+    debian_packages:
+      - curl
+      - wget
+      - git
+      - build-essential
+      - python3-pip
+      - jq  # For parsing JSON API responses
+      - zstd  # Required for Ollama installation
+      
+    # Ollama configuration
+    ollama_user: ollama
+    ollama_group: ollama
+    ollama_home: /var/lib/ollama
+    ollama_service_name: ollama
+    
+    # Model download settings
+    model_download_timeout: 600  # 10 minutes per model
+    
+    # System resource settings
+    max_open_files: 65535
+  
+  # Pre-tasks run before the main tasks
+  # These are used for validation and setup that must happen first
+  pre_tasks:
+    - name: Verify Ansible version
+      assert:
+        that:
+          - ansible_version.major >= 2
+          - ansible_version.minor >= 10
+        fail_msg: "Ansible 2.10+ is required"
+      run_once: yes
+    
+    - name: Display deployment information
+      debug:
+        msg: |
+          ============================================================
+          Starting Ollama Container Provisioning
+          ============================================================
+          Target Host: {{ inventory_hostname }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Python: {{ ansible_python_version }}
+          CPU Cores: {{ ansible_processor_vcpus }}
+          RAM: {{ (ansible_memtotal_mb / 1024) | round(2) }} GB
+          
+          Models to Download:
+          {% for model in ollama_models %}
+            - {{ model }}
+          {% endfor %}
+          
+          ============================================================
+
+    # --- Network: Freeze DHCP IP as Static ---
+    # Proxmox overwrites in-container network config on boot, so the static IP
+    # must be set at the Proxmox level via `pct set` rather than inside the container.
+    - name: Check if Proxmox container is using DHCP
+      command: pct config {{ container_vmid }}
+      register: pct_config
+      delegate_to: "{{ proxmox_host }}"
+      vars:
+        ansible_user: root
+      changed_when: false
+
+    - name: Display current network information
+      debug:
+        msg: |
+          Network Configuration:
+          - Current IP: {{ ansible_default_ipv4.address }}/{{ ansible_default_ipv4.prefix }}
+          - Gateway: {{ ansible_default_ipv4.gateway }}
+          - Interface: {{ ansible_default_ipv4.interface }}
+          - MAC: {{ ansible_default_ipv4.macaddress }}
+          - VMID: {{ container_vmid }}
+          - Method: {{ 'DHCP' if 'ip=dhcp' in pct_config.stdout else 'Static' }}
+          {% if 'ip=dhcp' in pct_config.stdout %}
+          - Action: Will freeze current DHCP IP as static in Proxmox config
+          {% else %}
+          - Action: Already static, no changes needed
+          {% endif %}
+
+    - name: Freeze DHCP-assigned IP in Proxmox container config
+      command: >
+        pct set {{ container_vmid }} -net0
+        name=eth0,bridge=vmbr1,hwaddr={{ ansible_default_ipv4.macaddress }},ip={{ ansible_default_ipv4.address }}/{{ ansible_default_ipv4.prefix }},gw={{ ansible_default_ipv4.gateway }}
+      delegate_to: "{{ proxmox_host }}"
+      vars:
+        ansible_user: root
+      when: "'ip=dhcp' in pct_config.stdout"
+
+  # Main tasks executed in order
+  tasks:
+    # 1. SYSTEM UPDATES & DEPENDENCIES
+    # ================================
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: "{{ apt_cache_valid_time }}"
+      when: ansible_os_family == "Debian"
+    
+    - name: Upgrade all packages to latest versions
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+      when: ansible_os_family == "Debian"
+    
+    - name: Install required system packages
+      apt:
+        name: "{{ debian_packages }}"
+        state: present
+      when: ansible_os_family == "Debian"
+    
+    - name: Verify internet connectivity
+      uri:
+        url: "https://ollama.com"
+        method: HEAD
+        status_code: [200, 301, 302]
+        timeout: 30
+      changed_when: false
+    
+    # 2. OLLAMA USER & DIRECTORIES
+    # ============================
+    - name: Create ollama system user
+      user:
+        name: "{{ ollama_user }}"
+        system: yes
+        home: "{{ ollama_home }}"
+        shell: /usr/sbin/nologin
+        state: present
+    
+    - name: Create ollama directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ ollama_user }}"
+        group: "{{ ollama_group }}"
+        mode: '0755'
+      loop:
+        - "{{ ollama_home }}"
+        - "{{ ollama_home }}/models"
+        - "{{ ollama_home }}/logs"
+    
+    # 3. INSTALL OLLAMA BINARY
+    # =======================
+    - name: Download and install Ollama
+      shell: |
+        set -e
+        curl -fsSL https://ollama.com/install.sh | sh
+      args:
+        executable: /bin/bash
+        creates: /usr/local/bin/ollama
+      register: ollama_install
+      changed_when: "'Installed successfully' in ollama_install.stdout or ollama_install.rc == 0"
+
+    - name: Verify Ollama installation
+      command: ollama --version
+      changed_when: false
+      register: ollama_version
+    
+    - name: Display Ollama version
+      debug:
+        msg: "Ollama installed: {{ ollama_version.stdout }}"
+    
+    # 4. CONFIGURE OLLAMA SERVICE
+    # ===========================
+    - name: Create ollama systemd service
+      template:
+        src: templates/ollama.service.j2
+        dest: /etc/systemd/system/ollama.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart ollama service
+    
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+    
+    - name: Enable and start ollama service
+      systemd:
+        name: "{{ ollama_service_name }}"
+        enabled: yes
+        state: started
+      register: service_started
+    
+    - name: Wait for Ollama service to be ready
+      uri:
+        url: "http://localhost:{{ ollama_port }}/api/tags"
+        status_code: 200
+      register: ollama_health
+      until: ollama_health.status == 200
+      retries: 30
+      delay: 2
+      changed_when: false
+    
+    # 5. DOWNLOAD MODELS (CRITICAL - TAKES TIME)
+    # =========================================
+    - name: Display model download information
+      debug:
+        msg: |
+          Downloading models (this will take 10-15 minutes depending on network speed)...
+          Models will be cached in {{ ollama_home }}/models
+          
+    - name: Pull Ollama models
+      command: "ollama pull {{ item }}"
+      environment:
+        OLLAMA_HOST: "localhost:{{ ollama_port }}"
+        OLLAMA_MODELS: "{{ ollama_home }}/models"
+      loop: "{{ ollama_models }}"
+      register: model_pull
+      changed_when: "'downloading' in model_pull.stdout.lower()"
+      async: 1800  # 30 minute timeout per model
+      poll: 30     # Check every 30 seconds
+    
+    # 6. VERIFY INSTALLATION
+    # =====================
+    - name: List downloaded models
+      command: ollama list
+      changed_when: false
+      register: model_list
+    
+    - name: Display model list
+      debug:
+        msg: "{{ model_list.stdout }}"
+    
+    - name: Test model inference (Mistral 7B simple test)
+      command: |
+        ollama run --verbose mistral:7b "Say hello in one word"
+      changed_when: false
+      timeout: 60
+      register: inference_test
+      failed_when: inference_test.rc != 0
+    
+    # 7. FINAL CONFIGURATION
+    # ====================
+    - name: Adjust system file limits for Ollama
+      lineinfile:
+        path: /etc/security/limits.conf
+        line: "{{ ollama_user }} soft nofile {{ max_open_files }}"
+        state: present
+    
+    - name: Create Ollama configuration directory
+      file:
+        path: /etc/ollama
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: ollama_port is defined
+
+    - name: Create Ollama configuration file
+      template:
+        src: templates/ollama.env.j2
+        dest: /etc/ollama/ollama.env
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart ollama service
+      when: ollama_port is defined
+    
+    - name: Display connection information
+      debug:
+        msg: |
+          ============================================================
+          Ollama Provisioning Complete!
+          ============================================================
+          
+          Connection Information:
+          - Host: {{ inventory_hostname }}
+          - API Port: {{ ollama_port }}
+          - API Endpoint: http://{{ inventory_hostname }}:{{ ollama_port }}
+          
+          Available Models:
+          {% for model in ollama_models %}
+            - {{ model }}
+          {% endfor %}
+          
+          Quick Test:
+          curl http://{{ inventory_hostname }}:{{ ollama_port }}/api/tags
+          
+          Next Steps:
+          1. Verify container is reachable from n8n:
+             curl http://{{ inventory_hostname }}:{{ ollama_port }}/api/tags
+          
+          2. Configure n8n to call Ollama:
+             API Base: http://{{ inventory_hostname }}:{{ ollama_port }}
+             Model: mistral:7b
+          
+          3. Keep the container updated:
+             ansible-playbook -i inventory.ini update.yml
+          
+          ============================================================
+  
+  # Handlers are triggered by the notify directive above
+  # They run once at the end of the playbook, even if triggered multiple times
+  handlers:
+    - name: restart ollama service
+      systemd:
+        name: ollama
+        state: restarted
+      listen: "restart ollama service"

@@ -1,0 +1,21 @@
+# ansible/group_vars/ollama_containers.yml
+#
+# Variables that apply to all hosts in the 'ollama_containers' group.
+# These are automatically loaded when running playbooks against those hosts.
+
+# Ollama configuration
+ollama_port: 11434
+
+# Models to pre-download during provisioning
+# - mistral:7b - Main LLM for text generation (4.5GB)
+# - nomic-embed-text - Text embeddings for RAG workflows (0.5GB)
+ollama_models:
+  - mistral:7b
+  - nomic-embed-text
+
+# Package versions (for consistency across deployments)
+ollama_min_version: "0.1.0"
+
+# Proxmox configuration (for IP freeze via pct set)
+proxmox_host: 10.0.10.2
+container_vmid: 101

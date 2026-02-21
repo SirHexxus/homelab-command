@@ -1,0 +1,87 @@
+# ansible/roles/ollama_install/tasks/main.yml
+#
+# Ollama binary installation and service setup
+
+---
+- name: Create ollama system user
+  user:
+    name: "{{ ollama_user | default('ollama') }}"
+    system: yes
+    home: "{{ ollama_home | default('/var/lib/ollama') }}"
+    shell: /usr/sbin/nologin
+    state: present
+
+- name: Create ollama directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ ollama_user | default('ollama') }}"
+    group: "{{ ollama_group | default('ollama') }}"
+    mode: '0755'
+  loop:
+    - "{{ ollama_home | default('/var/lib/ollama') }}"
+    - "{{ ollama_home | default('/var/lib/ollama') }}/models"
+    - "{{ ollama_home | default('/var/lib/ollama') }}/logs"
+
+- name: Download and install Ollama
+  shell: |
+    set -e
+    curl -fsSL https://ollama.ai/install.sh | sh
+  args:
+    executable: /bin/bash
+    creates: /usr/bin/ollama
+  register: ollama_install
+  changed_when: "'Installed successfully' in ollama_install.stdout or ollama_install.rc == 0"
+
+- name: Verify Ollama installation
+  command: /usr/bin/ollama --version
+  changed_when: false
+  register: ollama_version
+
+- name: Display Ollama version
+  debug:
+    msg: "Ollama installed: {{ ollama_version.stdout }}"
+
+- name: Create ollama systemd service
+  template:
+    src: ollama.service.j2
+    dest: /etc/systemd/system/ollama.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart ollama
+
+- name: Create Ollama configuration directory
+  file:
+    path: /etc/ollama
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create Ollama environment configuration
+  template:
+    src: ollama.env.j2
+    dest: /etc/ollama/ollama.env
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart ollama
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+
+- name: Enable and start ollama service
+  systemd:
+    name: ollama
+    enabled: yes
+    state: started
+
+- name: Wait for Ollama service to be ready
+  uri:
+    url: "http://localhost:{{ ollama_port | default(11434) }}/api/tags"
+    status_code: 200
+  retries: 30
+  delay: 2
+  changed_when: false

@@ -1,0 +1,47 @@
+# ansible/templates/ollama.service.j2 - Systemd Service Unit Template
+#
+# This Jinja2 template is rendered by Ansible to create the systemd service file
+# for Ollama. The variables like {{ ollama_user }} are replaced with values from
+# the playbook during execution.
+#
+# This service ensures Ollama:
+# - Starts automatically when the container boots
+# - Restarts automatically if it crashes
+# - Runs with appropriate user/group privileges
+# - Has resource limits to prevent system issues
+
+[Unit]
+Description=Ollama AI Inference Service
+Documentation=https://ollama.ai
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+User={{ ollama_user }}
+Group={{ ollama_group }}
+ExecStart=/usr/bin/ollama serve
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ollama
+
+# Environment variables for Ollama
+Environment="OLLAMA_HOST=localhost:{{ ollama_port }}"
+Environment="OLLAMA_MODELS={{ ollama_home }}/models"
+Environment="OLLAMA_DEBUG=0"
+
+# Resource limits
+LimitNOFILE=65535
+LimitNPROC=4096
+
+# Security hardening (minimize what the service can do)
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths={{ ollama_home }}
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,35 @@
+# ansible/roles/system_update/tasks/main.yml
+#
+# OS updates and base package installation
+
+---
+- name: Update package cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: Upgrade all packages to latest versions
+  apt:
+    upgrade: dist
+    autoremove: yes
+    autoclean: yes
+  when: ansible_os_family == "Debian"
+
+- name: Install required system packages
+  apt:
+    name:
+      - curl
+      - wget
+      - git
+      - build-essential
+      - python3-pip
+      - jq
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Verify internet connectivity
+  command: curl -s -I https://ollama.ai | head -n 1
+  changed_when: false
+  register: internet_check
+  failed_when: "'200' not in internet_check.stdout"
