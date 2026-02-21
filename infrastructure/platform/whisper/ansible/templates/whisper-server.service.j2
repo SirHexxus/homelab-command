@@ -1,0 +1,27 @@
+[Unit]
+Description=Whisper Speech-to-Text Server (faster-whisper)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ whisper_user }}
+Group={{ whisper_group }}
+ExecStart={{ whisper_venv_dir }}/bin/uvicorn whisper_api:app --host 0.0.0.0 --port {{ whisper_port }} --app-dir {{ whisper_install_dir }}
+Restart=always
+RestartSec=3
+EnvironmentFile=/etc/whisper-server/whisper-server.env
+WorkingDirectory={{ whisper_install_dir }}
+
+# Resource limits
+LimitNOFILE={{ max_open_files }}
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ whisper_install_dir }}
+
+[Install]
+WantedBy=multi-user.target

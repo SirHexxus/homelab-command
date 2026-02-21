@@ -1,0 +1,70 @@
+# terraform.tfvars.example - Example Configuration
+#
+# Copy this file to terraform.tfvars and fill in your values:
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# IMPORTANT: terraform.tfvars contains secrets and should NOT be committed to git.
+
+# =============================================================================
+# PROXMOX CONNECTION (Required)
+# =============================================================================
+
+# Your Proxmox API URL (usually https://your-proxmox-ip:8006/api2/json)
+proxmox_api_url = "https://192.168.1.14:8006/api2/json"
+
+# API token ID (format: username@pam!tokenname)
+# Create this in Proxmox UI: Datacenter -> Permissions -> API Tokens
+proxmox_api_token_id = "root@pam!terraform"
+
+# API token secret (the long string shown when you created the token)
+proxmox_api_token = "your-api-token-secret-here"
+
+# Set to true if using self-signed certificates (common in home labs)
+proxmox_tls_insecure = true
+
+# Name of your Proxmox node (usually "pve" or your custom name)
+proxmox_node = "pve"
+
+# =============================================================================
+# CONTAINER SETTINGS (Optional - defaults shown)
+# =============================================================================
+
+# Container identification
+container_name     = "whisper"
+container_hostname = "whisper-server"
+
+# Resource allocation (smaller than Ollama - Whisper is lighter)
+container_cpu_cores  = 4      # 4 cores is sufficient for Whisper
+container_memory_mb  = 8192   # 8GB RAM
+container_disk_gb    = 20     # 20GB disk
+
+# Storage pool for the container
+container_storage = "local-lvm"
+
+# LXC template - verify this exists on your Proxmox server:
+#   ssh root@proxmox "pveam list local"
+lxc_template = "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
+
+# =============================================================================
+# NETWORK SETTINGS (Optional)
+# =============================================================================
+
+# Network bridge (usually vmbr0)
+network_bridge = "vmbr0"
+
+# Static IP (leave empty for DHCP)
+# container_ip      = "192.168.1.101/24"
+# container_gateway = "192.168.1.1"
+
+# =============================================================================
+# SECURITY SETTINGS (Optional)
+# =============================================================================
+
+# Path to your SSH public key
+ssh_public_key_file = "~/.ssh/id_rsa.pub"
+
+# Keep false for security (privileged mode gives container root on host)
+enable_privileged_mode = false
+
+# Tags for organization
+tags = ["whisper", "ai", "stt", "speech-to-text"]
