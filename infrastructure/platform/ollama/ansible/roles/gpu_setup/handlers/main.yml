@@ -1,0 +1,9 @@
+# ansible/roles/gpu_setup/handlers/main.yml
+#
+# Handlers for the gpu_setup role
+
+---
+- name: restart ollama for gpu
+  systemd:
+    name: ollama
+    state: restarted

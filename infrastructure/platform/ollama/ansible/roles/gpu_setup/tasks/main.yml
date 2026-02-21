@@ -1,0 +1,45 @@
+# ansible/roles/gpu_setup/tasks/main.yml
+#
+# GPU driver installation and monitoring (optional)
+# Supports Intel Arc GPUs (like Arc B580)
+
+---
+- name: Check if GPU device is available
+  stat:
+    path: /dev/dri/renderD128
+  register: gpu_device
+
+- name: Skip GPU setup if device not found
+  debug:
+    msg: "GPU device not found. Skipping GPU setup. Run gpu_enable.yml after configuring GPU passthrough."
+  when: not gpu_device.stat.exists
+
+- name: Install GPU support packages
+  apt:
+    name:
+      - intel-gpu-tools
+      - clinfo
+      - mesa-utils
+      - libclc-dev
+    state: present
+  when: gpu_device.stat.exists
+
+- name: Add ollama user to video group
+  user:
+    name: "{{ ollama_user | default('ollama') }}"
+    groups: video,render
+    append: yes
+  when: gpu_device.stat.exists
+  notify: restart ollama for gpu
+
+- name: Verify GPU visibility
+  command: /usr/bin/clinfo
+  changed_when: false
+  register: gpu_info
+  when: gpu_device.stat.exists
+  ignore_errors: yes
+
+- name: Display GPU information
+  debug:
+    msg: "{{ gpu_info.stdout | default('GPU info not available') }}"
+  when: gpu_device.stat.exists

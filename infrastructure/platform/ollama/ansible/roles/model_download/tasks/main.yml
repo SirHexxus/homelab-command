@@ -1,0 +1,38 @@
+# ansible/roles/model_download/tasks/main.yml
+#
+# Pre-cache AI models for Ollama
+
+---
+- name: Display model download information
+  debug:
+    msg: |
+      Downloading models (this will take 10-15 minutes depending on network speed)...
+      Models will be cached in {{ ollama_home | default('/var/lib/ollama') }}/models
+
+- name: Pull Ollama models
+  command: "ollama pull {{ item }}"
+  environment:
+    OLLAMA_HOST: "localhost:{{ ollama_port | default(11434) }}"
+    OLLAMA_MODELS: "{{ ollama_home | default('/var/lib/ollama') }}/models"
+  loop: "{{ ollama_models }}"
+  register: model_pull
+  changed_when: "'downloading' in model_pull.stdout.lower()"
+  async: 1800  # 30 minute timeout per model
+  poll: 30     # Check every 30 seconds
+
+- name: List downloaded models
+  command: ollama list
+  changed_when: false
+  register: model_list
+
+- name: Display model list
+  debug:
+    msg: "{{ model_list.stdout }}"
+
+- name: Test model inference
+  command: |
+    ollama run --verbose mistral:7b "Say hello in one word"
+  changed_when: false
+  timeout: 60
+  register: inference_test
+  failed_when: inference_test.rc != 0

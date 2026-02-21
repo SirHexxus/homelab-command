@@ -1,0 +1,29 @@
+[Unit]
+Description=Ollama AI Inference Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ ollama_user }}
+Group={{ ollama_group }}
+ExecStart=/usr/local/bin/ollama serve
+Restart=always
+RestartSec=3
+Environment="HOME={{ ollama_home }}"
+Environment="OLLAMA_HOST=0.0.0.0:{{ ollama_port }}"
+Environment="OLLAMA_MODELS={{ ollama_home }}/models"
+WorkingDirectory={{ ollama_home }}
+
+# Resource limits
+LimitNOFILE={{ max_open_files }}
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ ollama_home }}
+
+[Install]
+WantedBy=multi-user.target

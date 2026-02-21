@@ -1,0 +1,9 @@
+# ansible/roles/ollama_install/handlers/main.yml
+#
+# Handlers for the ollama_install role
+
+---
+- name: restart ollama
+  systemd:
+    name: ollama
+    state: restarted

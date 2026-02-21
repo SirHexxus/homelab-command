@@ -1,0 +1,140 @@
+# terraform.tfvars - Your Proxmox and Container Configuration
+#
+# This file contains your specific configuration values. Unlike the other .tf files,
+# this file is NOT committed to version control (add to .gitignore) because it
+# contains sensitive information like API tokens.
+#
+# Copy this file to terraform.tfvars and update the values with your Proxmox setup.
+
+# Proxmox API configuration
+# ========================
+# Find these values in your Proxmox UI:
+# - API URL: Usually https://<proxmox-hostname>:8006/api2/json
+# - Token: Create in Proxmox UI → Datacenter → Permissions → API Tokens
+
+proxmox_api_url      = "https://proxmox.local:8006/api2/json"  # Change to your Proxmox URL
+proxmox_api_token_id = "terraform@pam!terraform-token"          # Change to your token ID
+proxmox_api_token    = "YOUR-API-TOKEN-SECRET-HERE"            # Change to your token secret
+proxmox_tls_insecure = true                                      # Set to false if using real certificates
+
+# Proxmox node configuration
+# ==========================
+# The name of the node where you want the container created.
+# If you only have one node, it's usually "pve"
+
+proxmox_node = "pve"  # Change if your node has a different name
+
+# Container identification
+# ========================
+# Customize the container name and hostname to your preference
+
+container_name     = "ollama"
+container_hostname = "ollama-server"
+
+# Resource allocation
+# ===================
+# These should match your hardware. The defaults are:
+# - 8 CPU cores (matches your Xeon E-2378)
+# - 16GB RAM (leaves 46GB free on your 62GB system)
+# - 50GB disk (enough for all models with overhead)
+#
+# IMPORTANT: Don't over-allocate! If you assign 16GB RAM but your host only has 32GB total
+# and other VMs are running, the system will become unstable. Conservative allocation is better.
+
+container_cpu_cores  = 8      # Cores to allocate
+container_memory_mb  = 16384   # 16GB in megabytes (use 16384)
+container_disk_gb    = 50      # Disk space in gigabytes
+
+# Storage configuration
+# =====================
+# The Proxmox storage pool where the container's disk will be stored.
+# Common values: "local-lvm" (recommended), "local", or a custom storage pool name
+
+container_storage = "local-lvm"
+
+# Network configuration
+# =====================
+# Choose one of two approaches:
+#
+# Option A: Static IP (recommended for servers)
+# container_ip      = "192.168.1.100/24"
+# container_gateway = "192.168.1.1"
+#
+# Option B: DHCP (easier setup, IP changes on reboot - not recommended for servers)
+# container_ip      = ""
+# container_gateway = ""
+
+container_ip      = ""                    # Leave empty for DHCP, or set static IP
+container_gateway = ""                    # Leave empty for DHCP, or set gateway
+
+# Network bridge
+# ==============
+# The Proxmox virtual network bridge to connect the container to.
+# Usually "vmbr0". If you have multiple networks, change this to the bridge you want.
+
+network_bridge = "vmbr0"
+
+# SSH access
+# ==========
+# Path to your SSH public key. This gets injected into the container so
+# Ansible can connect without a password.
+#
+# The default assumes your key is in ~/.ssh/id_rsa.pub (standard location).
+# If your key is elsewhere, update this path.
+
+ssh_public_key_file = "~/.ssh/id_rsa.pub"
+
+# Advanced options
+# ================
+# You probably don't need to change these unless you have specific requirements
+
+enable_privileged_mode = false  # Keep false unless you need privileged operations
+tags                   = ["ollama", "ai", "inference"]  # For organization
+additional_lxc_features = []    # Leave empty unless you need additional LXC features
+
+# Storage backend
+# ===============
+# The template image to use. This should match what's available in your Proxmox.
+# Run this on your Proxmox node to see available templates:
+#   pveam available | grep ubuntu-22.04
+#
+# Common templates:
+# - local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst (most common)
+# - local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst (if you prefer Debian)
+
+lxc_template = "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
+
+# ==============================================================
+# IMPORTANT SETUP INSTRUCTIONS
+# ==============================================================
+#
+# Before you can use these Terraform files:
+#
+# 1. CREATE A PROXMOX API TOKEN
+#    - Log in to Proxmox UI (https://your-proxmox:8006)
+#    - Go to Datacenter → Permissions → API Tokens
+#    - Click "Add"
+#    - Set Privilege Separation to "No"
+#    - Copy the token ID and token secret
+#    - Update proxmox_api_token_id and proxmox_api_token above
+#
+# 2. VERIFY YOUR PROXMOX NODE NAME
+#    - In Proxmox UI, check the node name (usually "pve" or "pve1")
+#    - Update proxmox_node above
+#
+# 3. CHOOSE STATIC IP OR DHCP
+#    - Static IP: more reliable for servers, requires planning your network
+#    - DHCP: easier setup, but IP may change after container restarts
+#    - Recommendation: Use static IP if possible
+#
+# 4. VERIFY AVAILABLE TEMPLATES
+#    - SSH into your Proxmox host
+#    - Run: pveam available | grep ubuntu-22.04
+#    - Update lxc_template if the template name is different
+#
+# 5. RENAME THIS FILE
+#    - Rename terraform.tfvars.example to terraform.tfvars
+#    - WARNING: Never commit terraform.tfvars to git (it contains secrets!)
+#    - Add terraform.tfvars to .gitignore
+#
+# ==============================================================
