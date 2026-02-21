@@ -1,0 +1,35 @@
+# group_vars/whisper_containers.yml - Whisper Container Variables
+#
+# These variables apply to all hosts in the whisper_containers group.
+
+# Whisper Server Configuration
+whisper_port: 9000
+whisper_model: "small"
+
+# Available models (for reference):
+# - tiny: ~75MB, fastest, lowest accuracy
+# - base: ~150MB, fast, basic accuracy
+# - small: ~500MB, balanced (recommended)
+# - medium: ~1.5GB, slower, higher accuracy
+# - large-v3: ~3GB, slowest, best accuracy
+
+# Installation paths
+whisper_install_dir: /opt/whisper-server
+whisper_venv_dir: "{{ whisper_install_dir }}/venv"
+whisper_models_dir: "{{ whisper_install_dir }}/models"
+whisper_logs_dir: "{{ whisper_install_dir }}/logs"
+
+# Service user
+whisper_user: whisper
+whisper_group: whisper
+
+# Compute settings
+whisper_device: "cpu"
+whisper_compute_type: "int8"
+
+# Resource settings
+max_open_files: 65535
+
+# Proxmox configuration (for IP freeze via pct set)
+proxmox_host: 10.0.10.2
+container_vmid: 102

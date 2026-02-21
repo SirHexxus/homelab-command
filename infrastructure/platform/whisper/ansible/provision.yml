@@ -1,0 +1,383 @@
+# ansible/provision.yml - Whisper Server Provisioning Playbook
+#
+# This playbook installs and configures the faster-whisper-server (Speaches)
+# for speech-to-text transcription with an OpenAI-compatible API.
+#
+# Run after Terraform creates the container:
+#   ansible-playbook -i inventory.ini provision.yml
+
+---
+- name: Provision Whisper Speech-to-Text Container
+  hosts: whisper_containers
+
+  vars:
+    apt_cache_valid_time: 3600
+    debian_packages:
+      - curl
+      - wget
+      - git
+      - build-essential
+      - python3-pip
+      - python3-venv
+      - python3-dev
+      - ffmpeg
+      - libsndfile1
+      - jq
+      - zstd
+      - software-properties-common
+
+  pre_tasks:
+    - name: Verify Ansible version
+      assert:
+        that:
+          - ansible_version.major >= 2
+          - ansible_version.minor >= 10
+        fail_msg: "Ansible 2.10+ is required"
+      run_once: yes
+
+    - name: Display deployment information
+      debug:
+        msg: |
+          ============================================================
+          Starting Whisper Container Provisioning
+          ============================================================
+          Target Host: {{ inventory_hostname }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Python: {{ ansible_python_version }}
+          CPU Cores: {{ ansible_processor_vcpus }}
+          RAM: {{ (ansible_memtotal_mb / 1024) | round(2) }} GB
+
+          Whisper Configuration:
+            - Model: {{ whisper_model }}
+            - Port: {{ whisper_port }}
+            - Device: {{ whisper_device }}
+            - Compute Type: {{ whisper_compute_type }}
+
+          ============================================================
+
+    # --- Network: Freeze DHCP IP as Static ---
+    # Proxmox overwrites in-container network config on boot, so the static IP
+    # must be set at the Proxmox level via `pct set` rather than inside the container.
+    - name: Check if Proxmox container is using DHCP
+      command: pct config {{ container_vmid }}
+      register: pct_config
+      delegate_to: "{{ proxmox_host }}"
+      vars:
+        ansible_user: root
+      changed_when: false
+
+    - name: Display current network information
+      debug:
+        msg: |
+          Network Configuration:
+          - Current IP: {{ ansible_default_ipv4.address }}/{{ ansible_default_ipv4.prefix }}
+          - Gateway: {{ ansible_default_ipv4.gateway }}
+          - Interface: {{ ansible_default_ipv4.interface }}
+          - MAC: {{ ansible_default_ipv4.macaddress }}
+          - VMID: {{ container_vmid }}
+          - Method: {{ 'DHCP' if 'ip=dhcp' in pct_config.stdout else 'Static' }}
+          {% if 'ip=dhcp' in pct_config.stdout %}
+          - Action: Will freeze current DHCP IP as static in Proxmox config
+          {% else %}
+          - Action: Already static, no changes needed
+          {% endif %}
+
+    - name: Freeze DHCP-assigned IP in Proxmox container config
+      command: >
+        pct set {{ container_vmid }} -net0
+        name=eth0,bridge=vmbr1,hwaddr={{ ansible_default_ipv4.macaddress }},ip={{ ansible_default_ipv4.address }}/{{ ansible_default_ipv4.prefix }},gw={{ ansible_default_ipv4.gateway }}
+      delegate_to: "{{ proxmox_host }}"
+      vars:
+        ansible_user: root
+      when: "'ip=dhcp' in pct_config.stdout"
+
+  tasks:
+    # =========================================================================
+    # 1. SYSTEM UPDATES & DEPENDENCIES
+    # =========================================================================
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: "{{ apt_cache_valid_time }}"
+      when: ansible_os_family == "Debian"
+
+    - name: Upgrade all packages to latest versions
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Install required system packages
+      apt:
+        name: "{{ debian_packages }}"
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Add deadsnakes PPA for Python 3.12
+      apt_repository:
+        repo: ppa:deadsnakes/ppa
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Install Python 3.12
+      apt:
+        name:
+          - python3.12
+          - python3.12-venv
+          - python3.12-dev
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Verify internet connectivity
+      uri:
+        url: "https://pypi.org"
+        method: HEAD
+        status_code: [200, 301, 302]
+        timeout: 30
+      changed_when: false
+
+    # =========================================================================
+    # 2. WHISPER USER & DIRECTORIES
+    # =========================================================================
+    - name: Create whisper system user
+      user:
+        name: "{{ whisper_user }}"
+        system: yes
+        home: "{{ whisper_install_dir }}"
+        shell: /usr/sbin/nologin
+        state: present
+
+    - name: Create whisper directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ whisper_user }}"
+        group: "{{ whisper_group }}"
+        mode: '0755'
+      loop:
+        - "{{ whisper_install_dir }}"
+        - "{{ whisper_models_dir }}"
+        - "{{ whisper_logs_dir }}"
+
+    - name: Create configuration directory
+      file:
+        path: /etc/whisper-server
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    # =========================================================================
+    # 3. PYTHON VIRTUAL ENVIRONMENT SETUP
+    # =========================================================================
+    - name: Check if venv exists with wrong Python version
+      stat:
+        path: "{{ whisper_venv_dir }}/bin/python3.12"
+      register: venv_python312
+
+    - name: Remove old venv if created with wrong Python version
+      file:
+        path: "{{ whisper_venv_dir }}"
+        state: absent
+      when: not venv_python312.stat.exists
+      become: yes
+
+    - name: Create Python 3.12 virtual environment
+      command: python3.12 -m venv {{ whisper_venv_dir }}
+      args:
+        creates: "{{ whisper_venv_dir }}/bin/activate"
+      become: yes
+      become_user: "{{ whisper_user }}"
+
+    - name: Upgrade pip in virtual environment
+      pip:
+        name:
+          - pip
+          - setuptools
+          - wheel
+        state: latest
+        virtualenv: "{{ whisper_venv_dir }}"
+      become: yes
+      become_user: "{{ whisper_user }}"
+
+    # =========================================================================
+    # 4. INSTALL FASTER-WHISPER-SERVER
+    # =========================================================================
+    - name: Install faster-whisper and dependencies
+      pip:
+        name:
+          - faster-whisper
+          - fastapi
+          - uvicorn[standard]
+          - python-multipart
+          - pydantic
+          - aiofiles
+          - httpx
+        state: present
+        virtualenv: "{{ whisper_venv_dir }}"
+      become: yes
+      become_user: "{{ whisper_user }}"
+      register: whisper_deps_install
+
+    - name: Display installation status
+      debug:
+        msg: "Whisper dependencies installed: {{ whisper_deps_install.changed }}"
+
+    # =========================================================================
+    # 5. PRE-DOWNLOAD WHISPER MODEL
+    # =========================================================================
+    - name: Display model download information
+      debug:
+        msg: |
+          Downloading Whisper model '{{ whisper_model }}'...
+          This may take 2-10 minutes depending on model size and network speed.
+
+          Model sizes:
+            - tiny: ~75MB
+            - base: ~150MB
+            - small: ~500MB
+            - medium: ~1.5GB
+            - large-v3: ~3GB
+
+    - name: Pre-download Whisper model
+      shell: |
+        source {{ whisper_venv_dir }}/bin/activate
+        python3 -c "
+        from faster_whisper import WhisperModel
+        print('Downloading {{ whisper_model }} model...')
+        model = WhisperModel('{{ whisper_model }}', device='{{ whisper_device }}', compute_type='{{ whisper_compute_type }}')
+        print('Model downloaded and loaded successfully!')
+        "
+      args:
+        executable: /bin/bash
+      environment:
+        XDG_CACHE_HOME: "{{ whisper_models_dir }}"
+      become: yes
+      become_user: "{{ whisper_user }}"
+      async: 900
+      poll: 30
+      register: model_download
+
+    - name: Display model download result
+      debug:
+        msg: "{{ model_download.stdout_lines | default(['Model download completed']) }}"
+
+    # =========================================================================
+    # 6. DEPLOY WHISPER API SERVER
+    # =========================================================================
+    - name: Deploy Whisper API script
+      template:
+        src: templates/whisper_api.py.j2
+        dest: "{{ whisper_install_dir }}/whisper_api.py"
+        owner: "{{ whisper_user }}"
+        group: "{{ whisper_group }}"
+        mode: '0644'
+      notify: restart whisper service
+
+    # =========================================================================
+    # 7. CONFIGURE SYSTEMD SERVICE
+    # =========================================================================
+    - name: Create whisper-server environment file
+      template:
+        src: templates/whisper-server.env.j2
+        dest: /etc/whisper-server/whisper-server.env
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart whisper service
+
+    - name: Create whisper-server systemd service
+      template:
+        src: templates/whisper-server.service.j2
+        dest: /etc/systemd/system/whisper-server.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart whisper service
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start whisper-server service
+      systemd:
+        name: whisper-server
+        enabled: yes
+        state: started
+      register: service_started
+
+    # =========================================================================
+    # 7. VERIFY INSTALLATION
+    # =========================================================================
+    - name: Wait for Whisper service to be ready
+      uri:
+        url: "http://localhost:{{ whisper_port }}/"
+        status_code: [200, 404, 307]
+        timeout: 10
+      register: whisper_health
+      until: whisper_health.status is defined
+      retries: 30
+      delay: 5
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Check service status if health check failed
+      command: systemctl status whisper-server
+      register: service_status
+      when: whisper_health.failed | default(false)
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Display service status on failure
+      debug:
+        msg: "{{ service_status.stdout_lines | default(['Service status unavailable']) }}"
+      when: whisper_health.failed | default(false)
+
+    - name: Adjust system file limits
+      lineinfile:
+        path: /etc/security/limits.conf
+        line: "{{ whisper_user }} soft nofile {{ max_open_files }}"
+        state: present
+
+    - name: Display connection information
+      debug:
+        msg: |
+          ============================================================
+          Whisper Provisioning Complete!
+          ============================================================
+
+          Connection Information:
+          - Host: {{ inventory_hostname }}
+          - Port: {{ whisper_port }}
+          - API Endpoint: http://{{ inventory_hostname }}:{{ whisper_port }}
+
+          OpenAI-Compatible Endpoints:
+          - POST /v1/audio/transcriptions - Transcribe audio to text
+          - POST /v1/audio/translations - Translate audio to English
+          - GET /v1/models - List available models
+          - GET /health - Health check
+
+          Quick Test:
+          curl http://{{ inventory_hostname }}:{{ whisper_port }}/health
+
+          Transcription Test:
+          curl -X POST http://{{ inventory_hostname }}:{{ whisper_port }}/v1/audio/transcriptions \
+            -F "file=@audio.mp3" \
+            -F "model={{ whisper_model }}"
+
+          n8n Configuration:
+          - HTTP Request Node
+          - Method: POST
+          - URL: http://{{ inventory_hostname }}:{{ whisper_port }}/v1/audio/transcriptions
+          - Body: Form-Data with 'file' (binary) and 'model' ({{ whisper_model }})
+
+          ============================================================
+
+  handlers:
+    - name: restart whisper service
+      systemd:
+        name: whisper-server
+        state: restarted
+      listen: "restart whisper service"

@@ -1,0 +1,146 @@
+# ansible/update.yml - Whisper Server Maintenance Playbook
+#
+# Run this playbook periodically to keep the system updated:
+#   ansible-playbook -i inventory.ini update.yml
+
+---
+- name: Update Whisper Speech-to-Text Container
+  hosts: whisper_containers
+
+  vars:
+    apt_cache_valid_time: 3600
+
+  pre_tasks:
+    - name: Display update start message
+      debug:
+        msg: |
+          ============================================================
+          Starting Whisper Container Update
+          ============================================================
+          Target: {{ inventory_hostname }}
+          Time: {{ ansible_date_time.iso8601 }}
+          ============================================================
+
+    - name: Check current Whisper installation
+      shell: |
+        source {{ whisper_venv_dir }}/bin/activate
+        pip show speaches 2>/dev/null | grep Version || echo "Not installed"
+      args:
+        executable: /bin/bash
+      register: current_version
+      changed_when: false
+      become: yes
+      become_user: "{{ whisper_user }}"
+
+    - name: Display current version
+      debug:
+        msg: "Current speaches version: {{ current_version.stdout }}"
+
+  tasks:
+    # =========================================================================
+    # 1. SYSTEM UPDATES
+    # =========================================================================
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: "{{ apt_cache_valid_time }}"
+
+    - name: Upgrade all system packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+      register: apt_upgrade
+
+    - name: Display apt upgrade result
+      debug:
+        msg: "System packages updated: {{ apt_upgrade.changed }}"
+
+    # =========================================================================
+    # 2. PYTHON PACKAGE UPDATES
+    # =========================================================================
+    - name: Stop whisper service before upgrade
+      systemd:
+        name: whisper-server
+        state: stopped
+
+    - name: Upgrade pip packages
+      pip:
+        name:
+          - pip
+          - setuptools
+          - wheel
+          - faster-whisper
+          - speaches
+        state: latest
+        virtualenv: "{{ whisper_venv_dir }}"
+      become: yes
+      become_user: "{{ whisper_user }}"
+      register: pip_upgrade
+
+    - name: Display pip upgrade result
+      debug:
+        msg: "Python packages updated: {{ pip_upgrade.changed }}"
+
+    # =========================================================================
+    # 3. RESTART SERVICE
+    # =========================================================================
+    - name: Start whisper service
+      systemd:
+        name: whisper-server
+        state: started
+
+    - name: Wait for service to be ready
+      uri:
+        url: "http://localhost:{{ whisper_port }}/health"
+        status_code: [200]
+      register: health_check
+      until: health_check.status == 200
+      retries: 30
+      delay: 5
+      changed_when: false
+
+    # =========================================================================
+    # 4. VERIFY & REPORT
+    # =========================================================================
+    - name: Check new version
+      shell: |
+        source {{ whisper_venv_dir }}/bin/activate
+        pip show speaches 2>/dev/null | grep Version || echo "Not installed"
+      args:
+        executable: /bin/bash
+      register: new_version
+      changed_when: false
+      become: yes
+      become_user: "{{ whisper_user }}"
+
+    - name: Check disk usage
+      command: df -h /
+      register: disk_usage
+      changed_when: false
+
+    - name: Check memory usage
+      command: free -h
+      register: memory_usage
+      changed_when: false
+
+    - name: Display update summary
+      debug:
+        msg: |
+          ============================================================
+          Whisper Container Update Complete
+          ============================================================
+
+          Version Info:
+          - Previous: {{ current_version.stdout }}
+          - Current: {{ new_version.stdout }}
+
+          System Resources:
+          {{ disk_usage.stdout }}
+
+          Memory:
+          {{ memory_usage.stdout }}
+
+          Service Status: Running (health check passed)
+
+          ============================================================
