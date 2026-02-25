@@ -2,6 +2,6 @@
 # roles/dotfiles/handlers/main.yml
 
 - name: run vim PlugInstall
-  command: vim +PlugInstall +qall
-  ignore_errors: "{{ ansible_check_mode }}"
+  command: vim -E -s -u ~/.vimrc +PlugInstall +visual +qall
+  ignore_errors: yes
   listen: "run vim PlugInstall"
