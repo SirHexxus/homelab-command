@@ -1,0 +1,187 @@
+---
+# roles/dotfiles/tasks/main.yml
+#
+# Deploy user dotfiles from bare git repository.
+# Mirrors the logic of ~/.dotfile-scripts/new-workstation.sh.
+
+# =========================================================================
+# 1. INSTALL DEPENDENCIES
+# =========================================================================
+- name: Install dotfiles dependencies
+  apt:
+    name: "{{ dotfiles_packages }}"
+    state: present
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+# =========================================================================
+# 2. BACKUP EXISTING DOTFILES
+# =========================================================================
+- name: Record backup timestamp
+  command: date +%Y%m%d_%H%M%S
+  changed_when: false
+  register: dotfiles_ts
+
+- name: Create timestamped backup directory
+  file:
+    path: "{{ dotfiles_backup_root }}/{{ dotfiles_ts.stdout }}"
+    state: directory
+    owner: "{{ dotfiles_target_user }}"
+    mode: "0700"
+
+- name: Check which dotfiles exist before backup
+  stat:
+    path: "{{ dotfiles_target_home }}/{{ item }}"
+  loop: "{{ dotfiles_backup_files }}"
+  register: dotfiles_pre_check
+  changed_when: false
+
+- name: Back up pre-existing dotfiles
+  copy:
+    src: "{{ dotfiles_target_home }}/{{ item.item }}"
+    dest: "{{ dotfiles_backup_root }}/{{ dotfiles_ts.stdout }}/{{ item.item }}"
+    remote_src: yes
+    owner: "{{ dotfiles_target_user }}"
+    mode: preserve
+  loop: "{{ dotfiles_pre_check.results }}"
+  when: item.stat.exists
+  ignore_errors: "{{ ansible_check_mode }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+# =========================================================================
+# 3. CLONE OR PULL DOTFILES REPOSITORY
+# =========================================================================
+- name: Check if bare repo already exists
+  stat:
+    path: "{{ dotfiles_bare_repo_dir }}/HEAD"
+  register: dotfiles_repo_stat
+  changed_when: false
+
+# --- Fresh install: bare clone via tmpdotfiles → rsync to home ---
+- name: Clone dotfiles into separate git dir via tmpdotfiles
+  command: >
+    git clone --separate-git-dir="{{ dotfiles_bare_repo_dir }}"
+    {{ dotfiles_repo_url }}
+    {{ dotfiles_target_home }}/tmpdotfiles
+  args:
+    creates: "{{ dotfiles_bare_repo_dir }}/HEAD"
+  when: not dotfiles_repo_stat.stat.exists
+  register: dotfiles_clone
+
+- name: Rsync tmpdotfiles into home directory
+  shell: >
+    rsync --recursive --exclude '.git'
+    {{ dotfiles_target_home }}/tmpdotfiles/
+    {{ dotfiles_target_home }}/
+  when:
+    - not dotfiles_repo_stat.stat.exists
+    - dotfiles_clone is changed
+
+- name: Remove tmpdotfiles staging directory
+  file:
+    path: "{{ dotfiles_target_home }}/tmpdotfiles"
+    state: absent
+  when:
+    - not dotfiles_repo_stat.stat.exists
+    - dotfiles_clone is changed
+
+# --- Subsequent runs: pull latest ---
+- name: Pull latest dotfiles
+  command: >
+    git --git-dir="{{ dotfiles_bare_repo_dir }}"
+    --work-tree="{{ dotfiles_target_home }}"
+    pull
+  when: dotfiles_repo_stat.stat.exists
+  register: dotfiles_pull
+  changed_when: "'Already up to date.' not in dotfiles_pull.stdout"
+
+# =========================================================================
+# 4. CONFIGURE BARE REPO GIT OPTIONS
+# =========================================================================
+- name: Hide untracked files in dotfiles status
+  command: >
+    git --git-dir="{{ dotfiles_bare_repo_dir }}"
+    config status.showUntrackedFiles no
+  changed_when: false
+
+- name: Set dotfiles gitignore file
+  command: >
+    git --git-dir="{{ dotfiles_bare_repo_dir }}"
+    config core.excludesFile "{{ dotfiles_target_home }}/.gitignore-dotfiles"
+  changed_when: false
+
+# =========================================================================
+# 5. CREATE REQUIRED DIRECTORIES
+# =========================================================================
+- name: Create required directories
+  file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ dotfiles_target_user }}"
+    mode: "{{ item.mode }}"
+  loop: "{{ dotfiles_create_dirs }}"
+
+# =========================================================================
+# 6. INSTALL VIM-PLUG
+# =========================================================================
+- name: Check if vim is installed
+  command: which vim
+  changed_when: false
+  failed_when: false
+  register: dotfiles_vim_check
+  when: dotfiles_install_vim_plug
+
+- name: Create vim autoload directory
+  file:
+    path: "{{ dotfiles_target_home }}/.vim/autoload"
+    state: directory
+    owner: "{{ dotfiles_target_user }}"
+    mode: "0755"
+  when:
+    - dotfiles_install_vim_plug
+    - dotfiles_vim_check.rc is defined
+    - dotfiles_vim_check.rc == 0
+
+- name: Download vim-plug
+  get_url:
+    url: "{{ dotfiles_vim_plug_url }}"
+    dest: "{{ dotfiles_vim_plug_dest }}"
+    owner: "{{ dotfiles_target_user }}"
+    mode: "0644"
+  when:
+    - dotfiles_install_vim_plug
+    - dotfiles_vim_check.rc is defined
+    - dotfiles_vim_check.rc == 0
+  register: dotfiles_plug_download
+  notify: run vim PlugInstall
+
+# =========================================================================
+# 7. DEPLOY LOGIN UPDATE HOOK
+# =========================================================================
+- name: Deploy dotfiles auto-update login hook
+  template:
+    src: templates/dotfiles-update.sh.j2
+    dest: /etc/profile.d/dotfiles-update.sh
+    owner: root
+    group: root
+    mode: '0644'
+
+# =========================================================================
+# 8. DISPLAY STATUS
+# =========================================================================
+- name: Display dotfiles role summary
+  debug:
+    msg: |
+      ============================================================
+      Dotfiles Role Complete
+      ============================================================
+      User      : {{ dotfiles_target_user }}
+      Home      : {{ dotfiles_target_home }}
+      Bare repo : {{ dotfiles_bare_repo_dir }}
+      Backup    : {{ dotfiles_backup_root }}/{{ dotfiles_ts.stdout }}
+
+      Manage with:
+        git --git-dir={{ dotfiles_bare_repo_dir }} --work-tree={{ dotfiles_target_home }} status
+        git --git-dir={{ dotfiles_bare_repo_dir }} --work-tree={{ dotfiles_target_home }} pull
+      ============================================================

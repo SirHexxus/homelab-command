@@ -1,0 +1,15 @@
+# /etc/ntfy/server.yml - ntfy server configuration
+# Managed by Ansible — do not edit manually
+# Full reference: https://docs.ntfy.sh/config/
+
+# Network
+base-url: {{ ntfy_base_url }}
+listen-http: :{{ ntfy_port }}
+
+# Message cache — persists notifications across service restarts
+cache-file: /var/cache/ntfy/cache.db
+cache-duration: 12h
+
+# Logging
+log-level: {{ ntfy_log_level }}
+log-format: text

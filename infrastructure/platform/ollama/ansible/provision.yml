@@ -138,8 +138,15 @@
         status_code: [200, 301, 302]
         timeout: 30
       changed_when: false
-    
-    # 2. OLLAMA USER & DIRECTORIES
+
+    # =========================================================================
+    # 2. DOTFILES
+    # =========================================================================
+    - name: Install dotfiles for root
+      import_role:
+        name: dotfiles
+
+    # 3. OLLAMA USER & DIRECTORIES
     # ============================
     - name: Create ollama system user
       user:
@@ -161,7 +168,7 @@
         - "{{ ollama_home }}/models"
         - "{{ ollama_home }}/logs"
     
-    # 3. INSTALL OLLAMA BINARY
+    # 4. INSTALL OLLAMA BINARY
     # =======================
     - name: Download and install Ollama
       shell: |
@@ -182,7 +189,7 @@
       debug:
         msg: "Ollama installed: {{ ollama_version.stdout }}"
     
-    # 4. CONFIGURE OLLAMA SERVICE
+    # 5. CONFIGURE OLLAMA SERVICE
     # ===========================
     - name: Create ollama systemd service
       template:
@@ -214,7 +221,7 @@
       delay: 2
       changed_when: false
     
-    # 5. DOWNLOAD MODELS (CRITICAL - TAKES TIME)
+    # 6. DOWNLOAD MODELS (CRITICAL - TAKES TIME)
     # =========================================
     - name: Display model download information
       debug:
@@ -233,7 +240,7 @@
       async: 1800  # 30 minute timeout per model
       poll: 30     # Check every 30 seconds
     
-    # 6. VERIFY INSTALLATION
+    # 7. VERIFY INSTALLATION
     # =====================
     - name: List downloaded models
       command: ollama list
@@ -252,7 +259,7 @@
       register: inference_test
       failed_when: inference_test.rc != 0
     
-    # 7. FINAL CONFIGURATION
+    # 8. FINAL CONFIGURATION
     # ====================
     - name: Adjust system file limits for Ollama
       lineinfile:

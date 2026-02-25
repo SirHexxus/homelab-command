@@ -1,5 +1,5 @@
 # Homelab Command Project — Project Roadmap
-**Version:** 1.2
+**Version:** 1.3
 **Last Updated:** February 2026
 **North Star:** Kaiser Permanente CRDC Consultant III (SOC Analyst) — application target June 2, 2026
 
@@ -27,11 +27,11 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 | Document | Version | Status |
 |----------|---------|--------|
 | Hardware Catalog | v1.1 | ✅ Complete |
-| Network & Services Architecture | v1.4 | ✅ Complete |
+| Network & Services Architecture | v1.6 | ✅ Complete |
 | Project Roadmap | v1.2 | ✅ This document |
 | Second Brain Design Doc | v1.1 | ✅ Complete |
 | IaC Runbook | v1.1 | ✅ Complete |
-| Argus Design Doc | v1.1 | ✅ Complete |
+| Argus Design Doc | v1.2 | ✅ Complete |
 | Media Stack Design Doc | v1.1 | ✅ Complete |
 
 ### Remaining
@@ -59,6 +59,11 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 - [ ] Create VLANs 40, 60, 66, 70 in pfSense
 - [ ] Configure managed switch trunk/access ports for all VLANs
 - [ ] Rename VLAN 20 "Trusted" → "Personal" in pfSense and switch
+
+### Bare Metal
+- [x] Provision helm-log baseline hardening (10.0.10.25) — fail2ban, SSH, dotfiles
+- [x] Set pfSense static DHCP reservation for helm-log (MAC 72:c6:b9:0d:32:ac → 10.0.10.25)
+- [ ] Run ntfy provisioning playbook on helm-log (IaC ready)
 
 ### Services (IaC — Terraform + Ansible)
 - [ ] Deploy n8n (10.0.50.13)
@@ -226,4 +231,4 @@ Houses general-purpose development standards referenced when scripting work aris
 
 ---
 
-*Companion documents: Hardware Catalog v1.1 · Network & Services Architecture v1.4 · Second Brain Design Doc v1.1 · IaC Runbook v1.1 · Argus Design Doc v1.1 · Media Stack Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Companion documents: Hardware Catalog v1.1 · Network & Services Architecture v1.6 · Second Brain Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Media Stack Design Doc v1.1 · Ariadne Design Doc v1.0*

@@ -1,0 +1,12 @@
+---
+- name: restart sshd
+  systemd:
+    name: sshd
+    state: restarted
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: restart fail2ban
+  systemd:
+    name: fail2ban
+    state: restarted
+  ignore_errors: "{{ ansible_check_mode }}"

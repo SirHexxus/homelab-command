@@ -1,0 +1,89 @@
+---
+# roles/ntfy/tasks/main.yml - ntfy push notification server
+#
+# Installs ntfy from .deb, deploys server config, and enables
+# the systemd service. ntfy acts as the homelab notification broker —
+# any service can POST to a topic and it fans out to subscribed clients.
+
+# =========================================================================
+# 1. INSTALL NTFY
+# =========================================================================
+- name: Check installed ntfy version
+  command: dpkg-query -W ntfy
+  register: ntfy_installed
+  changed_when: false
+  failed_when: false
+
+- name: Create ntfy cache directory
+  file:
+    path: /var/cache/ntfy
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Download ntfy .deb package
+  get_url:
+    url: "https://github.com/binwiederhehr/ntfy/releases/download/\
+          v{{ ntfy_version }}/ntfy_{{ ntfy_version }}_linux_arm64.deb"
+    dest: "/tmp/ntfy_{{ ntfy_version }}_linux_arm64.deb"
+    mode: '0644'
+  when: >
+    ntfy_installed.rc != 0 or
+    ntfy_version not in ntfy_installed.stdout
+
+- name: Install ntfy from .deb
+  apt:
+    deb: "/tmp/ntfy_{{ ntfy_version }}_linux_arm64.deb"
+    state: present
+  when: >
+    ntfy_installed.rc != 0 or
+    ntfy_version not in ntfy_installed.stdout
+  notify: restart ntfy
+
+# =========================================================================
+# 2. CONFIGURE
+# =========================================================================
+- name: Deploy ntfy server config
+  template:
+    src: server.yml.j2
+    dest: /etc/ntfy/server.yml
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart ntfy
+
+# =========================================================================
+# 3. ENABLE SERVICE
+# =========================================================================
+- name: Enable and start ntfy
+  systemd:
+    name: ntfy
+    enabled: yes
+    state: started
+    daemon_reload: yes
+  ignore_errors: "{{ ansible_check_mode }}"
+
+# =========================================================================
+# 4. VERIFY
+# =========================================================================
+- name: Wait for ntfy to become ready
+  wait_for:
+    port: "{{ ntfy_port }}"
+    host: localhost
+    timeout: 30
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Check ntfy health endpoint
+  uri:
+    url: "http://localhost:{{ ntfy_port }}/v1/health"
+    method: GET
+    status_code: 200
+  register: ntfy_health
+  changed_when: false
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Display ntfy status
+  debug:
+    msg: "ntfy is listening at {{ ntfy_base_url }}"
+  when: not ansible_check_mode
