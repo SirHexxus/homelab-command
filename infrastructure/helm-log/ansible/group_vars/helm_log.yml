@@ -1,0 +1,29 @@
+# group_vars/helm_log.yml - Helm Log Device Variables
+#
+# NOTE: vault.yml will be added in Phase 3 (syslog-ng/Vector secrets)
+
+hostname: helm-log
+ssh_port: 22
+
+# fail2ban configuration
+fail2ban_maxretry: 5
+fail2ban_bantime: 3600
+
+# unattended-upgrades: apply security-only updates
+unattended_upgrade_origins:
+  - "bullseye-security"
+
+# ntfy notification broker
+# Releases: https://github.com/binwiederhehr/ntfy/releases
+ntfy_version: "2.11.0"
+ntfy_port: 2586
+ntfy_base_url: "http://10.0.10.25:2586"
+ntfy_log_level: "info"
+
+# Notification topics — referenced by all playbooks that send alerts.
+# Topics are created on first use; naming is permanent (changing means
+# updating every playbook that references them).
+ntfy_topics:
+  provisioning: "provisioning"   # Ansible/Terraform IaC events
+  general_operations: "general-operations"   # Service up/down, cron results, ops alerts, catch-all
+  argus: "argus"                 # SIEM alerts, Wazuh findings, security events

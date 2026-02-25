@@ -1,0 +1,86 @@
+# ansible/provision.yml - Helm Log Baseline Provisioning Playbook
+#
+# Provisions bare metal Helm v2 device with security baseline.
+# Run after SSH key is deployed to device:
+#   ansible-playbook -i inventory.ini provision.yml
+
+---
+- name: Provision Helm Log Bare Metal Device
+  hosts: helm_log
+
+  pre_tasks:
+    - name: Verify Ansible version
+      assert:
+        that:
+          - ansible_version.major >= 2
+          - ansible_version.minor >= 10
+        fail_msg: "Ansible 2.10+ is required"
+      run_once: yes
+
+    - name: Display deployment information
+      debug:
+        msg: |
+          ============================================================
+          Provisioning Helm Log — Baseline Hardening
+          ============================================================
+          Target Host : {{ inventory_hostname }}
+          OS          : {{ ansible_distribution }}
+                        {{ ansible_distribution_version }}
+          Hostname    : {{ hostname }}
+
+          Applying:
+            1. Set hostname
+            2. Install fail2ban, unattended-upgrades, apt-listchanges
+            3. Deploy fail2ban SSH jail config
+            4. Configure security-only auto-upgrades
+            5. Harden SSH (PasswordAuthentication no,
+                           PermitRootLogin prohibit-password)
+            6. Enable and start services
+            7. Verify fail2ban
+            8. Install dotfiles
+            9. Install ntfy notification broker
+          ============================================================
+
+  tasks:
+    # =========================================================================
+    # 1. BASELINE HARDENING
+    # =========================================================================
+    - name: Apply baseline configuration
+      import_role:
+        name: baseline
+
+    # =========================================================================
+    # 2. DOTFILES
+    # =========================================================================
+    - name: Install dotfiles for root
+      import_role:
+        name: dotfiles
+
+    # =========================================================================
+    # 3. NTFY
+    # =========================================================================
+    - name: Install ntfy notification broker
+      import_role:
+        name: ntfy
+
+  post_tasks:
+    - name: Display provisioning complete
+      debug:
+        msg: |
+          ============================================================
+          Helm Log Provisioning Complete
+          ============================================================
+
+          Host: {{ inventory_hostname }}
+
+          Next steps:
+            1. Verify SSH:
+                 ssh -i ~/.ssh/homelab_ed25519 root@10.0.10.25
+            2. Check fail2ban: fail2ban-client status sshd
+            3. Fill in ntfy_topics in group_vars/helm_log.yml
+            4. Test ntfy: curl -d "hello" {{ ntfy_base_url }}/test
+            5. Subscribe on mobile: open {{ ntfy_base_url }} in browser
+            6. Phase 3: add syslog-ng, Vector, Wazuh agent roles
+            7. Pull dotfile updates:
+                 git --git-dir=~/.dotfiles --work-tree=~ pull
+          ============================================================

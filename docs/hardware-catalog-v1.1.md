@@ -1,6 +1,6 @@
 # Homelab Command — Hardware Catalog
-**Version:** 1.1  
-**Last Updated:** 2026-02-19  
+**Version:** 1.2
+**Last Updated:** 2026-02-24
 **Status:** Active document — update as hardware is added, removed, or changed.
 
 ---
@@ -70,7 +70,7 @@
 | Laptop 4 | Dell P57G001 | Unknown | Functionality unknown. |
 | Laptop 5 | Dell Inspiron P125G002 | Unknown | Functionality unknown. |
 | Tablet/Hybrid | Microsoft Surface Pro | Unknown — cannot test | 256GB storage. No charger available. Cannot assess until charger sourced. |
-| Helm Server V2 | Helm HPS20-1T-W-US | **Idle — Needs reflashing** | Hexacore ARM (2x Cortex-A72 1.8GHz + 4x Cortex-A53 1.4GHz), 1TB NVMe. Strong candidate for Pi-hole, lightweight services, or self-hosted email. Armbian repurpose path confirmed. USB-C charger available. |
+| Helm Server V2 | Helm HPS20-1T-W-US | **Active — Armbian deployed. Static IP reserved.** | Hexacore ARM (2x Cortex-A72 1.8GHz + 4x Cortex-A53 1.4GHz), 1TB NVMe. **Role: ntfy notification broker (deployed); Phase 3: syslog-ng + Vector log collector for Argus.** Static IP: 10.0.10.25 (VLAN 10). MAC: 72:c6:b9:0d:32:ac. Hostname: helm-log. See Network & Services Architecture v1.6 for placement. |
 | Helm Server V1 | Helm HPS10-128-W-US | **Idle — Needs reflashing** | ARM SoC (2016-era), 2GB ECC RAM, 128GB NVMe. Limited capability. Best suited for single lightweight purpose. Armbian repurpose path available. USB-C charger available. |
 
 ---
@@ -85,9 +85,11 @@
 - [ ] Plan Living Room TV migration to IoT VLAN
 - [ ] Reconnect R710 to 10.0.0.0/8 network
 - [ ] Identify and source GPU for Proxmox server (RTX 3060 12GB or Intel Arc B580)
-- [ ] Flash Helm HPS20 and HPS10 with Armbian
+- [x] Flash Helm HPS20 with Armbian (Armbian_22.11.2-build-48_Helm-v2b, 2026-02-24)
+- [x] Set pfSense DHCP static mapping for Helm HPS20: MAC 72:c6:b9:0d:32:ac → 10.0.10.25
+- [ ] Flash Helm HPS10 with Armbian
 - [ ] Identify reserve eero Pro 6 use case (mesh expansion vs. spare)
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Network & Services Architecture v1.4 · Project Roadmap v1.2 · Second Brain Design Doc v1.1 · IaC Runbook v1.1 · Argus Design Doc v1.1 · Media Stack Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Network & Services Architecture v1.6 · Project Roadmap v1.3 · Second Brain Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Media Stack Design Doc v1.1 · Ariadne Design Doc v1.0*

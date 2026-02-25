@@ -1,0 +1,43 @@
+---
+# roles/dotfiles/defaults/main.yml
+
+# Repository (HTTPS — no auth needed, public repo)
+dotfiles_repo_url: "https://github.com/SirHexxus/.dotfiles.git"
+
+# Target user and home (override in group_vars for non-root users)
+dotfiles_target_user: root
+dotfiles_target_home: "/root"
+
+# Bare git repo location on disk
+dotfiles_bare_repo_dir: "{{ dotfiles_target_home }}/.dotfiles"
+
+# Backup destination (timestamped sub-dir created at run time)
+dotfiles_backup_root: "{{ dotfiles_target_home }}/.dotfiles-backup"
+
+# Files to back up before first clone (matches new-workstation.sh)
+dotfiles_backup_files:
+  - .bashrc
+  - .bash_aliases
+  - .bash_functions
+  - .bash_exports
+  - .bash_prompt
+  - .vimrc
+  - .gitconfig
+  - .inputrc
+  - .tmux.conf
+
+# Packages the role installs to satisfy its own dependencies
+dotfiles_packages:
+  - git
+  - rsync
+  - vim
+
+# Directories to create (matches new-workstation.sh)
+dotfiles_create_dirs:
+  - { path: "{{ dotfiles_target_home }}/.local/bin",   mode: "0755" }
+  - { path: "{{ dotfiles_target_home }}/.ssh/sockets", mode: "0700" }
+
+# vim-plug settings
+dotfiles_install_vim_plug: true
+dotfiles_vim_plug_url: "https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim"
+dotfiles_vim_plug_dest: "{{ dotfiles_target_home }}/.vim/autoload/plug.vim"

@@ -139,7 +139,14 @@
       changed_when: false
 
     # =========================================================================
-    # 2. WHISPER USER & DIRECTORIES
+    # 2. DOTFILES
+    # =========================================================================
+    - name: Install dotfiles for root
+      import_role:
+        name: dotfiles
+
+    # =========================================================================
+    # 3. WHISPER USER & DIRECTORIES
     # =========================================================================
     - name: Create whisper system user
       user:
@@ -170,7 +177,7 @@
         mode: '0755'
 
     # =========================================================================
-    # 3. PYTHON VIRTUAL ENVIRONMENT SETUP
+    # 4. PYTHON VIRTUAL ENVIRONMENT SETUP
     # =========================================================================
     - name: Check if venv exists with wrong Python version
       stat:
@@ -203,7 +210,7 @@
       become_user: "{{ whisper_user }}"
 
     # =========================================================================
-    # 4. INSTALL FASTER-WHISPER-SERVER
+    # 5. INSTALL FASTER-WHISPER-SERVER
     # =========================================================================
     - name: Install faster-whisper and dependencies
       pip:
@@ -226,7 +233,7 @@
         msg: "Whisper dependencies installed: {{ whisper_deps_install.changed }}"
 
     # =========================================================================
-    # 5. PRE-DOWNLOAD WHISPER MODEL
+    # 6. PRE-DOWNLOAD WHISPER MODEL
     # =========================================================================
     - name: Display model download information
       debug:
@@ -265,7 +272,7 @@
         msg: "{{ model_download.stdout_lines | default(['Model download completed']) }}"
 
     # =========================================================================
-    # 6. DEPLOY WHISPER API SERVER
+    # 7. DEPLOY WHISPER API SERVER
     # =========================================================================
     - name: Deploy Whisper API script
       template:
@@ -277,7 +284,7 @@
       notify: restart whisper service
 
     # =========================================================================
-    # 7. CONFIGURE SYSTEMD SERVICE
+    # 8. CONFIGURE SYSTEMD SERVICE
     # =========================================================================
     - name: Create whisper-server environment file
       template:
@@ -309,7 +316,7 @@
       register: service_started
 
     # =========================================================================
-    # 7. VERIFY INSTALLATION
+    # 9. VERIFY INSTALLATION
     # =========================================================================
     - name: Wait for Whisper service to be ready
       uri:

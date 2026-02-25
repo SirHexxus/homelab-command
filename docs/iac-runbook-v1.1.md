@@ -1,5 +1,5 @@
 # IaC Runbook
-**Version:** 1.1
+**Version:** 1.2
 **Last Updated:** February 2026
 **Status:** Living Document
 
@@ -383,6 +383,11 @@ This is the authoritative procedure for rebuilding the homelab from scratch — 
 **Recovery sequence — deploy in this order to respect dependencies:**
 
 ```
+Phase 0: Bare Metal (pre-IaC)
+    0. helm-log (10.0.10.25)              ← ntfy notification broker; alerts for all subsequent phases
+       ansible-playbook -i inventory.ini provision.yml
+       (infrastructure/helm-log/ansible/)
+
 Phase 1: Management Plane
     1. Portainer Server LXC (10.0.10.20)  ← Management UI for Docker VM
 
@@ -466,4 +471,4 @@ Each project's `README.md` documents any project-specific steps, variables, or p
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.1 · Network & Services Architecture v1.4 · Project Roadmap v1.2 · Second Brain Design Doc v1.1 · Argus Design Doc v1.1 · Media Stack Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.1 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · Second Brain Design Doc v1.1 · Argus Design Doc v1.2 · Media Stack Design Doc v1.1 · Ariadne Design Doc v1.0*

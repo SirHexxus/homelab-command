@@ -1,6 +1,6 @@
 # Homelab Command: Network & Services Architecture
-**Version:** 1.4
-**Last Updated:** February 2026
+**Version:** 1.6
+**Last Updated:** 2026-02-24
 **Status:** Living Document — Update as architecture evolves
 
 ---
@@ -39,6 +39,7 @@
        |      |-- TP-Link Switch (10.0.10.50)
        |      |-- YoLink Hub (10.0.10.65)
        |      |-- James's Laptop, wired (10.0.10.x)
+       |      |-- Helm HPS20 / helm-log (10.0.10.25) [ntfy :2586 IaC-deployed; Phase 3: syslog-ng + Vector]
        |      |-- Portainer Server LXC (10.0.10.20) [NOT YET DEPLOYED]
        |
        |-- VLAN 20 (Personal)
@@ -131,6 +132,7 @@
 | Portainer Server LXC | 10.0.10.20 | Binary install (no Docker); manages Docker VM containers |
 | TP-Link Switch | 10.0.10.50 | DHCP static mapping |
 | YoLink Hub | 10.0.10.65 | DHCP static mapping |
+| Helm HPS20 (helm-log) | 10.0.10.25 | Static DHCP reservation — MAC 72:c6:b9:0d:32:ac; ntfy broker :2586 |
 | James's Laptop (wired) | 10.0.10.x | DHCP |
 
 ### VLAN 20 -- Personal
@@ -283,6 +285,7 @@ Floating: Block | !10.0.30.0/24 -> 10.0.30.0/24  | Block internal -> Work
 | Ollama | T150 LXC 101 | 10.0.50.10 | Local LLM inference | Operational |
 | Qdrant | T150 LXC 103 | 10.0.50.11 | Vector DB (retiring) | Operational -> Retiring |
 | Whisper | T150 LXC 102 | 10.0.50.12 | Speech-to-text | Operational |
+| helm-log (Helm HPS20) | Bare metal | 10.0.10.25 | Notification broker (ntfy); Phase 3: central log collector | Baseline operational; ntfy IaC-deployed (pending run) |
 | TrueNAS Scale | R710 | -- | NAS / ZFS storage | Disconnected |
 
 ### Planned Services
@@ -313,6 +316,8 @@ Floating: Block | !10.0.30.0/24 -> 10.0.30.0/24  | Block internal -> Work
 | Navidrome | 10.0.80.X | MEDIUM | Music streaming (VLAN 80) |
 | Jellyseerr | 10.0.80.X | MEDIUM | Family media request UI (VLAN 80) |
 | Home Assistant | 10.0.10.x | LOW | IoT hub (post-June) |
+| ntfy (notification broker) | 10.0.10.25 | HIGH (Now) | Homelab push notification broker on helm-log. Topics: provisioning, general-operations, argus. IaC-deployed; pending playbook run. |
+| syslog-ng + Vector (log collector) | 10.0.10.25 | HIGH (Phase 3) | Central log ingestor for Argus; receives pfSense/Suricata/switch syslog, ships structured events to TimescaleDB on VLAN 50. Runs on Helm HPS20 (helm-log). Wazuh agent also runs on device. |
 | Pi-hole | 10.0.10.x | LOW | DNS ad-blocking |
 
 ---
@@ -355,12 +360,12 @@ See: **Second Brain Design Doc** and **Argus Design Doc** (Homelab Command Proje
 | HIGH | Reconnect R710 (TrueNAS) | None |
 | HIGH | Create VLANs 40, 60, 66, 70 in pfSense + switch | None |
 | HIGH | Create VLAN 80 (Media) in pfSense + switch | None |
+| HIGH | Run ntfy provisioning playbook on helm-log | helm-log accessible via SSH |
 | HIGH | Create GitHub repo; commit existing docs + IaC | None |
 | HIGH | Deploy Splunk Free + pfSense log forwarding | VLAN 50 stable |
 | HIGH | Deploy Wazuh + endpoint agents | Splunk running |
 | HIGH | Deploy Suricata + Crowdsec (pfSense packages) | pfSense configured |
 | HIGH | Deploy Fail2ban on all SSH hosts + NPM | NPM deployed |
-| MEDIUM | Rename VLAN 20 "Trusted" → "Personal" in pfSense + switch | None |
 | MEDIUM | Deploy Portainer Server LXC (10.0.10.20) | None |
 | MEDIUM | Deploy Docker VM (10.0.50.30) | None |
 | MEDIUM | Deploy Immich on Docker VM | Docker VM running; TrueNAS NFS exports ready |
@@ -374,7 +379,7 @@ See: **Second Brain Design Doc** and **Argus Design Doc** (Homelab Command Proje
 | LOW | Deploy Pi-hole | None |
 | LOW | Deploy Home Assistant | VLAN 40 created |
 | LOW | Source GPU (RTX 3060 or Intel Arc B580) | Budget |
-| LOW | Evaluate Helm HPS20 repurpose | None |
+| HIGH (Phase 3) | Deploy syslog-ng + Vector on Helm HPS20 (helm-log, 10.0.10.25) | Wazuh Manager deployed; Splunk running; pfSense syslog export configured |
 | POST-JUNE | Active Directory VM + Authentik (replace Authelia) | After application |
 | POST-JUNE | UniFi AP replacement for eero (true IoT VLAN isolation) | After application |
 | POST-JUNE | Deploy Nextcloud + Vaultwarden on Docker VM | After application |
@@ -409,7 +414,8 @@ See: **Second Brain Design Doc** and **Argus Design Doc** (Homelab Command Proje
 | 20 | TrueNAS service history | Document what apps ran pre-migration |
 | 21 | eero SSID limit | TV + Switch on VLAN 20; resolved by future AP upgrade |
 | 22 | Crowdsec IP 10.0.60.12 freed | Crowdsec is pfSense package only; .12 address available |
+| 23 | ~~Helm HPS20 DHCP reservation~~ | ✅ Static mapping set in pfSense: MAC 72:c6:b9:0d:32:ac → 10.0.10.25 |
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.1 · Project Roadmap v1.2 · Second Brain Design Doc v1.1 · IaC Runbook v1.1 · Argus Design Doc v1.1 · Media Stack Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.1 · Project Roadmap v1.3 · Second Brain Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Media Stack Design Doc v1.1 · Ariadne Design Doc v1.0*

@@ -1,0 +1,8 @@
+---
+# roles/ntfy/handlers/main.yml
+
+- name: restart ntfy
+  systemd:
+    name: ntfy
+    state: restarted
+  ignore_errors: "{{ ansible_check_mode }}"

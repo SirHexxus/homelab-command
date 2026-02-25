@@ -1,0 +1,109 @@
+---
+# roles/baseline/tasks/main.yml - Baseline hardening for Helm bare metal
+#
+# Sections: install → configure → enable → verify
+
+# =========================================================================
+# 1. SET HOSTNAME
+# =========================================================================
+- name: Set system hostname
+  hostname:
+    name: "{{ hostname }}"
+
+# =========================================================================
+# 2. INSTALL PACKAGES
+# =========================================================================
+- name: Update package cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install baseline packages
+  apt:
+    name:
+      - fail2ban
+      - unattended-upgrades
+      - apt-listchanges
+    state: present
+
+# =========================================================================
+# 3. CONFIGURE FAIL2BAN
+# =========================================================================
+- name: Deploy fail2ban jail.local
+  template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart fail2ban
+
+# =========================================================================
+# 4. CONFIGURE UNATTENDED-UPGRADES
+# =========================================================================
+- name: Deploy unattended-upgrades origins config
+  template:
+    src: 50unattended-upgrades.j2
+    dest: /etc/apt/apt.conf.d/50unattended-upgrades
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Enable periodic unattended upgrades
+  copy:
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    owner: root
+    group: root
+    mode: '0644'
+
+# =========================================================================
+# 5. HARDEN SSH
+# =========================================================================
+- name: Disable SSH password authentication
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PasswordAuthentication'
+    line: 'PasswordAuthentication no'
+    state: present
+  notify: restart sshd
+
+- name: Set PermitRootLogin to prohibit-password
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PermitRootLogin'
+    line: 'PermitRootLogin prohibit-password'
+    state: present
+  notify: restart sshd
+
+# =========================================================================
+# 6. ENABLE SERVICES
+# =========================================================================
+- name: Enable and start fail2ban
+  systemd:
+    name: fail2ban
+    enabled: yes
+    state: started
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Enable unattended-upgrades service
+  systemd:
+    name: unattended-upgrades
+    enabled: yes
+    state: started
+  ignore_errors: "{{ ansible_check_mode }}"
+
+# =========================================================================
+# 7. VERIFY FAIL2BAN
+# =========================================================================
+- name: Check fail2ban status
+  command: fail2ban-client status
+  register: fail2ban_status
+  changed_when: false
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Display fail2ban status
+  debug:
+    msg: "{{ fail2ban_status.stdout_lines }}"

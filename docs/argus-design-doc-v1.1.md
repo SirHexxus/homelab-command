@@ -1,5 +1,5 @@
 # Argus Design Doc
-**Version:** 1.1
+**Version:** 1.2
 **Last Updated:** February 2026
 **Status:** Living Document
 
@@ -48,8 +48,9 @@ POSTGRES:argus_logs            GRAFANA
     _____|_____________________________
     |                                 |
     v                                 v
-POSTGRES:second_brain          TELEGRAM
-(Incidents as resources)       (Alerts + Argus Agent)
+POSTGRES:second_brain          NOTIFICATIONS
+(Incidents as resources)       Telegram (Argus Agent — interactive)
+                               ntfy :argus topic (push alerts)
 ```
 
 ---
@@ -65,7 +66,8 @@ POSTGRES:second_brain          TELEGRAM
 | Crowdsec | pfSense package | 10 — Management | Application-layer behavioral IPS; community threat intel; integrates with pfSense + NPM |
 | Fail2ban | Per-host | All | Log-based brute force protection on SSH hosts + NPM |
 | Uptime Kuma | External VPS | — | Outside-in availability monitoring |
-| syslog-ng + Vector | TBD | 50 — Lab Services | Central log receiver + bulk ingestion; host TBD |
+| ntfy | helm-log (10.0.10.25) | 10 — Management | Push notification broker; argus topic for security event alerts |
+| syslog-ng + Vector | helm-log (10.0.10.25) | 10 — Management | Central log receiver + bulk ingestion; Phase 3 |
 
 All VLAN 50 services are IaC-deployed via Terraform + Ansible.
 
@@ -93,7 +95,7 @@ All VLAN 50 services are IaC-deployed via Terraform + Ansible.
 pfSense / Suricata / Proxmox / Switch
     |
     v
-syslog-ng (central receiver; host TBD)
+syslog-ng (central receiver; helm-log 10.0.10.25)
     Listens: UDP 514, TCP 514, TLS 6514
     |
     |-- High volume (firewall, flows) --> Vector --> TimescaleDB hypertables
@@ -334,7 +336,7 @@ Mistral 7B: severity triage
             |
             v
         [severity = critical?]
-            --> Immediate Telegram alert (see §7)
+            --> Immediate ntfy push (argus topic) + Telegram alert (see §7)
 ```
 
 ### 6.4 MITRE ATT&CK Integration
@@ -500,6 +502,7 @@ These overlap with Second Brain scheduled reports. Argus contributes the securit
 
 | Workflow / Component | Status | Notes |
 |---------------------|--------|-------|
+| ntfy on helm-log | IaC-deployed | Now — run provisioning playbook |
 | Suricata (pfSense pkg) | Build fresh | Phase 3 |
 | Crowdsec (pfSense pkg) | Build fresh | Phase 3 / 5 |
 | Fail2ban (per host) | Build fresh | Phase 3 |
@@ -706,4 +709,4 @@ Argus-specific post-recovery steps:
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.1 · Network & Services Architecture v1.4 · Project Roadmap v1.2 · Second Brain Design Doc v1.1 · IaC Runbook v1.1 · Media Stack Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.1 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · Second Brain Design Doc v1.1 · IaC Runbook v1.2 · Media Stack Design Doc v1.1 · Ariadne Design Doc v1.0*

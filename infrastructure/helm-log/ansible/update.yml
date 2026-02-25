@@ -1,0 +1,91 @@
+# ansible/update.yml - Helm Log Maintenance Playbook
+#
+# Run periodically to keep system packages updated:
+#   ansible-playbook -i inventory.ini update.yml
+
+---
+- name: Update Helm Log Bare Metal Device
+  hosts: helm_log
+
+  vars:
+    apt_cache_valid_time: 3600
+
+  pre_tasks:
+    - name: Display update start message
+      debug:
+        msg: |
+          ============================================================
+          Starting Helm Log System Update
+          ============================================================
+          Target : {{ inventory_hostname }}
+          Time   : {{ ansible_date_time.iso8601 }}
+          ============================================================
+
+    - name: Check fail2ban status before update
+      command: fail2ban-client status
+      register: fail2ban_before
+      changed_when: false
+      ignore_errors: yes
+
+  tasks:
+    # =========================================================================
+    # 1. SYSTEM UPDATES
+    # =========================================================================
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: "{{ apt_cache_valid_time }}"
+
+    - name: Upgrade all system packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+      register: apt_upgrade
+
+    - name: Display apt upgrade result
+      debug:
+        msg: "System packages updated: {{ apt_upgrade.changed }}"
+
+    # =========================================================================
+    # 2. FAIL2BAN STATUS CHECK
+    # =========================================================================
+    - name: Ensure fail2ban is running
+      systemd:
+        name: fail2ban
+        state: started
+
+    - name: Check fail2ban status after update
+      command: fail2ban-client status
+      register: fail2ban_after
+      changed_when: false
+
+  post_tasks:
+    - name: Check disk usage
+      command: df -h /
+      register: disk_usage
+      changed_when: false
+
+    - name: Check memory usage
+      command: free -h
+      register: memory_usage
+      changed_when: false
+
+    - name: Display update summary
+      debug:
+        msg: |
+          ============================================================
+          Helm Log Update Complete
+          ============================================================
+
+          Packages Updated: {{ apt_upgrade.changed }}
+
+          fail2ban Status:
+          {{ fail2ban_after.stdout }}
+
+          System Resources:
+          {{ disk_usage.stdout }}
+
+          Memory:
+          {{ memory_usage.stdout }}
+          ============================================================
