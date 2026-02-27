@@ -14,8 +14,8 @@ unattended_upgrade_origins:
   - "bullseye-security"
 
 # ntfy notification broker
-# Releases: https://github.com/binwiederhehr/ntfy/releases
-ntfy_version: "2.11.0"
+# Releases: https://github.com/binwiederhier/ntfy/releases
+ntfy_version: "2.17.0"
 ntfy_port: 2586
 ntfy_base_url: "http://10.0.10.25:2586"
 ntfy_log_level: "info"

@@ -24,7 +24,7 @@
 
 - name: Download ntfy .deb package
   get_url:
-    url: "https://github.com/binwiederhehr/ntfy/releases/download/\
+    url: "https://github.com/binwiederhier/ntfy/releases/download/\
           v{{ ntfy_version }}/ntfy_{{ ntfy_version }}_linux_arm64.deb"
     dest: "/tmp/ntfy_{{ ntfy_version }}_linux_arm64.deb"
     mode: '0644'
