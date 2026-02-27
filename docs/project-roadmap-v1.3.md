@@ -26,11 +26,11 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 ### Completed
 | Document | Version | Status |
 |----------|---------|--------|
-| Hardware Catalog | v1.1 | ✅ Complete |
+| Hardware Catalog | v1.2 | ✅ Complete |
 | Network & Services Architecture | v1.6 | ✅ Complete |
-| Project Roadmap | v1.2 | ✅ This document |
+| Project Roadmap | v1.3 | ✅ This document |
 | Second Brain Design Doc | v1.1 | ✅ Complete |
-| IaC Runbook | v1.1 | ✅ Complete |
+| IaC Runbook | v1.2 | ✅ Complete |
 | Argus Design Doc | v1.2 | ✅ Complete |
 | Media Stack Design Doc | v1.1 | ✅ Complete |
 
@@ -76,9 +76,9 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 - [ ] Reconnect R710 TrueNAS to network
 
 ### GitHub
-- [ ] Create homelab-command repository
-- [ ] Commit all existing docs (Hardware Catalog, Network Architecture, Roadmap, Second Brain)
-- [ ] Establish IaC folder structure; commit all Terraform + Ansible from start
+- [x] Create homelab-command repository
+- [x] Commit all existing docs (Hardware Catalog, Network Architecture, Roadmap, Second Brain)
+- [x] Establish IaC folder structure; commit all Terraform + Ansible from start
 
 ### Documentation
 - [x] Complete Argus Design Doc v1.0
@@ -104,6 +104,15 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 - [ ] Build Daily Digest and Serendipity Engine
 - [ ] Build Weekly Summary and Idea Synthesis Report
 - [ ] Add voice memo path (Telegram → Whisper → pipeline)
+
+### Domain Migration (Namecheap → Porkbun)
+> Earliest eligible: ~April 2, 2026 (60-day ICANN transfer window from February renewal)
+- [ ] Create Porkbun account
+- [ ] Recreate DNS records for all three domains in Porkbun DNS panel before transferring
+- [ ] Unlock domains + request EPP/auth codes from Namecheap
+- [ ] Initiate transfers for sirhexx.com, hexxusweb.com, bravelittlesalamander.com
+- [ ] Approve transfers; update nameservers to Porkbun after each completes
+- [ ] Configure DDNS on Porkbun for sirhexx.com
 
 ### Documentation
 - [x] Complete Media Stack Design Doc v1.1
@@ -231,4 +240,4 @@ Houses general-purpose development standards referenced when scripting work aris
 
 ---
 
-*Companion documents: Hardware Catalog v1.1 · Network & Services Architecture v1.6 · Second Brain Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Media Stack Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Second Brain Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Media Stack Design Doc v1.1 · Ariadne Design Doc v1.0*
