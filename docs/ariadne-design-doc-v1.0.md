@@ -314,7 +314,7 @@ Canonical subdomain list. Cross-reference with Media Stack Design Doc v1.1 §8 f
 
 ## 12. IaC Integration
 
-Ariadne follows the same IaC conventions as all Homelab Command projects. See IaC Runbook v1.1 for tooling, secrets management, and workflow standards.
+Ariadne follows the same IaC conventions as all Homelab Command projects. See IaC Runbook v1.2 for tooling, secrets management, and workflow standards.
 
 **Project path:** `~/projects/IaC-Projects/ariadne/`
 
@@ -395,4 +395,4 @@ The Ariadne project demonstrates a cluster of competencies directly relevant to 
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.1 · Network & Services Architecture v1.4 · Project Roadmap v1.2 · Second Brain Design Doc v1.1 · IaC Runbook v1.1 · Argus Design Doc v1.1 · Media Stack Design Doc v1.1*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · Second Brain Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Media Stack Design Doc v1.1*

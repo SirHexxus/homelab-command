@@ -62,7 +62,7 @@ VLAN 80 is created specifically for media-serving services. It has its own firew
 - Block: access to VLAN 10 (Management), VLAN 50 (Lab), VLAN 60 (DMZ) except via defined rules
 - Remote access via NGINX Proxy Manager (DMZ) only — not direct external access
 
-**Note:** VLAN 80 is documented in Network & Services Architecture v1.4.
+**Note:** VLAN 80 is documented in Network & Services Architecture v1.6.
 
 ### 3.2 PVE Services — VLAN 80 (Media)
 
@@ -524,4 +524,4 @@ Post-recovery steps:
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.1 · Network & Services Architecture v1.4 · Project Roadmap v1.2 · Second Brain Design Doc v1.1 · IaC Runbook v1.1 · Argus Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · Second Brain Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Ariadne Design Doc v1.0*
