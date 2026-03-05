@@ -384,9 +384,9 @@ This is the authoritative procedure for rebuilding the homelab from scratch — 
 
 ```
 Phase 0: Bare Metal (pre-IaC)
-    0. helm-log (10.0.10.25)              ← ntfy notification broker; alerts for all subsequent phases
+    0. Iris (helm-log, 10.0.10.25)         ← ntfy notification broker; alerts for all subsequent phases
        ansible-playbook -i inventory.ini provision.yml
-       (infrastructure/helm-log/ansible/)
+       (infrastructure/iris/ansible/)
 
 Phase 1: Management Plane
     1. Portainer Server LXC (10.0.10.20)  ← Management UI for Docker VM

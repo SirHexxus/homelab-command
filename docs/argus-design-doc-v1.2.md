@@ -502,7 +502,7 @@ These overlap with Mnemosyne scheduled reports. Argus contributes the security-s
 
 | Workflow / Component | Status | Notes |
 |---------------------|--------|-------|
-| ntfy on helm-log | IaC-deployed | Now — run provisioning playbook |
+| ntfy on Iris (helm-log) | IaC-deployed | Now — run provisioning playbook |
 | Suricata (pfSense pkg) | Build fresh | Phase 3 |
 | Crowdsec (pfSense pkg) | Build fresh | Phase 3 / 5 |
 | Fail2ban (per host) | Build fresh | Phase 3 |
