@@ -1,0 +1,160 @@
+# provision.yml - n8n Provisioning Playbook
+#
+# Provisions Node.js + n8n on the LXC container.
+# Postgres must be running at 10.0.50.14 before running this.
+#
+# Usage:
+#   ansible-playbook -i inventory.ini provision.yml
+
+---
+- name: Provision n8n Workflow Automation Container
+  hosts: n8n_containers
+
+  pre_tasks:
+    - name: Display deployment information
+      debug:
+        msg: |
+          ============================================================
+          Starting n8n Container Provisioning
+          ============================================================
+          Target Host: {{ inventory_hostname }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          n8n port: {{ n8n_port }}
+          Postgres: {{ postgres_host }}:{{ postgres_port }}
+          ============================================================
+
+  tasks:
+    # 1. SYSTEM UPDATES & PACKAGES
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade all packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - curl
+          - git
+          - jq
+        state: present
+
+    # 2. DOTFILES
+    - name: Install dotfiles for root
+      import_role:
+        name: dotfiles
+
+    # 3. NODE.JS 20 LTS
+    - name: Download NodeSource setup script
+      get_url:
+        url: https://deb.nodesource.com/setup_20.x
+        dest: /tmp/nodesource_setup.sh
+        mode: '0755'
+
+    - name: Run NodeSource setup script
+      command: bash /tmp/nodesource_setup.sh
+      args:
+        creates: /etc/apt/sources.list.d/nodesource.list
+
+    - name: Install Node.js 20
+      apt:
+        name: nodejs
+        state: present
+        update_cache: yes
+
+    - name: Verify Node.js installation
+      command: node --version
+      changed_when: false
+      register: node_version
+
+    - name: Display Node.js version
+      debug:
+        msg: "Node.js installed: {{ node_version.stdout }}"
+
+    # 4. INSTALL n8n
+    - name: Install n8n globally via npm
+      npm:
+        name: n8n
+        global: yes
+        state: present
+      register: n8n_install
+
+    - name: Verify n8n installation
+      command: n8n --version
+      changed_when: false
+      register: n8n_version_check
+      failed_when: false
+
+    - name: Display n8n version
+      debug:
+        msg: "n8n installed: {{ n8n_version_check.stdout | default('version check pending') }}"
+
+    # 5. CREATE n8n USER & DATA DIRECTORY
+    - name: Create n8n system user
+      user:
+        name: n8n
+        system: yes
+        home: /var/lib/n8n
+        shell: /usr/sbin/nologin
+        state: present
+
+    - name: Create n8n data directory
+      file:
+        path: /var/lib/n8n
+        state: directory
+        owner: n8n
+        group: n8n
+        mode: '0750'
+
+    # 6. CONFIGURE SYSTEMD SERVICE
+    - name: Deploy n8n systemd service
+      template:
+        src: roles/n8n_install/templates/n8n.service.j2
+        dest: /etc/systemd/system/n8n.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart n8n
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start n8n service
+      systemd:
+        name: n8n
+        enabled: yes
+        state: started
+
+    # 7. WAIT FOR n8n TO BE READY
+    - name: Wait for n8n to be ready
+      uri:
+        url: "http://localhost:{{ n8n_port }}/healthz"
+        status_code: 200
+      register: n8n_health
+      until: n8n_health.status == 200
+      retries: 30
+      delay: 5
+      changed_when: false
+
+    - name: Display connection information
+      debug:
+        msg: |
+          ============================================================
+          n8n Provisioning Complete!
+          ============================================================
+          UI: http://{{ ansible_host }}:{{ n8n_port }}
+          Postgres: {{ postgres_host }}:{{ postgres_port }}
+          Data dir: /var/lib/n8n
+          ============================================================
+
+  handlers:
+    - name: restart n8n
+      systemd:
+        name: n8n
+        state: restarted

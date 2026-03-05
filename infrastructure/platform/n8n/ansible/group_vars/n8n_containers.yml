@@ -1,0 +1,6 @@
+# group_vars/n8n_containers.yml
+
+n8n_port: 5678
+n8n_version: latest
+postgres_host: 10.0.50.14
+postgres_port: 5432

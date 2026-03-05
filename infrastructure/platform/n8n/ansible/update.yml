@@ -1,0 +1,52 @@
+# update.yml - n8n Maintenance Playbook
+#
+# Updates n8n to the latest version.
+#
+# Usage:
+#   ansible-playbook -i inventory.ini update.yml
+
+---
+- name: Update n8n Container
+  hosts: n8n_containers
+
+  tasks:
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade system packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    - name: Update n8n to latest version
+      npm:
+        name: n8n
+        global: yes
+        state: latest
+      notify: restart n8n
+
+    - name: Verify n8n version after update
+      command: n8n --version
+      changed_when: false
+      register: n8n_new_version
+
+    - name: Display updated n8n version
+      debug:
+        msg: "n8n version: {{ n8n_new_version.stdout }}"
+
+    - name: Verify n8n health after update
+      uri:
+        url: "http://localhost:{{ n8n_port }}/healthz"
+        status_code: 200
+      retries: 15
+      delay: 5
+      changed_when: false
+
+  handlers:
+    - name: restart n8n
+      systemd:
+        name: n8n
+        state: restarted

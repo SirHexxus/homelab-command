@@ -1,0 +1,45 @@
+# roles/n8n_install/tasks/main.yml
+# n8n installation tasks (called from provision.yml)
+
+---
+- name: Install n8n globally via npm
+  npm:
+    name: n8n
+    global: yes
+    state: present
+  notify: restart n8n
+
+- name: Create n8n system user
+  user:
+    name: n8n
+    system: yes
+    home: /var/lib/n8n
+    shell: /usr/sbin/nologin
+    state: present
+
+- name: Create n8n data directory
+  file:
+    path: /var/lib/n8n
+    state: directory
+    owner: n8n
+    group: n8n
+    mode: '0750'
+
+- name: Deploy n8n systemd service
+  template:
+    src: n8n.service.j2
+    dest: /etc/systemd/system/n8n.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart n8n
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+
+- name: Enable and start n8n service
+  systemd:
+    name: n8n
+    enabled: yes
+    state: started
