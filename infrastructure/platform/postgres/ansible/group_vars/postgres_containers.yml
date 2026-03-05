@@ -1,0 +1,28 @@
+# group_vars/postgres_containers.yml
+
+postgres_version: 16
+postgres_port: 5432
+
+# Databases and owners
+postgres_databases:
+  - name: mnemosyne
+    owner: mnemosyne
+    extensions:
+      - vector
+      - timescaledb
+      - pg_cron
+  - name: argus_logs
+    owner: argus
+    extensions:
+      - timescaledb
+      - pg_cron
+  - name: n8n
+    owner: n8n
+    extensions: []
+
+# postgresql.conf tuning
+postgres_max_connections: 200
+postgres_shared_buffers: 2GB
+postgres_listen_addresses: "'*'"
+postgres_shared_preload_libraries: "'timescaledb,pg_cron'"
+postgres_cron_database: mnemosyne

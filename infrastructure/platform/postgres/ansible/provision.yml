@@ -1,0 +1,212 @@
+# provision.yml - Postgres Provisioning Playbook
+#
+# Provisions PostgreSQL 16 + pgvector + TimescaleDB + pg_cron.
+#
+# Usage:
+#   ansible-playbook -i inventory.ini provision.yml --ask-vault-pass
+
+---
+- name: Provision PostgreSQL 16 Container
+  hosts: postgres_containers
+  vars_files:
+    - group_vars/vault.yml
+
+  pre_tasks:
+    - name: Display deployment information
+      debug:
+        msg: |
+          ============================================================
+          Starting PostgreSQL {{ postgres_version }} Container Provisioning
+          ============================================================
+          Target Host: {{ inventory_hostname }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Postgres port: {{ postgres_port }}
+          ============================================================
+
+  tasks:
+    # 1. SYSTEM UPDATES & PACKAGES
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade all packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    - name: Install prerequisite packages
+      apt:
+        name:
+          - curl
+          - gnupg
+          - lsb-release
+          - python3-psycopg2
+        state: present
+
+    # 2. DOTFILES
+    - name: Install dotfiles for root
+      import_role:
+        name: dotfiles
+
+    # 3. ADD POSTGRESQL 16 APT REPO
+    - name: Add PostgreSQL apt signing key
+      apt_key:
+        url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+        state: present
+
+    - name: Add PostgreSQL apt repository
+      apt_repository:
+        repo: "deb https://apt.postgresql.org/pub/repos/apt {{ ansible_distribution_release }}-pgdg main"
+        state: present
+        filename: pgdg
+
+    - name: Install PostgreSQL 16
+      apt:
+        name: postgresql-{{ postgres_version }}
+        state: present
+        update_cache: yes
+
+    # 4. INSTALL TIMESCALEDB
+    - name: Add Timescale apt signing key
+      apt_key:
+        url: https://packagecloud.io/timescale/timescaledb/gpgkey
+        state: present
+
+    - name: Add Timescale apt repository
+      apt_repository:
+        repo: "deb https://packagecloud.io/timescale/timescaledb/ubuntu/ {{ ansible_distribution_release }} main"
+        state: present
+        filename: timescaledb
+
+    - name: Install TimescaleDB for PostgreSQL 16
+      apt:
+        name: timescaledb-2-postgresql-{{ postgres_version }}
+        state: present
+        update_cache: yes
+
+    # 5. INSTALL PGVECTOR
+    - name: Install pgvector
+      apt:
+        name: postgresql-{{ postgres_version }}-pgvector
+        state: present
+
+    # 6. INSTALL PG_CRON
+    - name: Install pg_cron
+      apt:
+        name: postgresql-{{ postgres_version }}-cron
+        state: present
+
+    # 7. CONFIGURE POSTGRESQL
+    - name: Set shared_preload_libraries in postgresql.conf
+      lineinfile:
+        path: /etc/postgresql/{{ postgres_version }}/main/postgresql.conf
+        regexp: "^#?shared_preload_libraries"
+        line: "shared_preload_libraries = {{ postgres_shared_preload_libraries }}"
+        state: present
+      notify: restart postgresql
+
+    - name: Set pg_cron.database_name in postgresql.conf
+      lineinfile:
+        path: /etc/postgresql/{{ postgres_version }}/main/postgresql.conf
+        regexp: "^#?pg_cron.database_name"
+        line: "pg_cron.database_name = '{{ postgres_cron_database }}'"
+        state: present
+      notify: restart postgresql
+
+    - name: Set listen_addresses in postgresql.conf
+      lineinfile:
+        path: /etc/postgresql/{{ postgres_version }}/main/postgresql.conf
+        regexp: "^#?listen_addresses"
+        line: "listen_addresses = {{ postgres_listen_addresses }}"
+        state: present
+      notify: restart postgresql
+
+    - name: Set max_connections in postgresql.conf
+      lineinfile:
+        path: /etc/postgresql/{{ postgres_version }}/main/postgresql.conf
+        regexp: "^#?max_connections"
+        line: "max_connections = {{ postgres_max_connections }}"
+        state: present
+      notify: restart postgresql
+
+    - name: Set shared_buffers in postgresql.conf
+      lineinfile:
+        path: /etc/postgresql/{{ postgres_version }}/main/postgresql.conf
+        regexp: "^#?shared_buffers"
+        line: "shared_buffers = {{ postgres_shared_buffers }}"
+        state: present
+      notify: restart postgresql
+
+    # 8. CONFIGURE pg_hba.conf (VLAN 50 access)
+    - name: Allow VLAN 50 connections in pg_hba.conf
+      lineinfile:
+        path: /etc/postgresql/{{ postgres_version }}/main/pg_hba.conf
+        line: "host    all             all             10.0.50.0/24            md5"
+        state: present
+      notify: restart postgresql
+
+    - name: Flush handlers to restart Postgres before creating DBs
+      meta: flush_handlers
+
+    # 9. ENSURE POSTGRESQL IS STARTED
+    - name: Enable and start PostgreSQL
+      systemd:
+        name: postgresql
+        enabled: yes
+        state: started
+
+    # 10. CREATE DATABASES AND USERS
+    - name: Create database users
+      postgresql_user:
+        name: "{{ item.owner }}"
+        password: "{{ vars['vault_' + item.owner + '_password'] }}"
+        state: present
+      loop: "{{ postgres_databases }}"
+      become_user: postgres
+
+    - name: Create databases
+      postgresql_db:
+        name: "{{ item.name }}"
+        owner: "{{ item.owner }}"
+        state: present
+      loop: "{{ postgres_databases }}"
+      become_user: postgres
+
+    # 11. ENABLE EXTENSIONS PER DATABASE
+    - name: Enable extensions per database
+      postgresql_ext:
+        name: "{{ item.1 }}"
+        db: "{{ item.0.name }}"
+        state: present
+      loop: "{{ postgres_databases | subelements('extensions') }}"
+      become_user: postgres
+      when: item.0.extensions | length > 0
+
+    # 12. HEALTH CHECK
+    - name: Health check — pg_isready
+      command: pg_isready -h localhost -p {{ postgres_port }}
+      changed_when: false
+      register: pg_ready
+
+    - name: Display health check result
+      debug:
+        msg: "{{ pg_ready.stdout }}"
+
+    - name: Display completion information
+      debug:
+        msg: |
+          ============================================================
+          PostgreSQL {{ postgres_version }} Provisioning Complete!
+          ============================================================
+          Host: {{ ansible_host }}:{{ postgres_port }}
+          Databases: mnemosyne, argus_logs, n8n
+          Extensions: pgvector, timescaledb, pg_cron
+          ============================================================
+
+  handlers:
+    - name: restart postgresql
+      systemd:
+        name: postgresql
+        state: restarted
