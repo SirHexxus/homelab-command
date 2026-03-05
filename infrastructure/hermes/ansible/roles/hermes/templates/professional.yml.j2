@@ -1,0 +1,41 @@
+# Hermes — professional context — managed by Ansible
+
+display_name: "Hexxus Web Solutions"
+tone: professional
+
+allowed_paths:
+  - ~/projects
+  - ~/code
+  - /mnt/nas/professional
+
+allowed_commands:
+  - ls
+  - find
+  - cat
+  - cp
+  - mv
+  - mkdir
+  - rm
+  - ansible-playbook
+  - rsync
+  - git
+  - npm
+  - python3
+
+style_guides: []
+
+telegram_token: "{{ telegram_token_professional }}"
+
+model:
+  ollama_model: llama3.2
+  ollama_threshold: 2.0
+  gemini_threshold: 6.0
+
+email:
+  imap_host: mail.purelymail.com
+  imap_port: 993
+  smtp_host: mail.purelymail.com
+  smtp_port: 587
+  username: "{{ purelymail_professional_username | default('') }}"
+  password: "{{ purelymail_professional_password }}"
+  from_address: "{{ purelymail_professional_from | default('') }}"

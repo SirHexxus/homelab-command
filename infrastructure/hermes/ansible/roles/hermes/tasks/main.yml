@@ -1,0 +1,160 @@
+# roles/hermes/tasks/main.yml - Hermes Installation Tasks
+
+# =============================================================================
+# 1. SYSTEM USER & DIRECTORIES
+# =============================================================================
+
+- name: Create hermes system user
+  user:
+    name: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    system: yes
+    home: "{{ hermes_install_dir }}"
+    shell: /usr/sbin/nologin
+    state: present
+
+- name: Create hermes directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: '0755'
+  loop:
+    - "{{ hermes_install_dir }}"
+    - "{{ hermes_log_dir }}"
+
+# =============================================================================
+# 2. PYTHON 3.12
+# =============================================================================
+
+- name: Add deadsnakes PPA for Python 3.12
+  apt_repository:
+    repo: ppa:deadsnakes/ppa
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install Python 3.12
+  apt:
+    name:
+      - python3.12
+      - python3.12-venv
+      - python3.12-dev
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+# =============================================================================
+# 3. CLONE REPOSITORY
+# =============================================================================
+
+- name: Clone homelab-command repository
+  git:
+    repo: "{{ hermes_repo }}"
+    dest: "{{ hermes_install_dir }}"
+    version: main
+    force: no
+  become: yes
+  become_user: "{{ hermes_user }}"
+
+# =============================================================================
+# 4. PYTHON VIRTUAL ENVIRONMENT
+# =============================================================================
+
+- name: Check if venv exists with correct Python version
+  stat:
+    path: "{{ hermes_venv_dir }}/bin/python3.12"
+  register: venv_python312
+
+- name: Remove old venv if created with wrong Python version
+  file:
+    path: "{{ hermes_venv_dir }}"
+    state: absent
+  when: not venv_python312.stat.exists
+
+- name: Create Python 3.12 virtual environment
+  command: python3.12 -m venv {{ hermes_venv_dir }}
+  args:
+    creates: "{{ hermes_venv_dir }}/bin/activate"
+  become: yes
+  become_user: "{{ hermes_user }}"
+
+- name: Upgrade pip in virtual environment
+  pip:
+    name:
+      - pip
+      - setuptools
+      - wheel
+    state: latest
+    virtualenv: "{{ hermes_venv_dir }}"
+  become: yes
+  become_user: "{{ hermes_user }}"
+
+- name: Install Hermes dependencies
+  pip:
+    requirements: "{{ hermes_app_dir }}/requirements.txt"
+    virtualenv: "{{ hermes_venv_dir }}"
+  become: yes
+  become_user: "{{ hermes_user }}"
+
+# =============================================================================
+# 5. CONFIGURATION
+# =============================================================================
+
+- name: Ensure config/contexts directory exists
+  file:
+    path: "{{ hermes_config_dir }}/contexts"
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: '0750'
+
+- name: Template global config
+  template:
+    src: config.yml.j2
+    dest: "{{ hermes_config_dir }}/config.yml"
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: '0640'
+  notify: restart hermes service
+
+- name: Template personal context
+  template:
+    src: personal.yml.j2
+    dest: "{{ hermes_config_dir }}/contexts/personal.yml"
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: '0640'
+  notify: restart hermes service
+
+- name: Template professional context
+  template:
+    src: professional.yml.j2
+    dest: "{{ hermes_config_dir }}/contexts/professional.yml"
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: '0640'
+  notify: restart hermes service
+
+# =============================================================================
+# 6. SYSTEMD SERVICE
+# =============================================================================
+
+- name: Install hermes systemd service
+  template:
+    src: hermes.service.j2
+    dest: /etc/systemd/system/hermes.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart hermes service
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+
+- name: Enable and start hermes service
+  systemd:
+    name: hermes
+    enabled: yes
+    state: started

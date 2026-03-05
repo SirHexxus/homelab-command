@@ -1,0 +1,51 @@
+# Hermes — professional context (Hexxus Web Solutions)
+# Copy to config/contexts/professional.yml and fill in your values.
+
+display_name: "Hexxus Web Solutions"
+tone: professional
+
+# Filesystem paths Hermes is allowed to read/write
+allowed_paths:
+  - ~/projects
+  - ~/code
+  - /mnt/nas/professional
+
+# Shell commands Hermes is allowed to execute
+allowed_commands:
+  - ls
+  - find
+  - cat
+  - cp
+  - mv
+  - mkdir
+  - rm
+  - ansible-playbook
+  - rsync
+  - git
+  - npm
+  - python3
+
+# Style and brand guide files injected into every system prompt.
+# Paths are resolved relative to the Hermes project root, or absolute.
+style_guides: []
+# Example:
+# style_guides:
+#   - ~/notes/brand/hexxus-web-solutions-brand-guide.md
+#   - ~/notes/brand/client-communication-tone.md
+
+# LLM routing preferences (optional — falls back to global config)
+model:
+  ollama_model: llama3.2
+  ollama_threshold: 2.0    # escalate sooner for professional tasks
+  gemini_threshold: 6.0
+  # force_tier: 1
+
+# PurelyMail email account (fill in once credentials are available)
+# email:
+#   imap_host: mail.purelymail.com
+#   imap_port: 993
+#   smtp_host: mail.purelymail.com
+#   smtp_port: 587
+#   username: work@hexxusweb.com
+#   password: "your-password"
+#   from_address: "Hexxus Web Solutions <work@hexxusweb.com>"

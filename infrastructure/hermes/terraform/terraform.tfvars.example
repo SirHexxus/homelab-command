@@ -1,0 +1,64 @@
+# terraform.tfvars.example - Example Configuration
+#
+# Copy this file to terraform.tfvars and fill in your values:
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# IMPORTANT: terraform.tfvars contains secrets and should NOT be committed to git.
+
+# =============================================================================
+# PROXMOX CONNECTION (Required)
+# =============================================================================
+
+# Your Proxmox API URL (usually https://your-proxmox-ip:8006/api2/json)
+proxmox_endpoint = "https://10.0.10.2:8006/"
+
+# API token ID (format: username@pam!tokenname)
+# Create this in Proxmox UI: Datacenter -> Permissions -> API Tokens
+proxmox_api_token_id = "root@pam!terraform"
+
+# API token secret (the long string shown when you created the token)
+proxmox_api_token = "your-api-token-secret-here"
+
+# Set to true if using self-signed certificates (common in home labs)
+proxmox_tls_insecure = true
+
+# Name of your Proxmox node (usually "pve" or your custom name)
+proxmox_node = "pve"
+
+# =============================================================================
+# CONTAINER SETTINGS (Optional - defaults shown)
+# =============================================================================
+
+container_name     = "hermes"
+container_hostname = "hermes"
+container_vmid     = 110
+
+# Resource allocation (lightweight service — 2 vCPU, 4GB RAM)
+container_cpu_cores = 2
+container_memory_mb = 4096
+container_disk_gb   = 20
+
+# Storage pool for the container
+container_storage = "local-lvm"
+
+# LXC template - verify this exists on your Proxmox server:
+#   ssh root@proxmox "pveam list local"
+lxc_template = "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
+
+# =============================================================================
+# NETWORK SETTINGS (Lab Services VLAN 50)
+# =============================================================================
+
+network_bridge    = "vmbr1"
+container_ip      = "10.0.50.17/24"
+container_gateway = "10.0.50.1"
+vlan_tag          = 50
+
+# =============================================================================
+# SECURITY SETTINGS
+# =============================================================================
+
+ssh_public_key_file    = "~/.ssh/id_rsa.pub"
+enable_privileged_mode = false
+
+tags = ["hermes", "ai", "agent"]

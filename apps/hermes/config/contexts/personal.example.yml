@@ -1,0 +1,50 @@
+# Hermes — personal context (SirHexxus)
+# Copy to config/contexts/personal.yml and fill in your values.
+
+display_name: "SirHexxus"
+tone: casual
+
+# Filesystem paths Hermes is allowed to read/write
+allowed_paths:
+  - ~/personal
+  - ~/notes
+  - /mnt/nas/personal
+
+# Shell commands Hermes is allowed to execute
+allowed_commands:
+  - ls
+  - find
+  - cat
+  - cp
+  - mv
+  - mkdir
+  - rm
+  - ansible-playbook
+  - rsync
+  - git
+
+# Style and brand guide files injected into every system prompt.
+# Paths are resolved relative to the Hermes project root, or absolute.
+# Add files here to make Hermes aware of your tone, formatting, and brand rules.
+style_guides: []
+# Example:
+# style_guides:
+#   - ~/notes/brand/sirhexxus-style-guide.md
+#   - ~/notes/brand/writing-tone.md
+
+# LLM routing preferences (optional — falls back to global config)
+model:
+  ollama_model: llama3.2
+  ollama_threshold: 3.0
+  gemini_threshold: 7.0
+  # force_tier: 1    # uncomment to always use Ollama regardless of complexity
+
+# PurelyMail email account (fill in once credentials are available)
+# email:
+#   imap_host: mail.purelymail.com
+#   imap_port: 993
+#   smtp_host: mail.purelymail.com
+#   smtp_port: 587
+#   username: you@example.com
+#   password: "your-password"
+#   from_address: "Your Name <you@example.com>"

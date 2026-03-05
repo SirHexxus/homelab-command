@@ -1,0 +1,174 @@
+# ansible/provision.yml - Hermes AI Agent Provisioning Playbook
+#
+# Installs and configures Hermes on a fresh LXC container.
+# Run after Terraform creates the container:
+#
+#   ansible-playbook -i inventory.ini provision.yml --ask-vault-pass
+
+---
+- name: Provision Hermes AI Agent Container
+  hosts: hermes_containers
+
+  vars:
+    apt_cache_valid_time: 3600
+    debian_packages:
+      - curl
+      - wget
+      - git
+      - build-essential
+      - python3-pip
+      - python3-venv
+      - python3-dev
+      - software-properties-common
+      - jq
+
+  pre_tasks:
+    - name: Verify Ansible version
+      assert:
+        that:
+          - ansible_version.major >= 2
+          - ansible_version.minor >= 10
+        fail_msg: "Ansible 2.10+ is required"
+      run_once: yes
+
+    - name: Display deployment information
+      debug:
+        msg: |
+          ============================================================
+          Starting Hermes Container Provisioning
+          ============================================================
+          Target Host: {{ inventory_hostname }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Python: {{ ansible_python_version }}
+          CPU Cores: {{ ansible_processor_vcpus }}
+          RAM: {{ (ansible_memtotal_mb / 1024) | round(2) }} GB
+
+          Hermes Configuration:
+            - Port: {{ hermes_port }}
+            - App dir: {{ hermes_app_dir }}
+            - Repo: {{ hermes_repo }}
+
+          ============================================================
+
+    # --- Network: Freeze DHCP IP as Static ---
+    # Proxmox overwrites in-container network config on boot, so the static IP
+    # must be set at the Proxmox level via `pct set` rather than inside the container.
+    - name: Check if Proxmox container is using DHCP
+      command: pct config {{ container_vmid }}
+      register: pct_config
+      delegate_to: "{{ proxmox_host }}"
+      vars:
+        ansible_user: root
+      changed_when: false
+
+    - name: Display current network information
+      debug:
+        msg: |
+          Network Configuration:
+          - Current IP: {{ ansible_default_ipv4.address }}/{{ ansible_default_ipv4.prefix }}
+          - Gateway: {{ ansible_default_ipv4.gateway }}
+          - MAC: {{ ansible_default_ipv4.macaddress }}
+          - VMID: {{ container_vmid }}
+          - Method: {{ 'DHCP' if 'ip=dhcp' in pct_config.stdout else 'Static' }}
+
+    - name: Freeze DHCP-assigned IP in Proxmox container config
+      command: >
+        pct set {{ container_vmid }} -net0
+        name=eth0,bridge=vmbr1,hwaddr={{ ansible_default_ipv4.macaddress }},ip={{ ansible_default_ipv4.address }}/{{ ansible_default_ipv4.prefix }},gw={{ ansible_default_ipv4.gateway }}
+      delegate_to: "{{ proxmox_host }}"
+      vars:
+        ansible_user: root
+      when: "'ip=dhcp' in pct_config.stdout"
+
+  tasks:
+    # =========================================================================
+    # 1. SYSTEM UPDATES & DEPENDENCIES
+    # =========================================================================
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: "{{ apt_cache_valid_time }}"
+      when: ansible_os_family == "Debian"
+
+    - name: Upgrade all packages to latest versions
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Install required system packages
+      apt:
+        name: "{{ debian_packages }}"
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Verify internet connectivity
+      uri:
+        url: "https://pypi.org"
+        method: HEAD
+        status_code: [200, 301, 302]
+        timeout: 30
+      changed_when: false
+
+    # =========================================================================
+    # 2. DOTFILES
+    # =========================================================================
+    - name: Install dotfiles for root
+      import_role:
+        name: dotfiles
+
+    # =========================================================================
+    # 3. HERMES APPLICATION
+    # =========================================================================
+    - name: Install Hermes
+      include_role:
+        name: hermes
+
+    # =========================================================================
+    # 4. HEALTH CHECK
+    # =========================================================================
+    - name: Wait for Hermes service to be ready
+      uri:
+        url: "http://localhost:{{ hermes_port }}/health"
+        status_code: [200]
+        timeout: 10
+      register: hermes_health
+      until: hermes_health.status is defined and hermes_health.status == 200
+      retries: 30
+      delay: 5
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Check service status if health check failed
+      command: systemctl status hermes
+      register: service_status
+      when: hermes_health.failed | default(false)
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Display service status on failure
+      debug:
+        msg: "{{ service_status.stdout_lines | default(['Service status unavailable']) }}"
+      when: hermes_health.failed | default(false)
+
+    - name: Display connection information
+      debug:
+        msg: |
+          ============================================================
+          Hermes Provisioning Complete!
+          ============================================================
+
+          Connection Information:
+          - Host: {{ inventory_hostname }}
+          - Port: {{ hermes_port }}
+          - API Endpoint: http://{{ inventory_hostname }}:{{ hermes_port }}
+
+          Endpoints (Phase 4 web UI):
+          - GET  /health   - Health check
+          - POST /task     - Submit a task
+
+          Quick Test:
+          curl http://{{ inventory_hostname }}:{{ hermes_port }}/health
+
+          ============================================================

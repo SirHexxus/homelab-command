@@ -54,15 +54,15 @@ flowchart TD
 
     SkillRegistry --> Filesystem[lib/skills/filesystem.py]
     SkillRegistry --> Shell[lib/skills/shell.py]
-    SkillRegistry --> SecondBrain[lib/skills/second_brain.py]
+    SkillRegistry --> Mneme[lib/skills/mneme.py]
     SkillRegistry --> Web[lib/skills/web.py]
     SkillRegistry --> Email[lib/skills/email.py]
 
-    LLM --> Ollama[(Ollama\n10.0.50.16)]
+    LLM --> Ollama[(Ollama\n10.0.50.10)]
     LLM --> Gemini[(Gemini API)]
     LLM --> Claude[(Claude API)]
 
-    SecondBrain --> Postgres[(Second Brain\nPostgres\n10.0.50.14)]
+    Mneme --> Postgres[(Mnemosyne\nPostgres\n10.0.50.14)]
 ```
 
 ### Core modules
@@ -81,7 +81,7 @@ flowchart TD
 |--------|-------|-------------|
 | `lib/skills/filesystem.py` | 1 | Scoped file read/write/list (path allowlist enforced) |
 | `lib/skills/shell.py` | 1 | Whitelisted command execution |
-| `lib/skills/second_brain.py` | 2 | Store and retrieve from Postgres + pgvector |
+| `lib/skills/mneme.py` | 2 | Store and retrieve from Mnemosyne Postgres + pgvector |
 | `lib/skills/web.py` | 2 | `fetch_url`, web search |
 | `lib/skills/email.py` | 2 | PurelyMail IMAP/SMTP |
 | `lib/skills/n8n_mcp.py` | 5 | n8n MCP client |
