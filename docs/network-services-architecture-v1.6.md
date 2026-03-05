@@ -164,7 +164,7 @@
 | Qdrant | 10.0.50.11 | LXC 103 | RETIRING — replaced by Postgres pgvector |
 | Whisper | 10.0.50.12 | LXC 102 | IaC-deployed. Speech-to-text. |
 | n8n | 10.0.50.13 | LXC (planned) | Previously on TrueNAS; needs IaC redeploy |
-| Postgres | 10.0.50.14 | LXC (planned) | second_brain + argus_logs; pgvector + TimescaleDB |
+| Postgres | 10.0.50.14 | LXC (planned) | mnemosyne + argus_logs; pgvector + TimescaleDB |
 | Redis | 10.0.50.15 | LXC (planned) | Ephemeral/session cache |
 | MinIO | 10.0.50.16 | LXC (planned) | S3-compatible object storage |
 | Hermes | 10.0.50.17 | LXC (planned) | AI agent; Mnemosyne Postgres client + homelab automation |
@@ -294,7 +294,7 @@ Floating: Block | !10.0.30.0/24 -> 10.0.30.0/24  | Block internal -> Work
 | Service | Target IP | Priority | Purpose |
 |---------|-----------|----------|---------|
 | n8n | 10.0.50.13 | HIGH | Workflow automation; IaC redeploy |
-| Postgres | 10.0.50.14 | HIGH | second_brain DB + argus_logs; pgvector + TimescaleDB |
+| Postgres | 10.0.50.14 | HIGH | mnemosyne DB + argus_logs; pgvector + TimescaleDB |
 | Redis | 10.0.50.15 | HIGH | Session cache, dedup |
 | MinIO | 10.0.50.16 | MEDIUM | S3 object storage |
 | Hermes | 10.0.50.17 | MEDIUM | AI agent; Mnemosyne Postgres client + homelab automation |

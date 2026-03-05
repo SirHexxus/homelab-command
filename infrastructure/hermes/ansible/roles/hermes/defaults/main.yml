@@ -1,0 +1,14 @@
+# roles/hermes/defaults/main.yml - Default Role Variables
+#
+# These are overridden by group_vars/hermes_containers.yml in normal deployments.
+
+hermes_port:        8765
+hermes_user:        hermes
+hermes_group:       hermes
+hermes_install_dir: /opt/hermes
+hermes_app_dir:     /opt/hermes/apps/hermes
+hermes_venv_dir:    /opt/hermes/apps/hermes/.venv
+hermes_config_dir:  /opt/hermes/apps/hermes/config
+hermes_log_dir:     /opt/hermes/apps/hermes/logs
+hermes_repo:        "https://github.com/SirHexxus/homelab-command.git"
+max_open_files:     65535

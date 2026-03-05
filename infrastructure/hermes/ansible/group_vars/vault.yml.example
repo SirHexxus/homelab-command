@@ -1,0 +1,19 @@
+# vault.yml.example - Secret Variables Template
+#
+# Copy this file to vault.yml and encrypt it with Ansible Vault:
+#   cp vault.yml.example vault.yml
+#   ansible-vault encrypt vault.yml
+#
+# To edit after encryption:
+#   ansible-vault edit vault.yml
+#
+# To run playbooks with vault:
+#   ansible-playbook provision.yml --ask-vault-pass
+#   ansible-playbook provision.yml --vault-password-file ~/.vault-password
+
+gemini_api_key:                  ""
+telegram_token_personal:         ""
+telegram_token_professional:     ""
+purelymail_personal_password:    ""
+purelymail_professional_password: ""
+second_brain_db_password:        ""

@@ -1,0 +1,39 @@
+# Hermes — personal context — managed by Ansible
+
+display_name: "SirHexxus"
+tone: casual
+
+allowed_paths:
+  - ~/personal
+  - ~/notes
+  - /mnt/nas/personal
+
+allowed_commands:
+  - ls
+  - find
+  - cat
+  - cp
+  - mv
+  - mkdir
+  - rm
+  - ansible-playbook
+  - rsync
+  - git
+
+style_guides: []
+
+telegram_token: "{{ telegram_token_personal }}"
+
+model:
+  ollama_model: llama3.2
+  ollama_threshold: 3.0
+  gemini_threshold: 7.0
+
+email:
+  imap_host: mail.purelymail.com
+  imap_port: 993
+  smtp_host: mail.purelymail.com
+  smtp_port: 587
+  username: "{{ purelymail_personal_username | default('') }}"
+  password: "{{ purelymail_personal_password }}"
+  from_address: "{{ purelymail_personal_from | default('') }}"

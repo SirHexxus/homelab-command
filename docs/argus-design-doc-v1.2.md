@@ -48,7 +48,7 @@ POSTGRES:argus_logs            GRAFANA
     _____|_____________________________
     |                                 |
     v                                 v
-POSTGRES:second_brain          NOTIFICATIONS
+POSTGRES:mnemosyne             NOTIFICATIONS
 (Incidents as resources)       Telegram (Argus Agent — interactive)
                                ntfy :argus topic (push alerts)
 ```
@@ -113,7 +113,7 @@ Wazuh Agents --> Wazuh Manager --> Wazuh API --> n8n + Splunk
 
 ### 5.1 Postgres: argus_logs database
 
-Time-series log storage using TimescaleDB hypertables. Lives in the same Postgres instance as `second_brain` (10.0.50.14) for unified backup and cross-database JOIN capability.
+Time-series log storage using TimescaleDB hypertables. Lives in the same Postgres instance as `mnemosyne` (10.0.50.14) for unified backup and cross-database JOIN capability.
 
 **Extensions required:** TimescaleDB, pg_trgm
 
@@ -188,7 +188,7 @@ CREATE TABLE network_flows (
 );
 SELECT create_hypertable('network_flows', 'time');
 
--- Security incidents (AI-derived; links to second_brain)
+-- Security incidents (AI-derived; links to mnemosyne)
 CREATE TABLE security_incidents (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     time            TIMESTAMPTZ NOT NULL,
@@ -200,7 +200,7 @@ CREATE TABLE security_incidents (
     iocs            JSONB,              -- extracted indicators of compromise
     mitre_tactics   TEXT[],             -- mapped ATT&CK tactics
     mitre_techniques TEXT[],            -- mapped ATT&CK techniques
-    second_brain_id UUID,               -- link to second_brain.resources
+    second_brain_id UUID,               -- link to mnemosyne.resources
     status          VARCHAR(20) DEFAULT 'open',  -- open, investigating, resolved, false_positive
     resolved_at     TIMESTAMPTZ,
     metadata        JSONB
@@ -264,7 +264,7 @@ These are not redundant — they serve different purposes:
 
 ### 6.1 Overview
 
-The AI pipeline runs on a 5-minute polling cycle. It reads unanalyzed high-severity events from TimescaleDB, routes them through the model stack, generates structured incident assessments, and writes results back to both TimescaleDB (`security_incidents`) and `second_brain.resources`.
+The AI pipeline runs on a 5-minute polling cycle. It reads unanalyzed high-severity events from TimescaleDB, routes them through the model stack, generates structured incident assessments, and writes results back to both TimescaleDB (`security_incidents`) and `mnemosyne.resources`.
 
 This is the core differentiator of Argus over a standard SIEM deployment.
 
@@ -324,7 +324,7 @@ Mistral 7B: severity triage
         Write to TimescaleDB: security_incidents
             |
             v
-        Write to Postgres:second_brain resources table:
+        Write to Postgres:mnemosyne resources table:
             Title: "[Severity] Incident: {short description}"
             Bucket: REFERENCE (facts about an event)
             Tags: security, argus, {tactic}, {technique}
@@ -353,7 +353,7 @@ Extract: technique ID, name, description, tactic, examples
 Generate embeddings (nomic-embed-text) for each technique description
     |
     v
-Store in Postgres:second_brain as REFERENCE bucket entries
+Store in Postgres:mnemosyne as REFERENCE bucket entries
     Tags: mitre, att&ck, {tactic}
     metadata: {technique_id, tactic, examples}
     |
@@ -464,7 +464,7 @@ Ansible playbook: quarantine.yml
     - Log action to security_incidents table
     |
     v
-Write incident to Postgres:second_brain
+Write incident to Postgres:mnemosyne
     Title: "Device Quarantined: {ip}"
     Bucket: REFERENCE
     Tags: security, quarantine, argus
@@ -562,7 +562,7 @@ Follows Phase 3 (SIEM Stack) and Phase 5 (Argus AI + DMZ) of the Project Roadmap
 10. Build initial Splunk dashboards (traffic by VLAN, top talkers, firewall blocks)
 
 **Phase 5 — AI + Automation:**
-11. Embed MITRE ATT&CK framework into second_brain pgvector
+11. Embed MITRE ATT\&CK framework into mnemosyne pgvector
 12. Build 5-minute AI analysis n8n workflow
 13. Build Argus Agent Telegram bot + command handlers
 14. Build Quarantine Ansible playbook

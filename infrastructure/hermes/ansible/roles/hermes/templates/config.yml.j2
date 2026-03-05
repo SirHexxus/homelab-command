@@ -1,0 +1,19 @@
+# Hermes global configuration — managed by Ansible
+# Do not edit directly; update group_vars or vault.yml and re-run provision.yml.
+
+default_context: personal
+
+ollama_base_url: "http://10.0.50.16:11434"
+
+gemini_api_key: "{{ gemini_api_key }}"
+
+mnemosyne:
+  postgres_host: 10.0.50.14
+  postgres_port: 5432
+  postgres_db: mnemosyne
+  postgres_user: hermes
+  postgres_password: "{{ mnemosyne_db_password }}"
+
+routing:
+  ollama_max_complexity: 3.0
+  gemini_max_complexity: 7.0

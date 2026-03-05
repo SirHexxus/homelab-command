@@ -1,0 +1,28 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Config (never commit real credentials)
+config/config.yml
+config/contexts/personal.yml
+config/contexts/professional.yml
+
+# Logs (append-only at runtime; can be large)
+logs/
+
+# Ansible Vault password files
+*.vault-password
+.vault-password
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

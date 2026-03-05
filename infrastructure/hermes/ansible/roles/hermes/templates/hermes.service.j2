@@ -1,0 +1,26 @@
+[Unit]
+Description=Hermes AI Agent
+After=network.target
+
+[Service]
+Type=simple
+User={{ hermes_user }}
+Group={{ hermes_group }}
+WorkingDirectory={{ hermes_app_dir }}
+ExecStart={{ hermes_venv_dir }}/bin/python -m uvicorn lib.interfaces.web_app:app \
+    --host 0.0.0.0 --port {{ hermes_port }}
+Restart=on-failure
+RestartSec=3
+
+# Resource limits
+LimitNOFILE={{ max_open_files }}
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ hermes_log_dir }} {{ hermes_config_dir }}
+
+[Install]
+WantedBy=multi-user.target

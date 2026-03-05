@@ -1,0 +1,28 @@
+# Hermes global configuration
+# Copy this file to config/config.yml and fill in your values.
+
+# The context used when --context is not specified on the CLI
+default_context: personal
+
+# Ollama server URL (default: local)
+ollama_base_url: "http://localhost:11434"
+
+# Phase 2: Gemini API key (leave blank until Phase 2)
+# gemini_api_key: ""
+
+# Mnemosyne — Postgres connection
+# Uncomment and fill in when Mnemosyne DB is running
+# NOTE: Hermes IP is 10.0.50.17 (not 10.0.50.13 — that's n8n; see Mnemosyne design doc)
+# mnemosyne:
+#   postgres_host: 10.0.50.14
+#   postgres_port: 5432
+#   postgres_db: mnemosyne
+#   postgres_user: hermes
+#   postgres_password: ""    # use Ansible Vault in production
+
+# Complexity scoring thresholds (0–10 scale)
+# Used by LLMRouter when deciding which tier to use.
+# Can be overridden per-context in contexts/<name>.yml
+routing:
+  ollama_max_complexity: 3.0    # tasks above this score go to Gemini
+  gemini_max_complexity: 7.0    # tasks above this score go to Claude

@@ -1,0 +1,7 @@
+# roles/hermes/handlers/main.yml - Service Restart Handlers
+
+- name: restart hermes service
+  systemd:
+    name: hermes
+    state: restarted
+  listen: "restart hermes service"

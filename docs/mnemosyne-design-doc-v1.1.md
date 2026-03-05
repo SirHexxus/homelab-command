@@ -32,7 +32,7 @@ INGESTION LAYER
     |           |              |           |
     v           v              v           v
 POSTGRES    POSTGRES        MINIO       NOTION
-second_brain argus_logs     Objects     UI Layer
+mnemosyne   argus_logs     Objects     UI Layer
 (pgvector)  (TimescaleDB)
          |
          v
@@ -66,7 +66,7 @@ Buckets fall into two structural categories that drive different ingestion and s
 
 ## 4. Data Storage Architecture
 
-### 4.1 Postgres: second_brain database
+### 4.1 Postgres: mnemosyne database
 
 Primary knowledge store. All structured data, vector embeddings, and entity records live here.
 
@@ -593,7 +593,7 @@ Consolidation runs before the Weekly Summary so any merges are reflected in that
 | Service | IP | Notes |
 |---------|----|-------|
 | n8n | 10.0.50.13 | Workflow engine; IaC redeploy required first |
-| Postgres | 10.0.50.14 | second_brain + argus_logs; pgvector + TimescaleDB |
+| Postgres | 10.0.50.14 | mnemosyne + argus_logs; pgvector + TimescaleDB |
 | Redis | 10.0.50.15 | Session, cache, and model routing counters |
 | MinIO | 10.0.50.16 | Object storage |
 | Hermes | 10.0.50.17 | AI agent; connects to Mnemosyne Postgres for long-term memory |

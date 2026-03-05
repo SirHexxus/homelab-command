@@ -1,0 +1,28 @@
+# group_vars/hermes_containers.yml - Hermes Container Variables (non-secret)
+#
+# These variables apply to all hosts in the hermes_containers group.
+# Secret values belong in vault.yml (Ansible Vault encrypted).
+
+# Proxmox configuration (for IP freeze via pct set)
+proxmox_host:   10.0.10.2
+container_vmid: 110
+
+# Service port
+hermes_port: 8765
+
+# Service user
+hermes_user:  hermes
+hermes_group: hermes
+
+# Repository
+hermes_repo: "https://github.com/SirHexxus/homelab-command.git"
+
+# Installation paths
+hermes_install_dir: /opt/hermes
+hermes_app_dir:     /opt/hermes/apps/hermes
+hermes_venv_dir:    /opt/hermes/apps/hermes/.venv
+hermes_config_dir:  /opt/hermes/apps/hermes/config
+hermes_log_dir:     /opt/hermes/apps/hermes/logs
+
+# Resource settings
+max_open_files: 65535
