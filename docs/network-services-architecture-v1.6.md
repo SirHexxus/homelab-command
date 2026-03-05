@@ -1,6 +1,6 @@
 # Homelab Command: Network & Services Architecture
-**Version:** 1.6
-**Last Updated:** 2026-02-24
+**Version:** 1.7
+**Last Updated:** 2026-03-05
 **Status:** Living Document — Update as architecture evolves
 
 ---
@@ -59,13 +59,16 @@
        |-- VLAN 50 (Lab Services)
        |      |-- Ollama (10.0.50.10) -- LXC 101
        |      |-- Whisper (10.0.50.12) -- LXC 102
-       |      |-- Qdrant (10.0.50.11) -- LXC 103 [RETIRING -> pgvector]
-       |      |-- n8n (10.0.50.13) -- LXC [NOT YET DEPLOYED]
+       |      |-- Qdrant (10.0.50.11) -- RETIRED
+       |      |-- n8n (10.0.50.13) -- LXC 107
+       |      |-- Postgres (10.0.50.14) -- LXC 105
+       |      |-- Redis (10.0.50.15) -- LXC 106
+       |      |-- MinIO (10.0.50.16) -- LXC 108
        |      |-- Docker VM (10.0.50.30) -- VM [NOT YET DEPLOYED]
        |      |    |-- Portainer Agent (container)
        |      |    |-- Immich (container stack)
        |      |    |-- [future: Nextcloud, Vaultwarden]
-       |      |-- [Planned: Postgres, Redis, MinIO, SIEM stack]
+       |      |-- [Planned: SIEM stack]
        |
        |-- VLAN 80 (Media) [PLANNED]
        |      |-- Jellyfin (10.0.80.X)
@@ -161,12 +164,12 @@
 |---------|----|------|-------|
 | pfSense | 10.0.50.1 | Gateway | |
 | Ollama | 10.0.50.10 | LXC 101 | IaC-deployed. AI inference. |
-| Qdrant | 10.0.50.11 | LXC 103 | RETIRING — replaced by Postgres pgvector |
-| Whisper | 10.0.50.12 | LXC 102 | IaC-deployed. Speech-to-text. |
-| n8n | 10.0.50.13 | LXC (planned) | Previously on TrueNAS; needs IaC redeploy |
-| Postgres | 10.0.50.14 | LXC (planned) | mnemosyne + argus_logs; pgvector + TimescaleDB |
-| Redis | 10.0.50.15 | LXC (planned) | Ephemeral/session cache |
-| MinIO | 10.0.50.16 | LXC (planned) | S3-compatible object storage |
+| Qdrant | 10.0.50.11 | — | RETIRED — replaced by Postgres pgvector |
+| Whisper | 10.0.50.12 | LXC 102 | IaC-deployed. Speech-to-text. OpenAI-compatible API on :9000 (`/v1/audio/transcriptions`). |
+| n8n | 10.0.50.13 | LXC 107 | IaC-deployed. Workflow automation; wired to Postgres. |
+| Postgres | 10.0.50.14 | LXC 105 | IaC-deployed. mnemosyne + argus_logs + n8n; pgvector + TimescaleDB + pg_cron. |
+| Redis | 10.0.50.15 | LXC 106 | IaC-deployed. Session/ephemeral cache. |
+| MinIO | 10.0.50.16 | LXC 108 | IaC-deployed. S3-compatible object storage. |
 | Hermes | 10.0.50.17 | LXC (planned) | AI agent; Mnemosyne Postgres client + homelab automation |
 | Splunk Free | 10.0.50.20 | LXC (planned) | SIEM log aggregation |
 | Wazuh Manager | 10.0.50.21 | LXC (planned) | Host-based IDS |
@@ -284,8 +287,12 @@ Floating: Block | !10.0.30.0/24 -> 10.0.30.0/24  | Block internal -> Work
 | pfSense CE | T150 VM 200 | 10.0.10.1 | Firewall/router/DHCP/DNS | Operational |
 | Proxmox 9.1.2 | T150 | 10.0.10.2 | Hypervisor | Operational |
 | Ollama | T150 LXC 101 | 10.0.50.10 | Local LLM inference | Operational |
-| Qdrant | T150 LXC 103 | 10.0.50.11 | Vector DB (retiring) | Operational -> Retiring |
-| Whisper | T150 LXC 102 | 10.0.50.12 | Speech-to-text | Operational |
+| Qdrant | — | 10.0.50.11 | Vector DB | Retired — replaced by pgvector on Postgres LXC 105 |
+| Whisper | T150 LXC 102 | 10.0.50.12 | Speech-to-text (OpenAI-compatible API :9000) | Operational |
+| n8n | T150 LXC 107 | 10.0.50.13 | Workflow automation | Operational |
+| Postgres | T150 LXC 105 | 10.0.50.14 | mnemosyne + argus_logs + n8n; pgvector + TimescaleDB + pg_cron | Operational |
+| Redis | T150 LXC 106 | 10.0.50.15 | Session/ephemeral cache | Operational |
+| MinIO | T150 LXC 108 | 10.0.50.16 | S3-compatible object storage | Operational |
 | Iris (helm-log, Helm HPS20) | Bare metal | 10.0.10.25 | Notification broker (ntfy); Phase 3: central log collector | Baseline operational; ntfy IaC-deployed (pending run) |
 | TrueNAS Scale | R710 | -- | NAS / ZFS storage | Disconnected |
 
@@ -293,10 +300,6 @@ Floating: Block | !10.0.30.0/24 -> 10.0.30.0/24  | Block internal -> Work
 
 | Service | Target IP | Priority | Purpose |
 |---------|-----------|----------|---------|
-| n8n | 10.0.50.13 | HIGH | Workflow automation; IaC redeploy |
-| Postgres | 10.0.50.14 | HIGH | mnemosyne DB + argus_logs; pgvector + TimescaleDB |
-| Redis | 10.0.50.15 | HIGH | Session cache, dedup |
-| MinIO | 10.0.50.16 | MEDIUM | S3 object storage |
 | Hermes | 10.0.50.17 | MEDIUM | AI agent; Mnemosyne Postgres client + homelab automation |
 | Splunk Free | 10.0.50.20 | HIGH | SIEM log aggregation |
 | Wazuh Manager | 10.0.50.21 | HIGH | Host-based IDS |
@@ -356,10 +359,10 @@ See: **Mnemosyne Design Doc**, **Argus Design Doc**, and **Ariadne Design Doc** 
 
 | Priority | Task | Dependency |
 |----------|------|------------|
-| HIGH | Deploy n8n via IaC on VLAN 50 | None -- do first |
-| HIGH | Deploy Postgres + pgvector + TimescaleDB | n8n redeploy |
-| HIGH | Deploy Redis | n8n redeploy |
-| HIGH | Reconnect R710 (TrueNAS) | None |
+| ✅ DONE | Deploy n8n via IaC on VLAN 50 (LXC 107) | — |
+| ✅ DONE | Deploy Postgres + pgvector + TimescaleDB (LXC 105) | — |
+| ✅ DONE | Deploy Redis (LXC 106) | — |
+| ✅ DONE | Deploy MinIO (LXC 108) | — |
 | ✅ DONE | Create VLAN 40 (IoT) in pfSense + switch | None |
 | HIGH | Create VLANs 60, 66, 70 in pfSense + switch | None |
 | HIGH | Create VLAN 80 (Media) in pfSense + switch | None |
@@ -375,8 +378,8 @@ See: **Mnemosyne Design Doc**, **Argus Design Doc**, and **Ariadne Design Doc** 
 | MEDIUM | Deploy NPM, WireGuard, Squid, Authelia (VLAN 60) | VLAN 66 done |
 | MEDIUM | Deploy Jellyfin + ABS + CalibreWeb + Navidrome (VLAN 80) | TrueNAS reconnected; library cleanup done |
 | MEDIUM | Deploy Jellyseerr + *Arr stack | Jellyfin + TrueNAS ready |
-| MEDIUM | Retire Qdrant LXC 103 once pgvector stable | Postgres deployed |
-| MEDIUM | Deploy MinIO | None |
+| ✅ DONE | Retire Qdrant LXC 103 | pgvector on Postgres confirmed stable |
+| HIGH | Reconnect R710 (TrueNAS) | None |
 | MEDIUM | Deploy Grafana | TimescaleDB running |
 | MEDIUM | Deploy Uptime Kuma on external VPS | VPS provisioned |
 | LOW | Deploy Pi-hole | None |
@@ -395,15 +398,15 @@ See: **Mnemosyne Design Doc**, **Argus Design Doc**, and **Ariadne Design Doc** 
 
 | # | Item | Action |
 |---|------|--------|
-| 1 | n8n not on VLAN 50 | Deploy via IaC at 10.0.50.13; restore all workflows |
+| 1 | ~~n8n not on VLAN 50~~ | ✅ Deployed LXC 107 (10.0.50.13) |
 | 2 | VLAN 20 not yet renamed in pfSense/switch | Rename interface to "Personal" |
 | 4 | VLAN 60 (DMZ) not created | Create when DMZ services ready to deploy |
 | 5 | VLAN 66 (Sandbox) not created | High priority; low effort; do next |
 | 6 | VLAN 70 (Guest) not created | Prerequisite for eero SSID 2 (Guest) |
 | 7 | VLAN 80 (Media) not created | Create before Orpheus deployment |
 | 8 | R710 disconnected | Reconnect; assign static IP; restore TrueNAS; establish NFS exports |
-| 9 | Postgres/Redis/MinIO not deployed | Core Mnemosyne/Argus data layer |
-| 10 | Qdrant marked for retirement | Retire once pgvector tested and stable |
+| 9 | ~~Postgres/Redis/MinIO not deployed~~ | ✅ Deployed — LXC 105/106/108 |
+| 10 | ~~Qdrant marked for retirement~~ | ✅ Retired — LXC 103 destroyed |
 | 11 | SIEM stack not deployed | Splunk + Wazuh + Suricata + Crowdsec; SOC portfolio milestone |
 | 12 | DMZ stack not deployed | NPM + WireGuard + Squid + Authelia + Fail2ban |
 | 13 | Docker VM not deployed | 10.0.50.30; prerequisite for Immich + future Docker services |
@@ -420,4 +423,4 @@ See: **Mnemosyne Design Doc**, **Argus Design Doc**, and **Ariadne Design Doc** 
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Project Roadmap v1.3 · Mnemosyne Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Project Roadmap v1.3 · Mnemosyne Design Doc v1.1 · IaC Runbook v1.3 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*

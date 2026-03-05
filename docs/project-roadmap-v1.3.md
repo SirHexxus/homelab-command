@@ -27,10 +27,10 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 | Document | Version | Status |
 |----------|---------|--------|
 | Hardware Catalog | v1.2 | ✅ Complete |
-| Network & Services Architecture | v1.6 | ✅ Complete |
+| Network & Services Architecture | v1.7 | ✅ Complete |
 | Project Roadmap | v1.3 | ✅ This document |
 | Mnemosyne Design Doc | v1.1 | ✅ Complete |
-| IaC Runbook | v1.2 | ✅ Complete |
+| IaC Runbook | v1.3 | ✅ Complete |
 | Argus Design Doc | v1.2 | ✅ Complete |
 | Orpheus Design Doc | v1.1 | ✅ Complete |
 
@@ -70,13 +70,13 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 - [ ] Run ntfy provisioning playbook on helm-log (IaC ready)
 
 ### Services (IaC — Terraform + Ansible)
-- [ ] Deploy n8n (10.0.50.13)
-- [ ] Deploy Postgres with pgvector + TimescaleDB (10.0.50.14)
-- [ ] Deploy Redis (10.0.50.15)
-- [ ] Deploy MinIO (10.0.50.16)
-- [ ] Verify Ollama + nomic-embed-text + Mistral 7B (10.0.50.10)
-- [ ] Verify Whisper operational (10.0.50.12)
-- [ ] Retire Qdrant (10.0.50.11) once Postgres pgvector confirmed stable
+- [x] Deploy n8n (10.0.50.13) — LXC 107
+- [x] Deploy Postgres with pgvector + TimescaleDB (10.0.50.14) — LXC 105
+- [x] Deploy Redis (10.0.50.15) — LXC 106
+- [x] Deploy MinIO (10.0.50.16) — LXC 108
+- [x] Verify Ollama + nomic-embed-text + Mistral 7B (10.0.50.10)
+- [x] Verify Whisper operational (10.0.50.12)
+- [x] Retire Qdrant (10.0.50.11) once Postgres pgvector confirmed stable
 - [ ] Reconnect R710 TrueNAS to network
 
 ### GitHub
@@ -244,4 +244,4 @@ Houses general-purpose development standards referenced when scripting work aris
 
 ---
 
-*Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Mnemosyne Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.7 · Mnemosyne Design Doc v1.1 · IaC Runbook v1.3 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*
