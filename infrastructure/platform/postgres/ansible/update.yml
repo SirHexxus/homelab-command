@@ -1,0 +1,43 @@
+# update.yml - PostgreSQL Maintenance Playbook
+#
+# Upgrades postgresql-16 package and restarts the service.
+#
+# Usage:
+#   ansible-playbook -i inventory.ini update.yml
+
+---
+- name: Update PostgreSQL Container
+  hosts: postgres_containers
+
+  tasks:
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade system packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    - name: Upgrade postgresql-{{ postgres_version }}
+      apt:
+        name: postgresql-{{ postgres_version }}
+        state: latest
+      notify: restart postgresql
+
+    - name: Health check after update
+      command: pg_isready -h localhost -p {{ postgres_port }}
+      changed_when: false
+      register: pg_ready
+
+    - name: Display health check
+      debug:
+        msg: "{{ pg_ready.stdout }}"
+
+  handlers:
+    - name: restart postgresql
+      systemd:
+        name: postgresql
+        state: restarted

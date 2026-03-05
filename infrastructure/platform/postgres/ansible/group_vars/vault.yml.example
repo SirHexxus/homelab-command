@@ -1,0 +1,10 @@
+# group_vars/vault.yml.example
+#
+# Copy to vault.yml and encrypt with ansible-vault:
+#   ansible-vault encrypt group_vars/vault.yml
+#
+# vault.yml is gitignored — never commit real secrets.
+
+vault_mnemosyne_password: CHANGE_ME
+vault_argus_password: CHANGE_ME
+vault_n8n_db_password: CHANGE_ME

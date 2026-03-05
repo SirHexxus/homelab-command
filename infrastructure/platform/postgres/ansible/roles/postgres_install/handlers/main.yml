@@ -1,0 +1,7 @@
+# roles/postgres_install/handlers/main.yml
+
+---
+- name: restart postgresql
+  systemd:
+    name: postgresql
+    state: restarted
