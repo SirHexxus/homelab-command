@@ -259,7 +259,7 @@ Uptime Kuma runs outside the homelab entirely, pinging each public subdomain fro
 | books.sirhexx.com | HTTPS | TBD |
 | music.sirhexx.com | HTTPS | TBD |
 
-> **Alert delivery:** Telegram bot integration is the natural fit given Second Brain infrastructure already uses Telegram. Confirm at deployment.
+> **Alert delivery:** Telegram bot integration is the natural fit given Mnemosyne infrastructure already uses Telegram. Confirm at deployment.
 
 ---
 
@@ -296,7 +296,7 @@ Full pfSense rule set for VLAN 60 and WAN inbound NAT.
 
 ## 11. Subdomain & Routing Registry
 
-Canonical subdomain list. Cross-reference with Media Stack Design Doc v1.1 §8 for full domain registry.
+Canonical subdomain list. Cross-reference with Orpheus Design Doc v1.1 §8 for full domain registry.
 
 | Subdomain | Domain | Target Service | Target IP | Auth | Status |
 |-----------|--------|---------------|-----------|------|--------|
@@ -395,4 +395,4 @@ The Ariadne project demonstrates a cluster of competencies directly relevant to 
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · Second Brain Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Media Stack Design Doc v1.1*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · Mnemosyne Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1*

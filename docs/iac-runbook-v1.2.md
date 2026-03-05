@@ -94,7 +94,7 @@ homelab-command/
 └── .gitignore                     # Must include *.tfvars, vault passwords
 ```
 
-**Project directory naming convention:** Use lowercase kebab-case matching the service group. Examples: `second-brain/`, `argus/`, `media-stack/`, `dmz/`.
+**Project directory naming convention:** Use lowercase kebab-case matching the service group. Examples: `mnemosyne/`, `argus/`, `orpheus/`, `dmz/`.
 
 ---
 
@@ -392,7 +392,7 @@ Phase 1: Management Plane
     1. Portainer Server LXC (10.0.10.20)  ← Management UI for Docker VM
 
 Phase 2: Core Data Services
-    2. Postgres (10.0.50.14)   ← Second Brain + Argus depend on this
+    2. Postgres (10.0.50.14)   ← Mnemosyne + Argus depend on this
     3. Redis (10.0.50.15)      ← Session/cache layer
     4. MinIO (10.0.50.16)      ← Object storage
 
@@ -413,7 +413,7 @@ Phase 6: DMZ Services
     12. Authelia (10.0.60.11)
     Note: Crowdsec is a pfSense package — configure via pfSense UI, not IaC
 
-Phase 7: Media Stack
+Phase 7: Orpheus
     13. Docker VM (10.0.50.30)         ← Portainer Agent + Immich
     14. Jellyfin LXC (10.0.80.X)
     15. Audiobookshelf LXC (10.0.80.X)
@@ -471,4 +471,4 @@ Each project's `README.md` documents any project-specific steps, variables, or p
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · Second Brain Design Doc v1.1 · Argus Design Doc v1.2 · Media Stack Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · Mnemosyne Design Doc v1.1 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*

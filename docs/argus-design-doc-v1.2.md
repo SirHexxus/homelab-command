@@ -270,7 +270,7 @@ This is the core differentiator of Argus over a standard SIEM deployment.
 
 ### 6.2 Model Routing
 
-Follows the same tiered routing architecture as the Second Brain (see Second Brain Design Doc §6.1):
+Follows the same tiered routing architecture as Mnemosyne (see Mnemosyne Design Doc §6.1):
 
 | Task | Primary | Escalation |
 |------|---------|------------|
@@ -389,7 +389,7 @@ Argus is professional, precise, and explains its reasoning. It acknowledges unce
 | `/alerts` | Recent high/critical alerts |
 | `/investigate {ip or host}` | Full profile: recent activity, threat intel, assessment |
 | `/search {query}` | Natural language semantic search across security_incidents via pgvector |
-| `/ask {question}` | RAG Q&A over security incidents + Second Brain resources |
+| `/ask {question}` | RAG Q&A over security incidents + Mnemosyne resources |
 | `/top` | Top talkers by bandwidth (last hour) |
 | `/quarantine {ip}` | Execute quarantine playbook (moves device to VLAN 66) |
 | `/unquarantine {ip}` | Release device from VLAN 66 |
@@ -488,7 +488,7 @@ Telegram confirmation:
 
 ## 9. Scheduled Reports
 
-These overlap with Second Brain scheduled reports. Argus contributes the security-specific content.
+These overlap with Mnemosyne scheduled reports. Argus contributes the security-specific content.
 
 | Report | Schedule | Delivery | Contents |
 |--------|----------|----------|----------|
@@ -709,4 +709,4 @@ Argus-specific post-recovery steps:
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · Second Brain Design Doc v1.1 · IaC Runbook v1.2 · Media Stack Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · Mnemosyne Design Doc v1.1 · IaC Runbook v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*

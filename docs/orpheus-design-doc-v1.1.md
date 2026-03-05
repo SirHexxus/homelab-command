@@ -1,4 +1,4 @@
-# Media Stack Design Doc
+# Orpheus Design Doc
 **Version:** 1.1
 **Last Updated:** February 2026
 **Status:** Living Document
@@ -7,7 +7,7 @@
 
 ## 1. Purpose & Philosophy
 
-The Media Stack provides a self-hosted, family-accessible media platform covering video, photos, audiobooks, ebooks, music, podcasts, comics/manga, and ROMs. It replaces cloud services (Google Photos, Audible, streaming) with owned infrastructure wherever practical.
+The Orpheus provides a self-hosted, family-accessible media platform covering video, photos, audiobooks, ebooks, music, podcasts, comics/manga, and ROMs. It replaces cloud services (Google Photos, Audible, streaming) with owned infrastructure wherever practical.
 
 **Design principles:**
 - Files live on TrueNAS (ZFS — data integrity, RAID protection). Services live on PVE (resource management, IaC, consistency with the rest of the homelab).
@@ -86,7 +86,7 @@ A single VM on VLAN 50 hosts all Docker Compose-based services across the homela
 |----------|----|------|---------|
 | Docker VM (host) | TBD (10.0.50.X) | — | Shared infrastructure |
 | Portainer Agent | Docker VM IP | 9001 | Management (Server on VLAN 10) |
-| Immich | Docker VM IP | 2283 | Media Stack |
+| Immich | Docker VM IP | 2283 | Orpheus |
 | *(future)* Nextcloud | Docker VM IP | 80/443 | Productivity Stack |
 | *(future)* Vaultwarden | Docker VM IP | 80/443 | Productivity Stack |
 
@@ -446,7 +446,7 @@ All PVE-hosted services (LXCs and Docker VM) are provisioned and configured via 
 ```
 homelab-command/
 └── infrastructure/
-    └── media-stack/
+    └── orpheus/
         ├── terraform/       # LXC + Docker VM provisioning
         └── ansible/         # Service configuration + Docker Compose deployment
 ```
@@ -492,8 +492,8 @@ vault_sonarr_api_key            # Used by Jellyseerr role
 ### 13.5 Playbook Invocations
 
 ```bash
-# Provision all media stack infrastructure
-cd infrastructure/media-stack/terraform/
+# Provision all Orpheus infrastructure
+cd infrastructure/orpheus/terraform/
 cp terraform.tfvars.example terraform.tfvars
 terraform init && terraform apply
 
@@ -513,7 +513,7 @@ ansible-playbook update.yml --ask-vault-pass
 
 ### 13.6 Recovery
 
-Media Stack deploys after core data services (Postgres, Redis, MinIO) in a full rebuild. Media files survive on TrueNAS ZFS — only services need rebuilding, not content.
+Orpheus deploys after core data services (Postgres, Redis, MinIO) in a full rebuild. Media files survive on TrueNAS ZFS — only services need rebuilding, not content.
 
 Post-recovery steps:
 1. Re-establish TrueNAS NFS exports before running Ansible
@@ -524,4 +524,4 @@ Post-recovery steps:
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · Second Brain Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · Mnemosyne Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Ariadne Design Doc v1.0*

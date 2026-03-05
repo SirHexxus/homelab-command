@@ -1,4 +1,4 @@
-# Second Brain Design Doc
+# Mnemosyne Design Doc
 **Version:** 1.1
 **Last Updated:** February 2026
 **Status:** Living Document — implementation will surface unknowns not captured here
@@ -7,7 +7,7 @@
 
 ## 1. Purpose & Philosophy
 
-The Second Brain is a personal knowledge management system designed to solve a specific problem: ADHD executive function failures cause valuable thoughts, information, and context to evaporate before they can be acted on. The system's job is to make capture frictionless, storage automatic, and retrieval intelligent.
+Mnemosyne is a personal knowledge management system designed to solve a specific problem: ADHD executive function failures cause valuable thoughts, information, and context to evaporate before they can be acted on. The system's job is to make capture frictionless, storage automatic, and retrieval intelligent.
 
 **Design principles:**
 - Capture must be faster than the thought can escape — minimum friction at point of entry
@@ -629,4 +629,4 @@ Follows Phase 1 and Phase 2 of the Project Roadmap.
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Media Stack Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*
