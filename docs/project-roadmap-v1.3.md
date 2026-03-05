@@ -38,6 +38,7 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 | Document | Version | Status |
 |----------|---------|--------|
 | Ariadne Design Doc (DMZ & Perimeter) | v1.0 | ✅ Complete |
+| Iris Design Doc | v1.0 | 🔲 Planned — authoring follow-on after rename |
 | Home Assistant Design Doc | v1.0 | 🔲 Planned (Post-June) |
 | AD + Authentik Design Doc | v1.0 | 🔲 Planned (Post-June) |
 | Productivity Stack Design Doc | v1.0 | 🔲 Planned (Post-June) — Nextcloud, Vaultwarden (existing instance on TrueNAS; migrate to Docker VM) |

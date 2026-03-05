@@ -12,7 +12,7 @@
 4. [Firewall Architecture](#4-firewall-architecture)
 5. [Services Inventory](#5-services-inventory)
 6. [External Access & Domains](#6-external-access--domains)
-7. [Mnemosyne & Argus](#7-mnemosyne--argus)
+7. [Mnemosyne, Argus, and Iris](#7-mnemosyne-argus-and-iris)
 8. [Planned Migrations & Deployment Queue](#8-planned-migrations--deployment-queue)
 9. [Open Items & Known Gaps](#9-open-items--known-gaps)
 
@@ -286,7 +286,7 @@ Floating: Block | !10.0.30.0/24 -> 10.0.30.0/24  | Block internal -> Work
 | Ollama | T150 LXC 101 | 10.0.50.10 | Local LLM inference | Operational |
 | Qdrant | T150 LXC 103 | 10.0.50.11 | Vector DB (retiring) | Operational -> Retiring |
 | Whisper | T150 LXC 102 | 10.0.50.12 | Speech-to-text | Operational |
-| helm-log (Helm HPS20) | Bare metal | 10.0.10.25 | Notification broker (ntfy); Phase 3: central log collector | Baseline operational; ntfy IaC-deployed (pending run) |
+| Iris (helm-log, Helm HPS20) | Bare metal | 10.0.10.25 | Notification broker (ntfy); Phase 3: central log collector | Baseline operational; ntfy IaC-deployed (pending run) |
 | TrueNAS Scale | R710 | -- | NAS / ZFS storage | Disconnected |
 
 ### Planned Services
@@ -344,11 +344,11 @@ Internal DNS resolution is handled by pfSense (DNS Resolver). Static mappings fo
 
 ---
 
-## 7. Mnemosyne & Argus
+## 7. Mnemosyne, Argus, and Iris
 
-Mnemosyne (personal knowledge management / ADHD executive function support) and Argus (homelab SIEM layer) are two overlapping projects that share the VLAN 50 service infrastructure above. Their workflow designs, storage schemas, ingestion pipelines, and AI integration details are documented separately.
+Mnemosyne (personal knowledge management / ADHD executive function support), Argus (homelab SIEM layer), and Iris (bare-metal log collector and notification broker, running on the Helm HPS20 at 10.0.10.25) are named projects sharing the homelab infrastructure above. Their workflow designs, storage schemas, ingestion pipelines, and AI integration details are documented separately.
 
-See: **Mnemosyne Design Doc** and **Argus Design Doc** (Homelab Command Project).
+See: **Mnemosyne Design Doc**, **Argus Design Doc**, and **Ariadne Design Doc** (Homelab Command Project). Iris design doc is planned.
 
 ---
 
