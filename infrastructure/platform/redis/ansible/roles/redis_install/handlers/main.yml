@@ -1,0 +1,7 @@
+# roles/redis_install/handlers/main.yml
+
+---
+- name: restart redis
+  systemd:
+    name: redis-server
+    state: restarted
