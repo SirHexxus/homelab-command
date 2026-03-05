@@ -29,7 +29,7 @@
   eno8303 (Port 1) = vmbr0  <-- WAN Bridge -> pfSense vtnet0
   eno8403 (Port 2) = vmbr1  <-- LAN/VLAN Bridge -> pfSense vtnet1
        |
-       | (Trunk: VLAN 10, 20, 30, 50, 80 tagged — 40, 60, 66, 70 planned)
+       | (Trunk: VLAN 10, 20, 30, 40, 50, 80 tagged — 60, 66, 70 planned)
        |
 [TP-Link T1600G-28PS] @ 10.0.10.50
   Port 1 = Trunk -> T150 (all VLANs)
@@ -75,7 +75,7 @@
        |      |-- Jellyseerr (10.0.80.X)
        |      |-- [deferred: Komga, RomM]
        |
-       |-- VLAN 40 (IoT) [PLANNED]
+       |-- VLAN 40 (IoT)
        |      |-- Smart switches, sensors
        |      |-- Note: TV and Switch remain on VLAN 20 (eero limitation)
        |
@@ -189,7 +189,7 @@
 
 > **Post-June planned addition:** Active Directory VM (Proxmox) + Authentik replacing Authelia; federated identity with AD as source of truth.
 
-### VLAN 40 -- IoT (Planned)
+### VLAN 40 -- IoT
 
 | Device | Target IP | Notes |
 |--------|-----------|-------|
@@ -254,7 +254,7 @@ Floating: Block | !10.0.30.0/24 -> 10.0.30.0/24  | Block internal -> Work
 3. Pass   | LAB subnets  -> !10.0.0.0/8     | Allow internet
 ```
 
-**VLAN 40 -- IoT (Planned)**
+**VLAN 40 -- IoT** (Operational)
 - Pass: IoT -> Internet only
 - Block: IoT -> All internal VLANs
 - Pass: Management -> IoT (for Home Assistant)
@@ -360,7 +360,8 @@ See: **Mnemosyne Design Doc**, **Argus Design Doc**, and **Ariadne Design Doc** 
 | HIGH | Deploy Postgres + pgvector + TimescaleDB | n8n redeploy |
 | HIGH | Deploy Redis | n8n redeploy |
 | HIGH | Reconnect R710 (TrueNAS) | None |
-| HIGH | Create VLANs 40, 60, 66, 70 in pfSense + switch | None |
+| ✅ DONE | Create VLAN 40 (IoT) in pfSense + switch | None |
+| HIGH | Create VLANs 60, 66, 70 in pfSense + switch | None |
 | HIGH | Create VLAN 80 (Media) in pfSense + switch | None |
 | HIGH | Run ntfy provisioning playbook on helm-log | helm-log accessible via SSH |
 | HIGH | Create GitHub repo; commit existing docs + IaC | None |
@@ -396,7 +397,6 @@ See: **Mnemosyne Design Doc**, **Argus Design Doc**, and **Ariadne Design Doc** 
 |---|------|--------|
 | 1 | n8n not on VLAN 50 | Deploy via IaC at 10.0.50.13; restore all workflows |
 | 2 | VLAN 20 not yet renamed in pfSense/switch | Rename interface to "Personal" |
-| 3 | VLAN 40 (IoT) not created | Create in pfSense + switch |
 | 4 | VLAN 60 (DMZ) not created | Create when DMZ services ready to deploy |
 | 5 | VLAN 66 (Sandbox) not created | High priority; low effort; do next |
 | 6 | VLAN 70 (Guest) not created | Prerequisite for eero SSID 2 (Guest) |

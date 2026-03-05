@@ -57,7 +57,10 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 
 ### Network
 - [x] VLANs 10, 20, 30, 50 operational
-- [ ] Create VLANs 40, 60, 66, 70 in pfSense
+- [x] Create VLAN 40 (IoT) in pfSense
+- [ ] Create VLAN 60 (DMZ) in pfSense
+- [ ] Create VLAN 66 (Sandbox) in pfSense
+- [ ] Create VLAN 70 (Guest) in pfSense
 - [ ] Configure managed switch trunk/access ports for all VLANs
 - [ ] Rename VLAN 20 "Trusted" → "Personal" in pfSense and switch
 
