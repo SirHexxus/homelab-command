@@ -20,7 +20,7 @@ Environment=DB_POSTGRESDB_HOST={{ postgres_host }}
 Environment=DB_POSTGRESDB_PORT={{ postgres_port }}
 Environment=DB_POSTGRESDB_DATABASE=n8n
 Environment=DB_POSTGRESDB_USER=n8n
-Environment=DB_POSTGRESDB_PASSWORD={{ n8n_db_password }}
+Environment=DB_POSTGRESDB_PASSWORD={{ vault_n8n_password }}
 
 [Install]
 WantedBy=multi-user.target

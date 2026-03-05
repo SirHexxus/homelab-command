@@ -15,7 +15,6 @@ postgres_databases:
     owner: argus
     extensions:
       - timescaledb
-      - pg_cron
   - name: n8n
     owner: n8n
     extensions: []

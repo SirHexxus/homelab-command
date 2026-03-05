@@ -6,4 +6,4 @@
 # vault.yml is gitignored — never commit real secrets.
 # This password must match vault_n8n_db_password in postgres/ansible/group_vars/vault.yml
 
-vault_n8n_db_password: CHANGE_ME
+vault_n8n_password: CHANGE_ME
