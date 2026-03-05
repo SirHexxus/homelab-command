@@ -1,0 +1,9 @@
+# group_vars/vault.yml.example
+#
+# Copy to vault.yml and encrypt with ansible-vault:
+#   ansible-vault encrypt group_vars/vault.yml
+#
+# vault.yml is gitignored — never commit real secrets.
+# This password must match vault_n8n_db_password in postgres/ansible/group_vars/vault.yml
+
+vault_n8n_db_password: CHANGE_ME

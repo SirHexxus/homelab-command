@@ -9,6 +9,8 @@
 ---
 - name: Provision n8n Workflow Automation Container
   hosts: n8n_containers
+  vars_files:
+    - group_vars/vault.yml
 
   pre_tasks:
     - name: Display deployment information
