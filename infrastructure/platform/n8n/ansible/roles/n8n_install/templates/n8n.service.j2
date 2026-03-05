@@ -1,0 +1,26 @@
+[Unit]
+Description=n8n Workflow Automation
+After=network.target
+
+[Service]
+Type=simple
+User=n8n
+Group=n8n
+WorkingDirectory=/var/lib/n8n
+ExecStart=/usr/bin/n8n start
+Restart=always
+RestartSec=10
+
+Environment=N8N_PORT={{ n8n_port }}
+Environment=N8N_HOST=0.0.0.0
+Environment=N8N_PROTOCOL=http
+Environment=N8N_USER_FOLDER=/var/lib/n8n
+Environment=DB_TYPE=postgresdb
+Environment=DB_POSTGRESDB_HOST={{ postgres_host }}
+Environment=DB_POSTGRESDB_PORT={{ postgres_port }}
+Environment=DB_POSTGRESDB_DATABASE=n8n
+Environment=DB_POSTGRESDB_USER=n8n
+Environment=DB_POSTGRESDB_PASSWORD={{ n8n_db_password }}
+
+[Install]
+WantedBy=multi-user.target
