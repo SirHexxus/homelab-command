@@ -1,12 +1,12 @@
-# ansible/provision.yml - Helm Log Baseline Provisioning Playbook
+# ansible/provision.yml - Iris Baseline Provisioning Playbook
 #
-# Provisions bare metal Helm v2 device with security baseline.
+# Provisions the Iris bare metal device (helm-log, Helm v2) with security baseline.
 # Run after SSH key is deployed to device:
 #   ansible-playbook -i inventory.ini provision.yml
 
 ---
-- name: Provision Helm Log Bare Metal Device
-  hosts: helm_log
+- name: Provision Iris Bare Metal Device
+  hosts: iris
 
   pre_tasks:
     - name: Verify Ansible version
@@ -21,7 +21,7 @@
       debug:
         msg: |
           ============================================================
-          Provisioning Helm Log — Baseline Hardening
+          Provisioning Iris — Baseline Hardening
           ============================================================
           Target Host : {{ inventory_hostname }}
           OS          : {{ ansible_distribution }}
@@ -68,7 +68,7 @@
       debug:
         msg: |
           ============================================================
-          Helm Log Provisioning Complete
+          Iris Provisioning Complete
           ============================================================
 
           Host: {{ inventory_hostname }}
@@ -77,7 +77,7 @@
             1. Verify SSH:
                  ssh -i ~/.ssh/homelab_ed25519 root@10.0.10.25
             2. Check fail2ban: fail2ban-client status sshd
-            3. Fill in ntfy_topics in group_vars/helm_log.yml
+            3. Fill in ntfy_topics in group_vars/iris.yml
             4. Test ntfy: curl -d "hello" {{ ntfy_base_url }}/test
             5. Subscribe on mobile: open {{ ntfy_base_url }} in browser
             6. Phase 3: add syslog-ng, Vector, Wazuh agent roles

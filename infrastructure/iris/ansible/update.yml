@@ -1,11 +1,11 @@
-# ansible/update.yml - Helm Log Maintenance Playbook
+# ansible/update.yml - Iris Maintenance Playbook
 #
 # Run periodically to keep system packages updated:
 #   ansible-playbook -i inventory.ini update.yml
 
 ---
-- name: Update Helm Log Bare Metal Device
-  hosts: helm_log
+- name: Update Iris Bare Metal Device
+  hosts: iris
 
   vars:
     apt_cache_valid_time: 3600
@@ -15,7 +15,7 @@
       debug:
         msg: |
           ============================================================
-          Starting Helm Log System Update
+          Starting Iris System Update
           ============================================================
           Target : {{ inventory_hostname }}
           Time   : {{ ansible_date_time.iso8601 }}
@@ -75,7 +75,7 @@
       debug:
         msg: |
           ============================================================
-          Helm Log Update Complete
+          Iris Update Complete
           ============================================================
 
           Packages Updated: {{ apt_upgrade.changed }}
