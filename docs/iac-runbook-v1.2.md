@@ -1,6 +1,6 @@
 # IaC Runbook
-**Version:** 1.2
-**Last Updated:** February 2026
+**Version:** 1.3
+**Last Updated:** March 2026
 **Status:** Living Document
 
 ---
@@ -33,7 +33,7 @@ This document defines how Infrastructure as Code is used across the homelab. It 
 | Ansible | Configuration management — installs, configures, and maintains software inside hosts | Latest stable |
 | Ansible Vault | Secrets encryption — stores credentials safely inside the repository | Bundled with Ansible |
 | Git / GitHub | Version control and portfolio artifact | — |
-| bpg/proxmox | Terraform provider for Proxmox VE | ~0.50+ |
+| bpg/proxmox | Terraform provider for Proxmox VE | `= 0.96.0` (pinned) |
 
 **Why bpg/proxmox over telmate/proxmox:** The bpg provider is actively maintained, better documented, and handles LXC containers and VMs more reliably. The telmate provider has known bugs with token authentication and is no longer recommended.
 
@@ -146,7 +146,7 @@ terraform {
   required_providers {
     proxmox = {
       source  = "bpg/proxmox"
-      version = "~> 0.50"
+      version = "= 0.96.0"
     }
   }
 }
@@ -445,7 +445,71 @@ Each project's `README.md` documents any project-specific steps, variables, or p
 
 ---
 
-## 10. Maintenance
+## 10. Deployment Lessons Learned
+
+Real issues encountered during initial deployments of n8n, Postgres, Redis, and MinIO (March 2026). Documented here to prevent repeating these mistakes.
+
+### bpg/proxmox provider version — pin to `= 0.96.0`
+
+Running `terraform init` without a pinned version downloads the latest provider, which may have breaking schema changes. Version `0.97.1` introduced changes that broke the existing LXC resource schema. Pin the version exactly in every `provider.tf`:
+
+```hcl
+version = "= 0.96.0"
+```
+
+If upgrading in the future, test against a throwaway container first and audit the changelog for LXC resource changes.
+
+### Do not use `dns_servers` in the LXC `initialization` block
+
+The `dns_servers` argument inside the `initialization` block does not reliably set DNS on LXC containers — containers inherit the Proxmox node's DNS regardless. Remove it from `main.tf` entirely. See the next section for the correct approach.
+
+### Proxmox LXC DNS defaults to the Proxmox host's DNS
+
+Newly created LXC containers inherit the Proxmox node's configured DNS. If the node's DNS is wrong (e.g., `192.168.1.1` from a previous home network), all containers fail `apt update` immediately.
+
+**Fix:** Set the Proxmox node's DNS correctly in the UI (Node → DNS) before provisioning containers. Also set nameservers after creation if needed:
+```bash
+pct set <vmid> -nameserver "1.1.1.1 8.8.8.8"
+```
+Search domain should be set to `homelab.internal`.
+
+### `community.postgresql` module peer auth fails in LXC
+
+The `community.postgresql.postgresql_user` and `postgresql_db` Ansible modules with `become_user: postgres` fail intermittently with "Peer authentication failed" inside LXC containers. The `become` mechanism appears unreliable in this context.
+
+**Fix:** Replace all `postgresql_*` module calls with direct shell commands:
+```yaml
+- name: Create role if not exists
+  shell: >
+    sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='myuser'" | grep -q 1 ||
+    sudo -u postgres psql -c "CREATE ROLE myuser WITH LOGIN PASSWORD 'secret';"
+```
+
+### pg_cron GUC name is `cron.database_name`, not `pg_cron.database_name`
+
+The `postgresql.conf` parameter for pg_cron's target database is `cron.database_name`. Using `pg_cron.database_name` silently does nothing — pg_cron defaults to the `postgres` database.
+
+**Fix:** Use the correct GUC name in `lineinfile`:
+```yaml
+regexp: "^#?cron.database_name"
+line: "cron.database_name = '{{ postgres_cron_database }}'"
+```
+
+### pg_cron can only be installed in one database
+
+`CREATE EXTENSION pg_cron` will fail in any database other than the one configured in `cron.database_name`. Only install the extension in that single database (typically `mnemosyne`).
+
+### Vault files — always add `.gitignore` to each ansible directory
+
+`group_vars/vault.yml` must be in `.gitignore` inside each ansible directory. A root-level `.gitignore` entry for `vault.yml` alone is insufficient if the ansible directory is nested. The pattern:
+```gitignore
+group_vars/vault.yml
+```
+must exist in the ansible-level `.gitignore` (i.e., `infrastructure/platform/<service>/ansible/.gitignore`).
+
+---
+
+## 11. Maintenance
 
 ### Regular tasks
 
@@ -471,4 +535,4 @@ Each project's `README.md` documents any project-specific steps, variables, or p
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · Mnemosyne Design Doc v1.1 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.7 · Project Roadmap v1.3 · Mnemosyne Design Doc v1.1 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*
