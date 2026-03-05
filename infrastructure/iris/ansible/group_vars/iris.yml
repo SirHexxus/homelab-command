@@ -1,4 +1,4 @@
-# group_vars/helm_log.yml - Helm Log Device Variables
+# group_vars/iris.yml - Iris Project Variables
 #
 # NOTE: vault.yml will be added in Phase 3 (syslog-ng/Vector secrets)
 

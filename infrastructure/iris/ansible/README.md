@@ -1,7 +1,7 @@
-# helm-log ansible
+# Iris ansible
 
-Baseline hardening playbooks for the Helm v2 bare metal log collector device
-(syslog-ng + Vector, Phase 3).
+Baseline hardening playbooks for the Iris bare metal log collector project
+(Helm v2 device; syslog-ng + Vector, Phase 3).
 
 ## Device Overview
 
