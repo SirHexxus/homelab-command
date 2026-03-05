@@ -12,7 +12,7 @@
 4. [Firewall Architecture](#4-firewall-architecture)
 5. [Services Inventory](#5-services-inventory)
 6. [External Access & Domains](#6-external-access--domains)
-7. [Second Brain & Argus](#7-second-brain--argus)
+7. [Mnemosyne & Argus](#7-mnemosyne--argus)
 8. [Planned Migrations & Deployment Queue](#8-planned-migrations--deployment-queue)
 9. [Open Items & Known Gaps](#9-open-items--known-gaps)
 
@@ -218,7 +218,7 @@
 
 IPs assigned at deployment time. All VLAN 80 LXCs mount media from TrueNAS via NFS.
 
-> **Media file storage:** R710 TrueNAS holds all media files on ZFS. *Arr stack (Radarr, Sonarr, Lidarr, Readarr, Prowlarr, Bazarr, qBittorrent) runs as TrueNAS Scale apps. See Media Stack Design Doc v1.1.
+> **Media file storage:** R710 TrueNAS holds all media files on ZFS. *Arr stack (Radarr, Sonarr, Lidarr, Readarr, Prowlarr, Bazarr, qBittorrent) runs as TrueNAS Scale apps. See Orpheus Design Doc v1.1.
 
 ---
 
@@ -332,7 +332,7 @@ Floating: Block | !10.0.30.0/24 -> 10.0.30.0/24  | Block internal -> Work
 | hexxusweb.com | Professional / portfolio-facing | Reserved for career and work-related use |
 | bravelittlesalamander.com | Wife's domain | Held for future use |
 
-All external service exposure routes through NGINX Proxy Manager (10.0.60.10) in the DMZ. Subdomains are defined per-service and documented in the relevant Design Doc (see Media Stack Design Doc v1.1 §8 for current known subdomain assignments).
+All external service exposure routes through NGINX Proxy Manager (10.0.60.10) in the DMZ. Subdomains are defined per-service and documented in the relevant Design Doc (see Orpheus Design Doc v1.1 §8 for current known subdomain assignments).
 
 ### 6.2 DNS Architecture
 
@@ -342,11 +342,11 @@ Internal DNS resolution is handled by pfSense (DNS Resolver). Static mappings fo
 
 ---
 
-## 7. Second Brain & Argus
+## 7. Mnemosyne & Argus
 
-The Second Brain (personal knowledge management / ADHD executive function support) and Argus (homelab SIEM layer) are two overlapping projects that share the VLAN 50 service infrastructure above. Their workflow designs, storage schemas, ingestion pipelines, and AI integration details are documented separately.
+Mnemosyne (personal knowledge management / ADHD executive function support) and Argus (homelab SIEM layer) are two overlapping projects that share the VLAN 50 service infrastructure above. Their workflow designs, storage schemas, ingestion pipelines, and AI integration details are documented separately.
 
-See: **Second Brain Design Doc** and **Argus Design Doc** (Homelab Command Project).
+See: **Mnemosyne Design Doc** and **Argus Design Doc** (Homelab Command Project).
 
 ---
 
@@ -398,15 +398,15 @@ See: **Second Brain Design Doc** and **Argus Design Doc** (Homelab Command Proje
 | 4 | VLAN 60 (DMZ) not created | Create when DMZ services ready to deploy |
 | 5 | VLAN 66 (Sandbox) not created | High priority; low effort; do next |
 | 6 | VLAN 70 (Guest) not created | Prerequisite for eero SSID 2 (Guest) |
-| 7 | VLAN 80 (Media) not created | Create before Media Stack deployment |
+| 7 | VLAN 80 (Media) not created | Create before Orpheus deployment |
 | 8 | R710 disconnected | Reconnect; assign static IP; restore TrueNAS; establish NFS exports |
-| 9 | Postgres/Redis/MinIO not deployed | Core Second Brain/Argus data layer |
+| 9 | Postgres/Redis/MinIO not deployed | Core Mnemosyne/Argus data layer |
 | 10 | Qdrant marked for retirement | Retire once pgvector tested and stable |
 | 11 | SIEM stack not deployed | Splunk + Wazuh + Suricata + Crowdsec; SOC portfolio milestone |
 | 12 | DMZ stack not deployed | NPM + WireGuard + Squid + Authelia + Fail2ban |
 | 13 | Docker VM not deployed | 10.0.50.30; prerequisite for Immich + future Docker services |
 | 14 | Portainer Server LXC not deployed | 10.0.10.20; VLAN 10; binary install |
-| 15 | Media Stack LXCs not deployed | VLAN 80; requires TrueNAS reconnected + library cleanup |
+| 15 | Orpheus LXCs not deployed | VLAN 80; requires TrueNAS reconnected + library cleanup |
 | 16 | GitHub repo not created | Start in Phase 1; commit all existing docs immediately |
 | 17 | Uptime Kuma VPS provider TBD | Evaluate options; deploy externally |
 | 18 | Home Assistant not deployed | Requires VLAN 40 first; defer until post-June |
@@ -418,4 +418,4 @@ See: **Second Brain Design Doc** and **Argus Design Doc** (Homelab Command Proje
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Project Roadmap v1.3 · Second Brain Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Media Stack Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Project Roadmap v1.3 · Mnemosyne Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*

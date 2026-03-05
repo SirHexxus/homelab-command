@@ -29,10 +29,10 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 | Hardware Catalog | v1.2 | ✅ Complete |
 | Network & Services Architecture | v1.6 | ✅ Complete |
 | Project Roadmap | v1.3 | ✅ This document |
-| Second Brain Design Doc | v1.1 | ✅ Complete |
+| Mnemosyne Design Doc | v1.1 | ✅ Complete |
 | IaC Runbook | v1.2 | ✅ Complete |
 | Argus Design Doc | v1.2 | ✅ Complete |
-| Media Stack Design Doc | v1.1 | ✅ Complete |
+| Orpheus Design Doc | v1.1 | ✅ Complete |
 
 ### Remaining
 | Document | Version | Status |
@@ -77,7 +77,7 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 
 ### GitHub
 - [x] Create homelab-command repository
-- [x] Commit all existing docs (Hardware Catalog, Network Architecture, Roadmap, Second Brain)
+- [x] Commit all existing docs (Hardware Catalog, Network Architecture, Roadmap, Mnemosyne)
 - [x] Establish IaC folder structure; commit all Terraform + Ansible from start
 
 ### Documentation
@@ -85,7 +85,7 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 
 ---
 
-## Phase 2 — Google Cybersecurity Certificate + Second Brain Rebuild
+## Phase 2 — Google Cybersecurity Certificate + Mnemosyne Rebuild
 **Duration:** Weeks 5–7 | **Target:** April 5, 2026
 
 ### Google Cybersecurity Certificate
@@ -93,8 +93,8 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 - [ ] Certificate earned
 - [ ] Resume updated
 
-### Second Brain (Rebuild on VLAN 50)
-- [ ] Create REFERENCE, JOURNAL, PURSUIT Notion databases; update IDs in Second Brain Design Doc
+### Mnemosyne (Rebuild on VLAN 50)
+- [ ] Create REFERENCE, JOURNAL, PURSUIT Notion databases; update IDs in Mnemosyne Design Doc
 - [ ] Rebuild Telegram capture + classification workflow with model routing logic
 - [ ] Add Entity Resolution step for Compound buckets
 - [ ] Rebuild Notion database writes (all 7 buckets)
@@ -115,7 +115,7 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 - [ ] Configure DDNS on Porkbun for sirhexx.com
 
 ### Documentation
-- [x] Complete Media Stack Design Doc v1.1
+- [x] Complete Orpheus Design Doc v1.1
 
 ---
 
@@ -172,10 +172,10 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 - [ ] Deploy Uptime Kuma for outside-in monitoring
 
 ### Argus AI Pipeline
-- [ ] n8n polls TimescaleDB every 5 min → Ollama/Claude summarization → Second Brain incident resources → Telegram alerts
+- [ ] n8n polls TimescaleDB every 5 min → Ollama/Claude summarization → Mnemosyne incident resources → Telegram alerts
 - [ ] Build Ansible quarantine playbook: accepts IP/MAC → moves device to VLAN 66 → logs to Argus → optional Telegram alert
 
-### Second Brain (Additional Workflows)
+### Mnemosyne (Additional Workflows)
 - [ ] Add email newsletter ingestion
 - [ ] Build Periodic Entity Consolidation workflow
 - [ ] Plan Google Keep bulk import
@@ -186,9 +186,9 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 **Duration:** Weeks 14–16 | **Target:** June 2, 2026
 
 ### GitHub Portfolio
-- [ ] All docs committed: Hardware Catalog, Network Architecture, Second Brain, Argus, Media Stack, DMZ
+- [ ] All docs committed: Hardware Catalog, Network Architecture, Mnemosyne, Argus, Orpheus, DMZ
 - [ ] All IaC committed: Terraform + Ansible for all services
-- [ ] Architecture diagrams (network, SIEM, Second Brain, Argus)
+- [ ] Architecture diagrams (network, SIEM, Mnemosyne, Argus)
 
 ### Case Studies
 - [ ] Case Study 1: Zero Trust network + VLAN segmentation
@@ -220,7 +220,7 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 
 ```
 Phase 1: Infrastructure + GitHub + Argus Design Doc
-    ├── Phase 2: Second Brain Rebuild + Google Cert + Media Stack Design Doc
+    ├── Phase 2: Mnemosyne Rebuild + Google Cert + Orpheus Design Doc
     └── Phase 3: SIEM Stack + DMZ Design Doc
             ├── Phase 4: Security+ (study alongside SIEM)
             └── Phase 5: Argus AI + DMZ + Quarantine
@@ -240,4 +240,4 @@ Houses general-purpose development standards referenced when scripting work aris
 
 ---
 
-*Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Second Brain Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Media Stack Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Mnemosyne Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*

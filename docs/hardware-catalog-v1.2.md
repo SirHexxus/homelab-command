@@ -92,4 +92,4 @@
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Network & Services Architecture v1.6 · Project Roadmap v1.3 · Second Brain Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Media Stack Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Network & Services Architecture v1.6 · Project Roadmap v1.3 · Mnemosyne Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*
