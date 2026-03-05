@@ -7,4 +7,4 @@
 
 vault_mnemosyne_password: CHANGE_ME
 vault_argus_password: CHANGE_ME
-vault_n8n_db_password: CHANGE_ME
+vault_n8n_password: CHANGE_ME

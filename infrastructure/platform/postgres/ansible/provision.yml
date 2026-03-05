@@ -107,11 +107,11 @@
         state: present
       notify: restart postgresql
 
-    - name: Set pg_cron.database_name in postgresql.conf
+    - name: Set cron.database_name in postgresql.conf
       lineinfile:
         path: /etc/postgresql/{{ postgres_version }}/main/postgresql.conf
-        regexp: "^#?pg_cron.database_name"
-        line: "pg_cron.database_name = '{{ postgres_cron_database }}'"
+        regexp: "^#?cron.database_name"
+        line: "cron.database_name = '{{ postgres_cron_database }}'"
         state: present
       notify: restart postgresql
 
@@ -158,31 +158,24 @@
         state: started
 
     # 10. CREATE DATABASES AND USERS
-    - name: Create database users
-      postgresql_user:
-        name: "{{ item.owner }}"
-        password: "{{ vars['vault_' + item.owner + '_password'] }}"
-        state: present
+    - name: Create database users and databases
+      shell: |
+        sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='{{ item.owner }}'" | grep -q 1 || \
+          sudo -u postgres psql -c "CREATE ROLE {{ item.owner }} WITH LOGIN PASSWORD '{{ vars['vault_' + item.owner + '_password'] }}';"
+        sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='{{ item.name }}'" | grep -q 1 || \
+          sudo -u postgres psql -c "CREATE DATABASE {{ item.name }} OWNER {{ item.owner }};"
       loop: "{{ postgres_databases }}"
-      become_user: postgres
-
-    - name: Create databases
-      postgresql_db:
-        name: "{{ item.name }}"
-        owner: "{{ item.owner }}"
-        state: present
-      loop: "{{ postgres_databases }}"
-      become_user: postgres
+      register: db_create
+      changed_when: "'CREATE' in db_create.stdout"
 
     # 11. ENABLE EXTENSIONS PER DATABASE
     - name: Enable extensions per database
-      postgresql_ext:
-        name: "{{ item.1 }}"
-        db: "{{ item.0.name }}"
-        state: present
+      shell: |
+        sudo -u postgres psql -d {{ item.0.name }} -c "CREATE EXTENSION IF NOT EXISTS {{ item.1 }};"
       loop: "{{ postgres_databases | subelements('extensions') }}"
-      become_user: postgres
       when: item.0.extensions | length > 0
+      register: ext_create
+      changed_when: "'CREATE EXTENSION' in ext_create.stdout"
 
     # 12. HEALTH CHECK
     - name: Health check — pg_isready
