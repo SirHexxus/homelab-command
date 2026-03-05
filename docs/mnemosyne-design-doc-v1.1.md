@@ -612,8 +612,8 @@ Follows Phase 1 and Phase 2 of the Project Roadmap.
 2. Deploy Postgres with pgvector + TimescaleDB (10.0.50.14)
 3. Deploy Redis (10.0.50.15)
 4. Deploy MinIO (10.0.50.16)
-5. Verify Whisper operational (10.0.50.12)
-6. Verify Ollama + nomic-embed-text + Mistral 7B (10.0.50.10)
+5. Verify Whisper operational (10.0.50.12) ✅
+6. Verify Ollama + nomic-embed-text + Mistral 7B (10.0.50.10) ✅
 7. Create REFERENCE, JOURNAL, PURSUIT Notion databases; update IDs in this doc
 8. Rebuild Telegram capture + classification workflow with model routing logic
 9. Add Entity Resolution step for Compound buckets
