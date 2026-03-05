@@ -1,0 +1,7 @@
+# group_vars/minio_containers.yml
+
+minio_api_port: 9000
+minio_console_port: 9001
+minio_data_dir: /var/lib/minio/data
+minio_config_dir: /etc/minio
+minio_binary_url: https://dl.min.io/server/minio/release/linux-amd64/minio

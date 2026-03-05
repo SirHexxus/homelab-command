@@ -1,0 +1,147 @@
+# provision.yml - MinIO Provisioning Playbook
+#
+# Installs MinIO binary and configures it as a systemd service.
+#
+# Usage:
+#   ansible-playbook -i inventory.ini provision.yml --ask-vault-pass
+
+---
+- name: Provision MinIO Object Storage Container
+  hosts: minio_containers
+  vars_files:
+    - group_vars/vault.yml
+
+  pre_tasks:
+    - name: Display deployment information
+      debug:
+        msg: |
+          ============================================================
+          Starting MinIO Container Provisioning
+          ============================================================
+          Target Host: {{ inventory_hostname }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          API port: {{ minio_api_port }}
+          Console port: {{ minio_console_port }}
+          Data dir: {{ minio_data_dir }}
+          ============================================================
+
+  tasks:
+    # 1. SYSTEM UPDATES & PACKAGES
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade all packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - curl
+          - wget
+        state: present
+
+    # 2. DOTFILES
+    - name: Install dotfiles for root
+      import_role:
+        name: dotfiles
+
+    # 3. DOWNLOAD AND INSTALL MINIO BINARY
+    - name: Download MinIO binary
+      get_url:
+        url: "{{ minio_binary_url }}"
+        dest: /usr/local/bin/minio
+        mode: '0755'
+        force: no
+
+    - name: Verify MinIO binary
+      command: /usr/local/bin/minio --version
+      changed_when: false
+      register: minio_version
+
+    - name: Display MinIO version
+      debug:
+        msg: "MinIO installed: {{ minio_version.stdout }}"
+
+    # 4. CREATE MINIO USER AND DIRECTORIES
+    - name: Create minio system user
+      user:
+        name: minio
+        system: yes
+        home: /var/lib/minio
+        shell: /usr/sbin/nologin
+        state: present
+
+    - name: Create MinIO directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: minio
+        group: minio
+        mode: '0750'
+      loop:
+        - /var/lib/minio
+        - "{{ minio_data_dir }}"
+        - "{{ minio_config_dir }}"
+
+    # 5. CONFIGURE MINIO ENVIRONMENT FILE
+    - name: Deploy minio.env
+      template:
+        src: roles/minio_install/templates/minio.env.j2
+        dest: "{{ minio_config_dir }}/minio.env"
+        owner: minio
+        group: minio
+        mode: '0640'
+      notify: restart minio
+
+    # 6. CONFIGURE SYSTEMD SERVICE
+    - name: Deploy minio systemd service
+      template:
+        src: roles/minio_install/templates/minio.service.j2
+        dest: /etc/systemd/system/minio.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart minio
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start minio service
+      systemd:
+        name: minio
+        enabled: yes
+        state: started
+
+    # 7. HEALTH CHECK
+    - name: Wait for MinIO API to be ready
+      uri:
+        url: "http://localhost:{{ minio_api_port }}/minio/health/live"
+        status_code: 200
+      register: minio_health
+      until: minio_health.status == 200
+      retries: 20
+      delay: 5
+      changed_when: false
+
+    - name: Display connection information
+      debug:
+        msg: |
+          ============================================================
+          MinIO Provisioning Complete!
+          ============================================================
+          API: http://{{ ansible_host }}:{{ minio_api_port }}
+          Console: http://{{ ansible_host }}:{{ minio_console_port }}
+          Data dir: {{ minio_data_dir }}
+          ============================================================
+
+  handlers:
+    - name: restart minio
+      systemd:
+        name: minio
+        state: restarted
