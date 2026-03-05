@@ -1,0 +1,26 @@
+# redis.conf — managed by Ansible
+
+# Network
+bind 0.0.0.0
+port {{ redis_port }}
+protected-mode yes
+
+# Authentication
+requirepass {{ vault_redis_password }}
+
+# Memory management
+maxmemory {{ redis_maxmemory }}
+maxmemory-policy {{ redis_maxmemory_policy }}
+
+# Persistence (light — snapshots only)
+save 900 1
+save 300 10
+save 60 10000
+
+# Logging
+loglevel notice
+logfile /var/log/redis/redis-server.log
+
+# General
+daemonize no
+supervised systemd

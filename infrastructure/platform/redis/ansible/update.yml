@@ -1,0 +1,46 @@
+# update.yml - Redis Maintenance Playbook
+#
+# Upgrades redis-server package and restarts the service.
+#
+# Usage:
+#   ansible-playbook -i inventory.ini update.yml --ask-vault-pass
+
+---
+- name: Update Redis Container
+  hosts: redis_containers
+  vars_files:
+    - group_vars/vault.yml
+
+  tasks:
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade system packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    - name: Upgrade redis-server
+      apt:
+        name: redis-server
+        state: latest
+      notify: restart redis
+
+    - name: Health check after update
+      command: redis-cli -a {{ vault_redis_password }} ping
+      changed_when: false
+      no_log: true
+      register: redis_ping
+
+    - name: Display health check result
+      debug:
+        msg: "Redis ping: {{ redis_ping.stdout }}"
+
+  handlers:
+    - name: restart redis
+      systemd:
+        name: redis-server
+        state: restarted

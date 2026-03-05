@@ -1,0 +1,5 @@
+# group_vars/redis_containers.yml
+
+redis_port: 6379
+redis_maxmemory: 1gb
+redis_maxmemory_policy: allkeys-lru

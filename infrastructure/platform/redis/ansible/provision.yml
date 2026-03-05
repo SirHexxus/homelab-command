@@ -1,0 +1,99 @@
+# provision.yml - Redis Provisioning Playbook
+#
+# Provisions Redis via apt with password auth and LRU eviction policy.
+#
+# Usage:
+#   ansible-playbook -i inventory.ini provision.yml --ask-vault-pass
+
+---
+- name: Provision Redis Cache Container
+  hosts: redis_containers
+  vars_files:
+    - group_vars/vault.yml
+
+  pre_tasks:
+    - name: Display deployment information
+      debug:
+        msg: |
+          ============================================================
+          Starting Redis Container Provisioning
+          ============================================================
+          Target Host: {{ inventory_hostname }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Redis port: {{ redis_port }}
+          Max memory: {{ redis_maxmemory }}
+          ============================================================
+
+  tasks:
+    # 1. SYSTEM UPDATES
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade all packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    # 2. DOTFILES
+    - name: Install dotfiles for root
+      import_role:
+        name: dotfiles
+
+    # 3. INSTALL REDIS
+    - name: Install redis-server
+      apt:
+        name: redis-server
+        state: present
+
+    # 4. CONFIGURE REDIS
+    - name: Deploy redis.conf
+      template:
+        src: roles/redis_install/templates/redis.conf.j2
+        dest: /etc/redis/redis.conf
+        owner: redis
+        group: redis
+        mode: '0640'
+      notify: restart redis
+
+    - name: Flush handlers before health check
+      meta: flush_handlers
+
+    # 5. ENABLE AND START SERVICE
+    - name: Enable and start redis-server
+      systemd:
+        name: redis-server
+        enabled: yes
+        state: started
+
+    # 6. HEALTH CHECK
+    - name: Health check — redis-cli ping
+      command: redis-cli -a {{ vault_redis_password }} ping
+      changed_when: false
+      register: redis_ping
+      no_log: true
+
+    - name: Verify PONG response
+      assert:
+        that:
+          - redis_ping.stdout == "PONG"
+        fail_msg: "Redis health check failed: {{ redis_ping.stdout }}"
+
+    - name: Display connection information
+      debug:
+        msg: |
+          ============================================================
+          Redis Provisioning Complete!
+          ============================================================
+          Host: {{ ansible_host }}:{{ redis_port }}
+          Max memory: {{ redis_maxmemory }} ({{ redis_maxmemory_policy }})
+          Auth: password required
+          ============================================================
+
+  handlers:
+    - name: restart redis
+      systemd:
+        name: redis-server
+        state: restarted

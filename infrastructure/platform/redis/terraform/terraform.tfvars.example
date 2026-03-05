@@ -1,0 +1,42 @@
+# terraform.tfvars.example - Redis Container Configuration
+#
+# Copy this file to terraform.tfvars and fill in your values.
+# terraform.tfvars is gitignored — never commit real secrets.
+
+# Proxmox API configuration
+proxmox_endpoint     = "https://proxmox.local:8006/"
+proxmox_api_token_id = "terraform@pam!terraform-token"
+proxmox_api_token    = "YOUR-API-TOKEN-SECRET-HERE"
+proxmox_tls_insecure = true
+
+# Proxmox node
+proxmox_node = "pve"
+
+# Container identification
+container_name     = "redis"
+container_hostname = "redis-server"
+
+# Resource allocation (VMID 106 on the Proxmox side)
+container_cpu_cores = 2
+container_memory_mb = 2048   # 2GB
+container_disk_gb   = 10
+
+# Storage
+container_storage = "local-lvm"
+
+# Network (VLAN 50 — Lab Services)
+container_ip      = "10.0.50.15/24"
+container_gateway = "10.0.50.1"
+network_bridge    = "vmbr1"
+vlan_tag          = 50
+
+# SSH access
+ssh_public_key_file = "~/.ssh/id_rsa.pub"
+
+# Options
+enable_privileged_mode  = false
+tags                    = ["redis", "cache"]
+additional_lxc_features = []
+
+# LXC template
+lxc_template = "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"

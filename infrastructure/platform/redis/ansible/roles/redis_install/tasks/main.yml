@@ -1,0 +1,23 @@
+# roles/redis_install/tasks/main.yml
+# Redis installation tasks (called from provision.yml)
+
+---
+- name: Install redis-server
+  apt:
+    name: redis-server
+    state: present
+
+- name: Deploy redis.conf
+  template:
+    src: redis.conf.j2
+    dest: /etc/redis/redis.conf
+    owner: redis
+    group: redis
+    mode: '0640'
+  notify: restart redis
+
+- name: Enable and start redis-server
+  systemd:
+    name: redis-server
+    enabled: yes
+    state: started
