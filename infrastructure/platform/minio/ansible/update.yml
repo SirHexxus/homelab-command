@@ -1,0 +1,59 @@
+# update.yml - MinIO Maintenance Playbook
+#
+# Downloads the latest MinIO binary and restarts the service.
+#
+# Usage:
+#   ansible-playbook -i inventory.ini update.yml --ask-vault-pass
+
+---
+- name: Update MinIO Container
+  hosts: minio_containers
+  vars_files:
+    - group_vars/vault.yml
+
+  tasks:
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade system packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    - name: Stop MinIO service for binary replacement
+      systemd:
+        name: minio
+        state: stopped
+
+    - name: Download latest MinIO binary
+      get_url:
+        url: "{{ minio_binary_url }}"
+        dest: /usr/local/bin/minio
+        mode: '0755'
+        force: yes
+      register: minio_download
+
+    - name: Start MinIO service after update
+      systemd:
+        name: minio
+        state: started
+
+    - name: Verify MinIO version after update
+      command: /usr/local/bin/minio --version
+      changed_when: false
+      register: minio_new_version
+
+    - name: Display updated version
+      debug:
+        msg: "MinIO version: {{ minio_new_version.stdout }}"
+
+    - name: Health check after update
+      uri:
+        url: "http://localhost:{{ minio_api_port }}/minio/health/live"
+        status_code: 200
+      retries: 15
+      delay: 5
+      changed_when: false

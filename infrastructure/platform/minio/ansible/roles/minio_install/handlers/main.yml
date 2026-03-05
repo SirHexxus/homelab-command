@@ -1,0 +1,7 @@
+# roles/minio_install/handlers/main.yml
+
+---
+- name: restart minio
+  systemd:
+    name: minio
+    state: restarted

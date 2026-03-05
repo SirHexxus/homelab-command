@@ -1,0 +1,16 @@
+[Unit]
+Description=MinIO Object Storage
+After=network.target
+
+[Service]
+Type=notify
+EnvironmentFile={{ minio_config_dir }}/minio.env
+User=minio
+Group=minio
+ExecStart=/usr/local/bin/minio server $MINIO_OPTS $MINIO_VOLUMES
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

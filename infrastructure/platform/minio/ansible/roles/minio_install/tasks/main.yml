@@ -1,0 +1,58 @@
+# roles/minio_install/tasks/main.yml
+# MinIO installation tasks (called from provision.yml)
+
+---
+- name: Download MinIO binary
+  get_url:
+    url: "{{ minio_binary_url }}"
+    dest: /usr/local/bin/minio
+    mode: '0755'
+    force: no
+
+- name: Create minio system user
+  user:
+    name: minio
+    system: yes
+    home: /var/lib/minio
+    shell: /usr/sbin/nologin
+    state: present
+
+- name: Create MinIO directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: minio
+    group: minio
+    mode: '0750'
+  loop:
+    - /var/lib/minio
+    - "{{ minio_data_dir }}"
+    - "{{ minio_config_dir }}"
+
+- name: Deploy minio.env
+  template:
+    src: minio.env.j2
+    dest: "{{ minio_config_dir }}/minio.env"
+    owner: minio
+    group: minio
+    mode: '0640'
+  notify: restart minio
+
+- name: Deploy minio systemd service
+  template:
+    src: minio.service.j2
+    dest: /etc/systemd/system/minio.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart minio
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+
+- name: Enable and start minio service
+  systemd:
+    name: minio
+    enabled: yes
+    state: started
