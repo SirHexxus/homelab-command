@@ -16,7 +16,6 @@ resource "proxmox_virtual_environment_container" "redis" {
 
   initialization {
     hostname    = var.container_hostname
-    dns_servers = ["10.0.50.1", "1.1.1.1", "8.8.8.8"]
 
     ip_config {
       ipv4 {
