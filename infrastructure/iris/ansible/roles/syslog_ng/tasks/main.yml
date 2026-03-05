@@ -1,0 +1,4 @@
+---
+# Phase 3: syslog-ng central log receiver
+# Receives syslog from pfSense, Suricata, Proxmox, and managed switch.
+# Routes high-volume events to Vector → TimescaleDB; critical events to n8n.

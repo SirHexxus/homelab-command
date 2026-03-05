@@ -1,0 +1,4 @@
+---
+# Phase 3: Vector log shipper → TimescaleDB
+# Receives structured log events from syslog-ng and bulk-ingests them
+# into the argus_logs TimescaleDB hypertables at 10.0.50.14.

@@ -1,0 +1,4 @@
+---
+# Phase 3: Wazuh agent for Argus EDR
+# Registers the Iris device (helm-log, 10.0.10.25) with the Wazuh Manager
+# at 10.0.50.21 for host-based intrusion detection.
