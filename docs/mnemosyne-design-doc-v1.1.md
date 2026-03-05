@@ -596,6 +596,7 @@ Consolidation runs before the Weekly Summary so any merges are reflected in that
 | Postgres | 10.0.50.14 | second_brain + argus_logs; pgvector + TimescaleDB |
 | Redis | 10.0.50.15 | Session, cache, and model routing counters |
 | MinIO | 10.0.50.16 | Object storage |
+| Hermes | 10.0.50.17 | AI agent; connects to Mnemosyne Postgres for long-term memory |
 | Ollama | 10.0.50.10 | nomic-embed-text + Mistral 7B inference |
 | Whisper | 10.0.50.12 | Voice transcription; LXC 102 |
 

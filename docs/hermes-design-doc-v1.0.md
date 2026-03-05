@@ -165,15 +165,10 @@ Hermes sits on VLAN 50 (Lab Services) alongside the other homelab services.
 
 | Service | IP |
 |---------|----|
-| Ollama | 10.0.50.16 |
+| Ollama | 10.0.50.10 |
 | **Hermes** | **10.0.50.17** |
 | Mnemosyne (Postgres) | 10.0.50.14 |
 | n8n | 10.0.50.13 |
-
-> [!IMPORTANT]
-> The Mnemosyne design doc (`mnemosyne-design-doc-v1.1.md`) incorrectly assigned
-> 10.0.50.13 to Hermes. That IP belongs to n8n. Hermes uses **10.0.50.17**.
-> Update `network-services-architecture-v1.6.md` to reflect this before any IaC apply.
 
 ---
 

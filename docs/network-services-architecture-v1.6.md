@@ -167,6 +167,7 @@
 | Postgres | 10.0.50.14 | LXC (planned) | second_brain + argus_logs; pgvector + TimescaleDB |
 | Redis | 10.0.50.15 | LXC (planned) | Ephemeral/session cache |
 | MinIO | 10.0.50.16 | LXC (planned) | S3-compatible object storage |
+| Hermes | 10.0.50.17 | LXC (planned) | AI agent; Mnemosyne Postgres client + homelab automation |
 | Splunk Free | 10.0.50.20 | LXC (planned) | SIEM log aggregation |
 | Wazuh Manager | 10.0.50.21 | LXC (planned) | Host-based IDS |
 | Grafana | 10.0.50.22 | LXC (planned) | TimescaleDB dashboards |
@@ -296,6 +297,7 @@ Floating: Block | !10.0.30.0/24 -> 10.0.30.0/24  | Block internal -> Work
 | Postgres | 10.0.50.14 | HIGH | second_brain DB + argus_logs; pgvector + TimescaleDB |
 | Redis | 10.0.50.15 | HIGH | Session cache, dedup |
 | MinIO | 10.0.50.16 | MEDIUM | S3 object storage |
+| Hermes | 10.0.50.17 | MEDIUM | AI agent; Mnemosyne Postgres client + homelab automation |
 | Splunk Free | 10.0.50.20 | HIGH | SIEM log aggregation |
 | Wazuh Manager | 10.0.50.21 | HIGH | Host-based IDS |
 | Suricata | pfSense pkg | HIGH | Network IDS |
