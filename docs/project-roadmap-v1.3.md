@@ -62,7 +62,7 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 - [ ] Create VLAN 66 (Sandbox) in pfSense
 - [ ] Create VLAN 70 (Guest) in pfSense
 - [ ] Configure managed switch trunk/access ports for all VLANs
-- [ ] Rename VLAN 20 "Trusted" → "Personal" in pfSense and switch
+- [x] Rename VLAN 20 "Trusted" → "Personal" in pfSense and switch
 
 ### Bare Metal
 - [x] Provision helm-log baseline hardening (10.0.10.25) — fail2ban, SSH, dotfiles
