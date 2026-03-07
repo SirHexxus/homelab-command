@@ -375,7 +375,8 @@ This is the authoritative procedure for rebuilding the homelab from scratch — 
 
 **Prerequisites:**
 - Proxmox VE installed and accessible at 10.0.10.2
-- pfSense restored from config backup (XML — stored in `infrastructure/network/pfsense/`)
+- ⚠ If pfSense needs recovery, the network will be unavailable — access Proxmox via direct connection or KVM console to provision and restore (see step 0a in recovery sequence)
+- Proxmox VE installed manually from ISO (~15 min), then configured via Ansible post-install playbook (infrastructure/proxmox/ansible/) before any containers or VMs are provisioned
 - SSH key pair available (`~/.ssh/homelab_ed25519`)
 - Vault password available (from password manager)
 - Git repository cloned: `git clone https://github.com/{username}/homelab-command`
@@ -384,9 +385,14 @@ This is the authoritative procedure for rebuilding the homelab from scratch — 
 
 ```
 Phase 0: Bare Metal (pre-IaC)
-    0. Iris (helm-log, 10.0.10.25)         ← ntfy notification broker; alerts for all subsequent phases
-       ansible-playbook -i inventory.ini provision.yml
-       (infrastructure/iris/ansible/)
+    0a. pfSense VM (10.0.10.1)             ← network backbone; VLANs + routing + firewall
+        infrastructure/network/pfsense/terraform/
+        Network is DOWN during this step — run Terraform from Proxmox host directly
+        After VM boots: restore XML config via pfSense UI (Diagnostics -> Backup & Restore)
+        XML backup stored at: infrastructure/network/pfsense/config.xml
+    0b. Iris (helm-log, 10.0.10.25)        ← ntfy; alerts for all subsequent phases
+        ansible-playbook -i inventory.ini provision.yml
+        (infrastructure/iris/ansible/)
 
 Phase 1: Management Plane
     1. Portainer Server LXC (10.0.10.20)  ← Management UI for Docker VM
@@ -402,6 +408,10 @@ Phase 3: AI Inference
 
 Phase 4: Workflow Engine
     7. n8n (10.0.50.13)        ← Depends on Postgres, Redis, Ollama
+
+Phase 4b: AI Agent
+    7b. Hermes (10.0.50.17)    ← AI agent; depends on Ollama + Postgres
+        infrastructure/hermes/
 
 Phase 5: SIEM Stack
     8. Splunk (10.0.50.20)
