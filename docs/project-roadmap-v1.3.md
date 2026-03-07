@@ -33,6 +33,7 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 | IaC Runbook | v1.3 | ✅ Complete |
 | Argus Design Doc | v1.2 | ✅ Complete |
 | Orpheus Design Doc | v1.1 | ✅ Complete |
+| Hermes Design Doc | v1.0 | ✅ Complete |
 
 ### Remaining
 | Document | Version | Status |
@@ -63,11 +64,15 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 - [ ] Create VLAN 70 (Guest) in pfSense
 - [ ] Configure managed switch trunk/access ports for all VLANs
 - [x] Rename VLAN 20 "Trusted" → "Personal" in pfSense and switch
+- [ ] Use Perplexity to research TP-Link switch automation for the specific model — determine whether Ansible (community.network), SSH CLI scripting, or REST API is the best approach
+- [ ] Implement switch configuration IaC (infrastructure/network/switch/) based on research
 
 ### Bare Metal
 - [x] Provision helm-log baseline hardening (10.0.10.25) — fail2ban, SSH, dotfiles
 - [x] Set pfSense static DHCP reservation for helm-log (MAC 72:c6:b9:0d:32:ac → 10.0.10.25)
 - [ ] Run ntfy provisioning playbook on helm-log (IaC ready)
+- [ ] Write Ansible post-install playbook for Proxmox (infrastructure/proxmox/ansible/) — bridges, storage pools, users, DNS
+- [ ] Research Proxmox Backup Server (PBS) — evaluate for VM/LXC backup strategy
 
 ### Services (IaC — Terraform + Ansible)
 - [x] Deploy n8n (10.0.50.13) — LXC 107
@@ -78,6 +83,10 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 - [x] Verify Whisper operational (10.0.50.12)
 - [x] Retire Qdrant (10.0.50.11) once Postgres pgvector confirmed stable
 - [ ] Reconnect R710 TrueNAS to network
+- [ ] Deploy Hermes LXC (10.0.50.17) — LXC 110 via Terraform + Ansible
+- [ ] Verify Hermes Phase 1 operational (CLI + Ollama + filesystem/shell skills)
+- [ ] Write pfSense Terraform IaC (infrastructure/network/pfsense/terraform/) — VM provisioning
+- [ ] Export + commit pfSense XML config backup to infrastructure/network/pfsense/config.xml
 
 ### GitHub
 - [x] Create homelab-command repository
@@ -91,6 +100,12 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 
 ## Phase 2 — Google Cybersecurity Certificate + Mnemosyne Rebuild
 **Duration:** Weeks 5–7 | **Target:** April 5, 2026
+
+### Hermes (AI Agent)
+- [ ] Hermes Phase 2: Gemini/Claude LLM router + web skill + email skill
+- [ ] Hermes Phase 2: Mnemosyne skill (Postgres + pgvector integration)
+- [ ] Hermes Phase 3: Register Telegram bots (@BotFather) + implement telegram_bot.py
+- [ ] Hermes Phase 5: n8n MCP integration (blocker resolved — n8n at 10.0.50.13)
 
 ### Google Cybersecurity Certificate
 - [ ] Complete Courses 5–8
@@ -164,6 +179,7 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 **Duration:** Weeks 10–13 | **Target:** May 17, 2026
 
 ### DMZ (VLAN 60)
+- [ ] Hermes Phase 4: FastAPI web UI + NPM routing via Ariadne
 - [ ] Deploy NGINX Proxy Manager (10.0.60.10)
 - [ ] Configure WireGuard (pfSense package)
 - [ ] Configure Squid (pfSense package)
