@@ -120,7 +120,7 @@ formatting without manual prompting.
 | 2 | Planned | Gemini + Claude, LLM router, web skill, email skill, Mnemosyne |
 | 3 | Planned | Telegram bots — register via @BotFather first (see below) |
 | 4 | Planned | FastAPI web UI, domain → context routing |
-| 5 | Blocked | n8n MCP integration (blocked on n8n NAS → Proxmox migration) |
+| 5 | Planned | n8n MCP integration (n8n deployed at 10.0.50.13) |
 
 ### Phase 3 pre-requisite
 
@@ -176,7 +176,7 @@ Hermes sits on VLAN 50 (Lab Services) alongside the other homelab services.
 
 | Dependency | Why |
 |------------|-----|
-| Ollama (10.0.50.16) | Tier 1 LLM inference — must be running before Hermes starts |
+| Ollama (10.0.50.10) | Tier 1 LLM inference — must be running before Hermes starts |
 | Mnemosyne Postgres (10.0.50.14) | Skill — gracefully skipped if unreachable (Phase 1) |
 | Gemini API key | Phase 2 — not needed for Phase 1 |
 | Telegram bot tokens | Phase 3 — not needed for Phase 1–2 |
