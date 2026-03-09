@@ -1,8 +1,9 @@
 # main.tf - Ariadne DMZ Containers
 #
-# Provisions two LXC containers on VLAN 60 (DMZ):
-#   npm      (10.0.60.10) — NGINX Proxy Manager: SSL termination, subdomain routing
-#   authelia (10.0.60.11) — Authelia: SSO, MFA, forward auth for NPM-protected services
+# Provisions three LXC containers:
+#   npm      (10.0.60.10, VLAN 60) — NGINX Proxy Manager: SSL termination, subdomain routing
+#   authelia (10.0.60.11, VLAN 60) — Authelia: SSO, MFA, forward auth for NPM-protected services
+#   umami    (10.0.50.18, VLAN 50) — Umami: privacy-first web analytics; shares Postgres on 10.0.50.14
 #
 # After apply, run Ansible provisioning from infrastructure/ariadne/ansible/ to
 # install and configure the services. See Ariadne Design Doc §13 for full order.
@@ -72,6 +73,7 @@ resource "proxmox_virtual_environment_container" "npm" {
 # Authelia
 # -----------------------------------------------------------------------------
 
+
 resource "proxmox_virtual_environment_container" "authelia" {
   vm_id        = var.authelia_vmid
   node_name    = var.proxmox_node
@@ -118,6 +120,67 @@ resource "proxmox_virtual_environment_container" "authelia" {
   disk {
     datastore_id = var.container_storage
     size         = var.authelia_disk_gb
+  }
+
+  features {
+    nesting = true
+  }
+
+  lifecycle {
+    ignore_changes = [initialization[0].user_account[0].keys]
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Umami
+# -----------------------------------------------------------------------------
+
+resource "proxmox_virtual_environment_container" "umami" {
+  vm_id        = var.umami_vmid
+  node_name    = var.proxmox_node
+  description  = "Umami — privacy-first web analytics; uses shared Postgres on 10.0.50.14"
+  unprivileged = true
+  started      = true
+  tags         = local.umami_tags
+
+  operating_system {
+    template_file_id = var.lxc_template
+    type             = "ubuntu"
+  }
+
+  initialization {
+    hostname = var.umami_hostname
+
+    ip_config {
+      ipv4 {
+        address = local.umami_network_config.ipv4
+        gateway = local.umami_network_config.gateway
+      }
+    }
+
+    user_account {
+      keys = [local.ssh_key]
+    }
+  }
+
+  network_interface {
+    name    = "eth0"
+    bridge  = local.umami_network_config.bridge
+    vlan_id = local.umami_network_config.vlan_tag
+  }
+
+  cpu {
+    cores = var.umami_cpu_cores
+  }
+
+  memory {
+    dedicated = var.umami_memory_mb
+    swap      = 256
+  }
+
+  disk {
+    datastore_id = var.container_storage
+    size         = var.umami_disk_gb
   }
 
   features {

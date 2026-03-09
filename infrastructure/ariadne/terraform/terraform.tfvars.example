@@ -32,3 +32,13 @@ authelia_gateway    = "10.0.60.1"
 authelia_cpu_cores  = 1
 authelia_memory_mb  = 512
 authelia_disk_gb    = 8
+
+# Umami (VLAN 50 — shares Postgres on 10.0.50.14)
+umami_vmid       = 122
+umami_hostname   = "umami"
+umami_ip         = "10.0.50.18/24"
+umami_gateway    = "10.0.50.1"
+umami_vlan_tag   = 50
+umami_cpu_cores  = 1
+umami_memory_mb  = 512
+umami_disk_gb    = 8

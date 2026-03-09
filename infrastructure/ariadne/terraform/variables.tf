@@ -1,7 +1,10 @@
 # variables.tf - Input Variables for Ariadne (DMZ) Proxmox Configuration
 #
-# Covers two containers: NGINX Proxy Manager (10.0.60.10) and Authelia (10.0.60.11).
-# Both live on VLAN 60 (DMZ) and are deployed atomically via a single apply.
+# Covers three containers:
+#   NGINX Proxy Manager (10.0.60.10) — VLAN 60 (DMZ)
+#   Authelia            (10.0.60.11) — VLAN 60 (DMZ)
+#   Umami               (10.0.50.18) — VLAN 50 (Lab Services; shares Postgres)
+# All three are deployed atomically via a single apply.
 
 # =============================================================================
 # PROXMOX CONNECTION SETTINGS
@@ -203,6 +206,83 @@ variable "authelia_disk_gb" {
 
   validation {
     condition     = var.authelia_disk_gb >= 5
+    error_message = "Disk size must be at least 5GB."
+  }
+}
+
+# =============================================================================
+# UMAMI SETTINGS
+# =============================================================================
+
+variable "umami_vmid" {
+  description = "Proxmox VM/Container ID for Umami"
+  type        = number
+  default     = 122
+
+  validation {
+    condition     = var.umami_vmid >= 100 && var.umami_vmid <= 999999
+    error_message = "VMID must be between 100 and 999999."
+  }
+}
+
+variable "umami_hostname" {
+  description = "Hostname inside the Umami container"
+  type        = string
+  default     = "umami"
+}
+
+variable "umami_ip" {
+  description = "Static IP address for Umami in CIDR notation (e.g., '10.0.50.18/24')"
+  type        = string
+  default     = "10.0.50.18/24"
+}
+
+variable "umami_gateway" {
+  description = "Gateway IP for Umami static IP configuration"
+  type        = string
+  default     = "10.0.50.1"
+}
+
+variable "umami_vlan_tag" {
+  description = "VLAN tag for Umami (VLAN 50 — Lab Services; shares Postgres)"
+  type        = number
+  default     = 50
+
+  validation {
+    condition     = var.umami_vlan_tag >= 0 && var.umami_vlan_tag <= 4094
+    error_message = "VLAN tag must be between 0 (disabled) and 4094."
+  }
+}
+
+variable "umami_cpu_cores" {
+  description = "Number of CPU cores for Umami"
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.umami_cpu_cores > 0 && var.umami_cpu_cores <= 64
+    error_message = "CPU cores must be between 1 and 64."
+  }
+}
+
+variable "umami_memory_mb" {
+  description = "Memory in megabytes for Umami"
+  type        = number
+  default     = 512
+
+  validation {
+    condition     = var.umami_memory_mb >= 256
+    error_message = "Memory must be at least 256MB."
+  }
+}
+
+variable "umami_disk_gb" {
+  description = "Disk size in gigabytes for Umami"
+  type        = number
+  default     = 8
+
+  validation {
+    condition     = var.umami_disk_gb >= 5
     error_message = "Disk size must be at least 5GB."
   }
 }

@@ -26,6 +26,16 @@ locals {
     vlan_tag = local.vlan_tag
   }
 
+  # Umami network configuration — VLAN 50 (Lab Services), not the shared DMZ VLAN 60
+  umami_vlan_tag = var.umami_vlan_tag > 0 ? var.umami_vlan_tag : null
+
+  umami_network_config = {
+    ipv4     = var.umami_ip
+    gateway  = var.umami_gateway
+    bridge   = var.network_bridge
+    vlan_tag = local.umami_vlan_tag
+  }
+
   # Tags — combined per-container tags with automatic project tags
   npm_tags = concat(
     ["npm", "proxy", "ariadne"],
@@ -34,6 +44,11 @@ locals {
 
   authelia_tags = concat(
     ["authelia", "auth", "sso", "ariadne"],
+    ["terraform-managed", "homelab-command"]
+  )
+
+  umami_tags = concat(
+    ["umami", "analytics", "ariadne"],
     ["terraform-managed", "homelab-command"]
   )
 }
