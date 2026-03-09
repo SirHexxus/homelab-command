@@ -6,6 +6,14 @@
 #   2. Block WORK → ALL_RFC1918 alias
 #   3. Allow WORK → any (internet outbound)
 
+# Remove legacy manual rule superseded by IaC (source was locked to 10.0.30.0/24;
+# our rule allows any source to gateway, making this unreachable).
+- name: "WORK | Remove legacy gateway rule"
+  pfsensible.core.pfsense_rule:
+    name: "Give VLAN access to its own gateway"
+    interface: "{{ pfsense_work_interface }}"
+    state: absent
+
 - name: "WORK | Allow WORK → own gateway ({{ pfsense_work_gateway }})"
   pfsensible.core.pfsense_rule:
     name: "Give WORK access to its own gateway"
