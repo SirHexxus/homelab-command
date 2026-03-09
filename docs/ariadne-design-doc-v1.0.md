@@ -94,11 +94,14 @@ Remote device → WireGuard UDP → pfSense WG interface
 **Gateway:** 10.0.60.1 (pfSense)
 **Purpose:** Publicly facing services; reverse proxy, SSO, perimeter defense
 
-| Service | IP | Type | Status |
-|---------|----|------|--------|
-| pfSense | 10.0.60.1 | Gateway | Planned |
-| NGINX Proxy Manager | 10.0.60.10 | LXC | Planned |
-| Authelia | 10.0.60.11 | LXC | Planned |
+| Service | IP | VLAN | Type | Status |
+|---------|----|------|------|--------|
+| pfSense | 10.0.60.1 | 60 | Gateway | Planned |
+| NGINX Proxy Manager | 10.0.60.10 | 60 | LXC | Planned |
+| Authelia | 10.0.60.11 | 60 | LXC | Planned |
+| Umami | 10.0.50.18 | 50 | LXC | Planned |
+
+> **Umami placement:** Umami lives on VLAN 50 (Lab Services) rather than VLAN 60 to reuse the existing Postgres LXC (10.0.50.14). NPM proxies `analytics.sirhexx.com` to Umami via a pfSense DMZ service-allow rule (port 3000). Umami is logically part of Ariadne — provisioned in the same Terraform config — but does not sit inside the DMZ itself.
 
 **pfSense packages (no separate VLAN IP):**
 
@@ -117,6 +120,19 @@ Remote device → WireGuard UDP → pfSense WG interface
 - Block: WireGuard tunnel → VLAN 30 (Work VLAN remains isolated even for VPN clients)
 
 > **Key principle:** The DMZ can receive from the internet and forward to internal services, but it cannot initiate connections into the internal network. NPM proxies requests on behalf of external clients — the internal services see traffic from NPM, never directly from the internet.
+
+### 3.1 DDNS — Dynamic DNS
+
+**Provider:** Namecheap
+**Managed by:** pfSense Dynamic DNS client (Services > Dynamic DNS)
+**Hostname:** `*` (wildcard)
+**Domain:** `sirhexx.com`
+
+pfSense updates the Namecheap A record for `*.sirhexx.com` whenever the WAN IP changes. This wildcard covers all subdomains automatically — `watch.sirhexx.com`, `images.sirhexx.com`, `analytics.sirhexx.com`, etc. — without per-subdomain DDNS entries.
+
+An explicit `www` CNAME in Namecheap DNS overrides the wildcard for `www.sirhexx.com` where needed.
+
+> **Not IaC-managed.** DDNS is configured once in the pfSense UI and does not require Terraform or Ansible. The pfSense config XML backup documents the current state.
 
 ---
 
@@ -145,6 +161,7 @@ NPM uses the `proxy_set_header` forward auth configuration to check every protec
 | request.sirhexx.com | Jellyseerr (10.0.80.X) | Yes — Authelia SSO |
 | books.sirhexx.com | CalibreWeb (10.0.80.X) | Yes — Authelia SSO |
 | music.sirhexx.com | Navidrome (10.0.80.X) | Yes — Authelia SSO |
+| analytics.sirhexx.com | Umami (10.0.50.18) | No — Umami handles its own auth |
 | photos.hexxusweb.com | — | Reserved — portfolio/professional use TBD |
 
 > **Auth rationale:** Jellyfin, Immich, and Audiobookshelf ship with robust built-in authentication and are designed to be self-hosted publicly. Jellyseerr, CalibreWeb, and Navidrome have weaker native auth — Authelia adds the SSO layer in front of them.
@@ -307,6 +324,7 @@ Canonical subdomain list. Cross-reference with Orpheus Design Doc v1.1 §8 for f
 | request | sirhexx.com | Jellyseerr | 10.0.80.X | Authelia | Planned |
 | books | sirhexx.com | CalibreWeb | 10.0.80.X | Authelia | Planned |
 | music | sirhexx.com | Navidrome | 10.0.80.X | Authelia | Planned |
+| analytics | sirhexx.com | Umami | 10.0.50.18 | None | Planned |
 
 > **TBD subdomains:** hexxusweb.com professional services TBD post-June. Additional sirhexx.com subdomains assigned at deployment time for any newly exposed services.
 
@@ -321,7 +339,7 @@ Ariadne follows the same IaC conventions as all Homelab Command projects. See Ia
 ```
 ariadne/
 ├── terraform/
-│   ├── main.tf              # NPM LXC + Authelia LXC provisioning
+│   ├── main.tf              # NPM LXC + Authelia LXC + Umami LXC provisioning
 │   ├── variables.tf
 │   ├── terraform.tfvars     # gitignored
 │   └── terraform.tfvars.example
@@ -345,6 +363,7 @@ ariadne/
 - Squid pfSense package install and ACLs
 - Suricata pfSense package install and rule sets
 - Inbound NAT rules (80/443 → NPM, WireGuard UDP)
+- Dynamic DNS (pfSense DDNS client → Namecheap; `*.sirhexx.com` wildcard A record)
 
 > These are documented here for reference but configured manually in the pfSense UI. pfSense does not have a mature Terraform provider suitable for production use; manual config with this doc as the source of truth is the correct approach.
 
@@ -356,14 +375,14 @@ Prerequisites: VLAN 60 created in pfSense and switch. VLAN 50 stable (NPM needs 
 
 1. Create VLAN 60 in pfSense (interface, firewall rules, DHCP if needed)
 2. Configure VLAN 60 on TP-Link switch (trunk port already carries all VLANs)
-3. Provision NPM LXC via Terraform (10.0.60.10)
+3. Provision all three LXC containers via Terraform: NPM (10.0.60.10), Authelia (10.0.60.11), Umami (10.0.50.18)
 4. Run Ansible `provision.yml` → NPM role (install, basic config)
-5. Configure pfSense inbound NAT (80/443 → NPM)
+5. Configure pfSense inbound NAT (80/443 → NPM); configure pfSense Dynamic DNS (Namecheap, `*.sirhexx.com` wildcard)
 6. Obtain Let's Encrypt wildcard cert for *.sirhexx.com via DNS challenge
-7. Provision Authelia LXC via Terraform (10.0.60.11)
-8. Run Ansible `provision.yml` → Authelia role (install, config, user DB)
-9. Configure NPM forward auth integration with Authelia
-10. Add proxy hosts in NPM (one per subdomain in §11 registry)
+7. Run Ansible `provision.yml` → Authelia role (install, config, user DB)
+8. Configure NPM forward auth integration with Authelia
+9. Run Ansible `provision.yml` → Umami role (Node.js install, service config, Postgres DB creation)
+10. Add proxy hosts in NPM (one per subdomain in §11 registry; include analytics.sirhexx.com → 10.0.50.18:3000)
 11. Configure WireGuard in pfSense (tunnel, peers, firewall rules)
 12. Install and configure Crowdsec pfSense package + NPM bouncer
 13. Install Squid pfSense package (transparent/logging mode)

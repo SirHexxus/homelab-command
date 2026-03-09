@@ -183,7 +183,9 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 - [ ] Deploy NGINX Proxy Manager (10.0.60.10)
 - [ ] Configure WireGuard (pfSense package)
 - [ ] Configure Squid (pfSense package)
+- [ ] Configure pfSense Dynamic DNS (*.sirhexx.com wildcard → Namecheap)
 - [ ] Deploy Authelia (10.0.60.11)
+- [ ] Deploy Umami (10.0.50.18) — analytics for sirhexx.com / hexxusweb.com
 - [ ] Configure Crowdsec (pfSense package)
 - [ ] Configure Fail2ban per-host
 

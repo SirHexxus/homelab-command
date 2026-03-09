@@ -171,6 +171,7 @@
 | Redis | 10.0.50.15 | LXC 106 | IaC-deployed. Session/ephemeral cache. |
 | MinIO | 10.0.50.16 | LXC 108 | IaC-deployed. S3-compatible object storage. |
 | Hermes | 10.0.50.17 | LXC (planned) | AI agent; Mnemosyne Postgres client + homelab automation |
+| Umami | 10.0.50.18 | LXC 122 | IaC-deployed. Web analytics for Ariadne-proxied public services. |
 | Splunk Free | 10.0.50.20 | LXC (planned) | SIEM log aggregation |
 | Wazuh Manager | 10.0.50.21 | LXC (planned) | Host-based IDS |
 | Grafana | 10.0.50.22 | LXC (planned) | TimescaleDB dashboards |
