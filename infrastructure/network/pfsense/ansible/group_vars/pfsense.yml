@@ -57,14 +57,14 @@ pfsense_vlans:
     description: "Quarantine zone — isolated, no outbound"
     gateway: "10.0.66.1"
     subnet: "10.0.66.0/24"
-    existing: false
+    existing: true
 
   - id: 70
     name: GUEST
     description: "Guest Wi-Fi — internet only"
     gateway: "10.0.70.1"
     subnet: "10.0.70.0/24"
-    existing: false
+    existing: true
 
 # Internal subnets that DMZ must not reach.
 # Used by pfsense_firewall role to generate block rules.
