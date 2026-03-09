@@ -32,7 +32,7 @@
     destination: "{{ pfsense_dmz_dns }}"
     destination_port: "53"
     protocol: "tcp/udp"
-    after: "Block DMZ to {{ pfsense_internal_subnets | last | attr('name') }}"
+    after: "Block DMZ to {{ (pfsense_internal_subnets | last).name }}"
     state: present
 
 - name: "DMZ | Allow DMZ → any (internet outbound)"
