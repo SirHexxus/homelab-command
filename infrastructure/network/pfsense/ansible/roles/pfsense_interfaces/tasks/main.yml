@@ -2,7 +2,7 @@
 # Assign VLAN sub-interfaces and configure their IP addresses.
 # Only acts on VLANs where existing: false.
 
-- name: Assign and configure interface for VLAN {{ item.id }} ({{ item.name }})
+- name: Assign and configure interface
   pfsensible.core.pfsense_interface:
     descr: "{{ item.name }}"
     interface: "{{ pfsense_trunk_interface }}.{{ item.id }}"

@@ -9,7 +9,7 @@
 # (e.g. OPT5) assigned to VLAN 60 after initial creation. Verify in pfSense UI
 # under Interfaces > Assignments, then update group_vars/pfsense.yml.
 
-- name: "DMZ | Block DMZ → {{ item.name }} ({{ item.net }})"
+- name: "DMZ | Block DMZ → internal subnet"
   pfsensible.core.pfsense_rule:
     name: "Block DMZ to {{ item.name }}"
     action: block
@@ -32,7 +32,7 @@
     destination: "{{ pfsense_dmz_dns }}"
     destination_port: "53"
     protocol: "tcp/udp"
-    after: "Block DMZ to {{ (pfsense_internal_subnets | last).name }}"
+    after: "Block DMZ to {{ (pfsense_internal_subnets | first).name }}"
     state: present
 
 - name: "DMZ | Allow DMZ → any (internet outbound)"

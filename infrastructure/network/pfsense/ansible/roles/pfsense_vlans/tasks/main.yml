@@ -2,11 +2,11 @@
 # Create VLAN sub-interfaces on the trunk interface.
 # Only acts on VLANs where existing: false.
 
-- name: Create VLAN {{ item.id }} ({{ item.name }}) on {{ pfsense_trunk_interface }}
+- name: Create VLAN on {{ pfsense_trunk_interface }}
   pfsensible.core.pfsense_vlan:
     interface: "{{ pfsense_trunk_interface }}"
     vlan_id: "{{ item.id }}"
-    descr: "{{ item.description }}"
+    descr: "{{ item.name }}"
     state: present
   loop: "{{ pfsense_vlans }}"
   loop_control:
