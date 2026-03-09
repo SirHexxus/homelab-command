@@ -2,8 +2,10 @@
 # pfSense provisioning playbook.
 #
 # Usage:
-#   PoC (VLAN 60 only):
+#   Single VLAN:
 #     ansible-playbook provision.yml --tags dmz
+#     ansible-playbook provision.yml --tags sandbox
+#     ansible-playbook provision.yml --tags guest
 #
 #   Full run (all non-existing VLANs):
 #     ansible-playbook provision.yml
@@ -22,10 +24,10 @@
 
   roles:
     - role: pfsense_vlans
-      tags: [vlans, dmz]
+      tags: [vlans, dmz, sandbox, guest]
 
     - role: pfsense_interfaces
-      tags: [interfaces, dmz]
+      tags: [interfaces, dmz, sandbox, guest]
 
     - role: pfsense_firewall
-      tags: [firewall, dmz]
+      tags: [firewall, dmz, sandbox, guest]
