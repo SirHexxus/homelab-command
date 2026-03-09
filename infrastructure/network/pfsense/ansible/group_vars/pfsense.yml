@@ -1,0 +1,90 @@
+---
+# Source of truth: all VLANs and firewall configuration for pfSense.
+#
+# existing: true  → pre-existing VLAN; documented here but skipped by Ansible
+# existing: false → managed by Ansible; will be created/configured
+#
+# After a new VLAN is confirmed live, flip existing to true so it stays
+# documented but is no longer re-touched on subsequent runs.
+
+pfsense_trunk_interface: vtnet1
+
+pfsense_vlans:
+  - id: 10
+    name: MANAGEMENT
+    description: "Management network (native/untagged on vtnet1)"
+    gateway: "10.0.10.1"
+    subnet: "10.0.10.0/24"
+    existing: true
+
+  - id: 20
+    name: PERSONAL
+    description: "Personal devices"
+    gateway: "10.0.20.1"
+    subnet: "10.0.20.0/24"
+    existing: true
+
+  - id: 30
+    name: WORK
+    description: "Work devices"
+    gateway: "10.0.30.1"
+    subnet: "10.0.30.0/24"
+    existing: true
+
+  - id: 40
+    name: IOT
+    description: "IoT devices"
+    gateway: "10.0.40.1"
+    subnet: "10.0.40.0/24"
+    existing: true
+
+  - id: 50
+    name: LAB_SERVICES
+    description: "Lab services (Proxmox, LXC, VMs)"
+    gateway: "10.0.50.1"
+    subnet: "10.0.50.0/24"
+    existing: true
+
+  - id: 60
+    name: DMZ
+    description: "Demilitarized zone — public-facing services"
+    gateway: "10.0.60.1"
+    subnet: "10.0.60.0/24"
+    existing: false  # PoC target — set to true after confirmed live
+
+  - id: 66
+    name: SANDBOX
+    description: "Sandbox / experimental"
+    gateway: "10.0.66.1"
+    subnet: "10.0.66.0/24"
+    existing: false
+
+  - id: 70
+    name: GUEST
+    description: "Guest Wi-Fi"
+    gateway: "10.0.70.1"
+    subnet: "10.0.70.0/24"
+    existing: false
+
+# Internal subnets that DMZ must not reach.
+# Used by pfsense_firewall role to generate block rules.
+pfsense_internal_subnets:
+  - name: "MANAGEMENT"
+    net: "10.0.10.0/24"
+  - name: "PERSONAL"
+    net: "10.0.20.0/24"
+  - name: "WORK"
+    net: "10.0.30.0/24"
+  - name: "IOT"
+    net: "10.0.40.0/24"
+  - name: "LAB_SERVICES"
+    net: "10.0.50.0/24"
+
+# pfSense interface name assigned to VLAN 60 after it is created and assigned.
+# Verify in pfSense UI (Interfaces > Assignments) after initial apply, then set here.
+# pfsensible.core.pfsense_rule requires the pfSense interface name (e.g. OPT5),
+# not the sub-interface name (vtnet1.60).
+pfsense_dmz_interface: "OPT5"
+
+# DNS resolver address for DMZ hosts (pfSense listens on the VLAN gateway).
+pfsense_dmz_dns: "10.0.60.1"

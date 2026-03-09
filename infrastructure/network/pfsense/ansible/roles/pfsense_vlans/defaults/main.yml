@@ -1,0 +1,4 @@
+---
+# Overridden by group_vars/pfsense.yml in normal usage.
+pfsense_trunk_interface: vtnet1
+pfsense_vlans: []

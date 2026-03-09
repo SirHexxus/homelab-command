@@ -1,0 +1,3 @@
+---
+pfsense_trunk_interface: vtnet1
+pfsense_vlans: []

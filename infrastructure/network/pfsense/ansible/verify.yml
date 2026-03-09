@@ -1,0 +1,53 @@
+---
+# Read-only state verification for pfSense.
+# Uses raw module only — no Python required on the target.
+#
+# Usage:
+#   ansible-playbook -i inventory.ini verify.yml
+#
+# Checks:
+#   1. All expected VLAN IDs are present (getvlans)
+#   2. All expected gateway IPs are assigned (ifconfig)
+#   3. Active firewall rules printed for manual inspection (pfctl)
+
+- name: Verify pfSense state
+  hosts: pfsense
+  gather_facts: false
+
+  vars:
+    expected_vlan_ids: "{{ pfsense_vlans | map(attribute='id') | list }}"
+    expected_gateways: "{{ pfsense_vlans | map(attribute='gateway') | list }}"
+
+  tasks:
+    - name: Get configured VLANs from pfSense
+      ansible.builtin.raw: pfSsh.php playback getvlans
+      register: vlan_output
+      changed_when: false
+
+    - name: Assert each expected VLAN ID is present
+      ansible.builtin.assert:
+        that: "item | string in vlan_output.stdout"
+        fail_msg: "VLAN {{ item }} not found in pfSense VLAN list"
+        success_msg: "VLAN {{ item }} present"
+      loop: "{{ expected_vlan_ids }}"
+
+    - name: Get interface IP assignments
+      ansible.builtin.raw: ifconfig | grep inet
+      register: ifconfig_output
+      changed_when: false
+
+    - name: Assert each expected gateway IP is assigned
+      ansible.builtin.assert:
+        that: "item in ifconfig_output.stdout"
+        fail_msg: "Gateway {{ item }} not found in ifconfig output"
+        success_msg: "Gateway {{ item }} present"
+      loop: "{{ expected_gateways }}"
+
+    - name: Print active firewall rules (manual inspection)
+      ansible.builtin.raw: pfctl -sr
+      register: pfctl_output
+      changed_when: false
+
+    - name: Display firewall rules
+      ansible.builtin.debug:
+        msg: "{{ pfctl_output.stdout_lines }}"

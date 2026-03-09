@@ -1,0 +1,5 @@
+---
+pfsense_vlans: []
+pfsense_internal_subnets: []
+pfsense_dmz_interface: "OPT5"
+pfsense_dmz_dns: "10.0.60.1"
