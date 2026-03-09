@@ -1,0 +1,33 @@
+---
+# pfSense aliases — created before any firewall rules that reference them.
+#
+# ALL_RFC1918           — all private IPv4 space (used by IoT, GUEST, WORK block rules)
+# RFC1918_excluding_LAB_SERVICES — private space minus LAB_SERVICES subnet, so LAB_SERVICES
+#                         hosts can still reach each other while being blocked from other VLANs.
+#                         Update this alias if LAB_SERVICES subnet ever changes.
+# MANAGEMENT_DENIED     — the two subnets MANAGEMENT cannot initiate connections to:
+#                         WORK (kept separate from admin) and SANDBOX (quarantine zone).
+
+- name: "ALIAS | ALL_RFC1918"
+  pfsensible.core.pfsense_alias:
+    name: ALL_RFC1918
+    type: network
+    address: "{{ pfsense_alias_all_rfc1918 }}"
+    descr: "All private IPv4 ranges (RFC 1918)"
+    state: present
+
+- name: "ALIAS | RFC1918_excluding_LAB_SERVICES"
+  pfsensible.core.pfsense_alias:
+    name: RFC1918_excluding_LAB_SERVICES
+    type: network
+    address: "{{ pfsense_alias_rfc1918_ex_lab }}"
+    descr: "RFC1918 minus LAB_SERVICES — intra-lab traffic allowed, cross-VLAN blocked"
+    state: present
+
+- name: "ALIAS | MANAGEMENT_DENIED"
+  pfsensible.core.pfsense_alias:
+    name: MANAGEMENT_DENIED
+    type: network
+    address: "{{ pfsense_alias_management_denied }}"
+    descr: "Subnets MANAGEMENT cannot initiate connections to: WORK and SANDBOX"
+    state: present

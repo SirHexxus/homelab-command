@@ -1,0 +1,28 @@
+---
+# IOT (VLAN 40) — internet only; fully isolated from all internal VLANs.
+#
+# Rule order:
+#   1. Block IoT → ALL_RFC1918 alias
+#   2. Allow IoT → any (internet outbound)
+
+- name: "IOT | Block IoT → ALL_RFC1918"
+  pfsensible.core.pfsense_rule:
+    name: "Block IoT from accessing other VLANs"
+    action: block
+    interface: "{{ pfsense_iot_interface }}"
+    source: any
+    destination: ALL_RFC1918
+    protocol: any
+    after: top
+    state: present
+
+- name: "IOT | Allow IoT → any (internet outbound)"
+  pfsensible.core.pfsense_rule:
+    name: "Allow IoT to Internet"
+    action: pass
+    interface: "{{ pfsense_iot_interface }}"
+    source: any
+    destination: any
+    protocol: any
+    after: "Block IoT from accessing other VLANs"
+    state: present

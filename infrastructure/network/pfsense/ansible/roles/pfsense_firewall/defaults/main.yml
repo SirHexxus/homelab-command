@@ -1,13 +1,26 @@
 ---
 pfsense_vlans: []
 pfsense_internal_subnets: []
+
+pfsense_management_interface: "MANAGEMENT"
+pfsense_management_subnet: "10.0.10.0/24"
+pfsense_personal_interface: "PERSONAL"
+pfsense_personal_subnet: "10.0.20.0/24"
+pfsense_work_interface: "WORK"
+pfsense_work_gateway: "10.0.30.1"
+pfsense_work_subnet: "10.0.30.0/24"
+pfsense_iot_interface: "IOT"
+pfsense_iot_subnet: "10.0.40.0/24"
+pfsense_lab_services_interface: "LAB_SERVICES"
+pfsense_lab_services_subnet: "10.0.50.0/24"
 pfsense_dmz_interface: "DMZ"
 pfsense_dmz_dns: "10.0.60.1"
-
+pfsense_dmz_service_allows: []
 pfsense_sandbox_interface: "SANDBOX"
-
 pfsense_guest_interface: "GUEST"
 pfsense_guest_dns: "10.0.70.1"
 pfsense_guest_subnet: "10.0.70.0/24"
-pfsense_guest_internal_subnets: []
-pfsense_management_interface: "MANAGEMENT"
+
+pfsense_alias_all_rfc1918: "10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
+pfsense_alias_rfc1918_ex_lab: ""
+pfsense_alias_management_denied: ""
