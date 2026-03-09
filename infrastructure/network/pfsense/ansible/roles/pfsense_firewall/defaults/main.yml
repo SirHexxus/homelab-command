@@ -1,5 +1,13 @@
 ---
 pfsense_vlans: []
 pfsense_internal_subnets: []
-pfsense_dmz_interface: "OPT5"
+pfsense_dmz_interface: "DMZ"
 pfsense_dmz_dns: "10.0.60.1"
+
+pfsense_sandbox_interface: "SANDBOX"
+
+pfsense_guest_interface: "GUEST"
+pfsense_guest_dns: "10.0.70.1"
+pfsense_guest_subnet: "10.0.70.0/24"
+pfsense_guest_internal_subnets: []
+pfsense_management_interface: "MANAGEMENT"
