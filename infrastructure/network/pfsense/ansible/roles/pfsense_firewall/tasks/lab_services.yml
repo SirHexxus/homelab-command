@@ -6,6 +6,14 @@
 #   2. Allow LAB_SERVICES → any (internet outbound)
 #   3. Allow MANAGEMENT → LAB_SERVICES (on MANAGEMENT interface)
 
+# Remove legacy manual rule superseded by IaC (same policy, different description casing;
+# our "Allow Lab Services to Internet" above it will match first, making this unreachable).
+- name: "LAB_SERVICES | Remove legacy internet allow rule"
+  pfsensible.core.pfsense_rule:
+    name: "Allow Lab Services to internet"
+    interface: "{{ pfsense_lab_services_interface }}"
+    state: absent
+
 - name: "LAB_SERVICES | Block LAB_SERVICES → RFC1918_excluding_LAB_SERVICES"
   pfsensible.core.pfsense_rule:
     name: "Block Lab Services to Other Internal Networks"
