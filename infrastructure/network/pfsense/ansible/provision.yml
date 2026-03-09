@@ -3,27 +3,22 @@
 #
 # Usage:
 #   PoC (VLAN 60 only):
-#     ansible-playbook -i inventory.ini provision.yml --ask-vault-pass --tags dmz
+#     ansible-playbook provision.yml --tags dmz
 #
 #   Full run (all non-existing VLANs):
-#     ansible-playbook -i inventory.ini provision.yml --ask-vault-pass
+#     ansible-playbook provision.yml
 #
 #   Dry-run (no changes applied):
-#     ansible-playbook -i inventory.ini provision.yml --ask-vault-pass --check
+#     ansible-playbook provision.yml --check
 #
 # Prerequisites:
 #   1. Install collection: ansible-galaxy collection install -r requirements.yml
-#   2. Create vault:       cp group_vars/vault.yml.example group_vars/vault.yml
-#                          ansible-vault encrypt group_vars/vault.yml
 #
 # See README.md for pfSense one-time manual prerequisites.
 
 - name: Provision pfSense VLANs and firewall rules
   hosts: pfsense
   gather_facts: false
-
-  vars_files:
-    - group_vars/vault.yml
 
   roles:
     - role: pfsense_vlans
