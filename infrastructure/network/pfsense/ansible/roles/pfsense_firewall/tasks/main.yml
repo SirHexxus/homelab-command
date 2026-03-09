@@ -1,0 +1,47 @@
+---
+# DMZ (VLAN 60) firewall rules.
+# Applied in order: block internal → allow DNS → allow internet.
+#
+# Rule ordering note: pfsense_rule uses after/before anchors.
+# Block rules anchor after: top; allow rules follow explicitly.
+#
+# IMPORTANT: pfsense_dmz_interface must be set to the pfSense interface name
+# (e.g. OPT5) assigned to VLAN 60 after initial creation. Verify in pfSense UI
+# under Interfaces > Assignments, then update group_vars/pfsense.yml.
+
+- name: "DMZ | Block DMZ → {{ item.name }} ({{ item.net }})"
+  pfsensible.core.pfsense_rule:
+    name: "Block DMZ to {{ item.name }}"
+    action: block
+    interface: "{{ pfsense_dmz_interface }}"
+    source: any
+    destination: "{{ item.net }}"
+    protocol: any
+    after: top
+    state: present
+  loop: "{{ pfsense_internal_subnets }}"
+  loop_control:
+    label: "Block DMZ → {{ item.name }}"
+
+- name: "DMZ | Allow DMZ → pfSense DNS resolver ({{ pfsense_dmz_dns }}:53)"
+  pfsensible.core.pfsense_rule:
+    name: "Allow DMZ DNS"
+    action: pass
+    interface: "{{ pfsense_dmz_interface }}"
+    source: any
+    destination: "{{ pfsense_dmz_dns }}"
+    destination_port: "53"
+    protocol: "tcp/udp"
+    after: "Block DMZ to {{ pfsense_internal_subnets | last | attr('name') }}"
+    state: present
+
+- name: "DMZ | Allow DMZ → any (internet outbound)"
+  pfsensible.core.pfsense_rule:
+    name: "Allow DMZ internet"
+    action: pass
+    interface: "{{ pfsense_dmz_interface }}"
+    source: any
+    destination: any
+    protocol: any
+    after: "Allow DMZ DNS"
+    state: present

@@ -1,0 +1,17 @@
+---
+# Assign VLAN sub-interfaces and configure their IP addresses.
+# Only acts on VLANs where existing: false.
+
+- name: Assign and configure interface for VLAN {{ item.id }} ({{ item.name }})
+  pfsensible.core.pfsense_interface:
+    descr: "{{ item.name }}"
+    interface: "{{ pfsense_trunk_interface }}.{{ item.id }}"
+    ipv4_type: static
+    ipv4_address: "{{ item.gateway }}"
+    ipv4_prefixlen: 24
+    enable: true
+    state: present
+  loop: "{{ pfsense_vlans }}"
+  loop_control:
+    label: "VLAN {{ item.id }} {{ item.name }}"
+  when: not item.existing

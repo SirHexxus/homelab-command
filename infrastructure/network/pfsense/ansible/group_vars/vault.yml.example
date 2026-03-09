@@ -1,0 +1,7 @@
+# Copy this file to vault.yml and encrypt with ansible-vault.
+# vault.yml is gitignored — never commit it.
+#
+# To create: cp vault.yml.example vault.yml && ansible-vault encrypt vault.yml
+# To edit:   ansible-vault edit vault.yml
+
+vault_pfsense_password: "changeme"
