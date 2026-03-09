@@ -37,7 +37,7 @@ This document defines how Infrastructure as Code is used across the homelab. It 
 
 **Why bpg/proxmox over telmate/proxmox:** The bpg provider is actively maintained, better documented, and handles LXC containers and VMs more reliably. The telmate provider has known bugs with token authentication and is no longer recommended.
 
-**Docker / Docker Compose note:** Some services may optionally run inside Docker within an LXC or VM. When this is the case, the Ansible role handles Docker installation and Compose file deployment. Docker itself is not used as an IaC layer — Terraform and Ansible remain the authoritative provisioning stack.
+**Docker / Docker Compose note:** Some services may optionally run inside Docker within a VM. When this is the case, the Ansible role handles Docker installation and Compose file deployment. Docker itself is not used as an IaC layer — Terraform and Ansible remain the authoritative provisioning stack.
 
 ---
 
