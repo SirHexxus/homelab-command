@@ -54,17 +54,17 @@ pfsense_vlans:
 
   - id: 66
     name: SANDBOX
-    description: "Sandbox / experimental"
+    description: "Quarantine zone — isolated, no outbound"
     gateway: "10.0.66.1"
     subnet: "10.0.66.0/24"
-    existing: true  # pending — flip to false when ready to provision
+    existing: false
 
   - id: 70
     name: GUEST
-    description: "Guest Wi-Fi"
+    description: "Guest Wi-Fi — internet only"
     gateway: "10.0.70.1"
     subnet: "10.0.70.0/24"
-    existing: true  # pending — flip to false when ready to provision
+    existing: false
 
 # Internal subnets that DMZ must not reach.
 # Used by pfsense_firewall role to generate block rules.
@@ -82,11 +82,33 @@ pfsense_internal_subnets:
   - name: "MANAGEMENT"
     net: "10.0.10.0/24"
 
-# pfSense interface name assigned to VLAN 60 after it is created and assigned.
-# Verify in pfSense UI (Interfaces > Assignments) after initial apply, then set here.
-# pfsensible.core.pfsense_rule requires the pfSense interface name (e.g. OPT5),
-# not the sub-interface name (vtnet1.60).
+# Interface names — must match pfSense Interfaces > Assignments after provisioning.
+pfsense_management_interface: "MANAGEMENT"
 pfsense_dmz_interface: "DMZ"
+pfsense_sandbox_interface: "SANDBOX"
+pfsense_guest_interface: "GUEST"
 
-# DNS resolver address for DMZ hosts (pfSense listens on the VLAN gateway).
+# DNS resolver addresses — pfSense listens on each VLAN's gateway IP.
 pfsense_dmz_dns: "10.0.60.1"
+pfsense_guest_dns: "10.0.70.1"
+
+# GUEST subnet — used for MANAGEMENT → GUEST allow rule.
+pfsense_guest_subnet: "10.0.70.0/24"
+
+# Subnets that GUEST must not reach (all internal VLANs).
+# Ordered descending — after: top reversal produces ascending UI order.
+pfsense_guest_internal_subnets:
+  - name: "SANDBOX"
+    net: "10.0.66.0/24"
+  - name: "DMZ"
+    net: "10.0.60.0/24"
+  - name: "LAB_SERVICES"
+    net: "10.0.50.0/24"
+  - name: "IOT"
+    net: "10.0.40.0/24"
+  - name: "WORK"
+    net: "10.0.30.0/24"
+  - name: "PERSONAL"
+    net: "10.0.20.0/24"
+  - name: "MANAGEMENT"
+    net: "10.0.10.0/24"
