@@ -2,12 +2,20 @@
 # pfSense provisioning playbook.
 #
 # Usage:
-#   Single VLAN:
+#   Single interface (firewall rules only):
+#     ansible-playbook provision.yml --tags management
+#     ansible-playbook provision.yml --tags work
+#     ansible-playbook provision.yml --tags lab_services
+#     ansible-playbook provision.yml --tags personal
+#     ansible-playbook provision.yml --tags iot
 #     ansible-playbook provision.yml --tags dmz
 #     ansible-playbook provision.yml --tags sandbox
 #     ansible-playbook provision.yml --tags guest
 #
-#   Full run (all non-existing VLANs):
+#   Aliases only:
+#     ansible-playbook provision.yml --tags aliases
+#
+#   Full run (all VLANs and firewall rules):
 #     ansible-playbook provision.yml
 #
 #   Dry-run (no changes applied):
@@ -30,4 +38,4 @@
       tags: [interfaces, dmz, sandbox, guest]
 
     - role: pfsense_firewall
-      tags: [firewall, dmz, sandbox, guest]
+      tags: [firewall, aliases, management, work, lab_services, personal, iot, dmz, sandbox, guest]

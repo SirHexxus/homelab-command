@@ -1,0 +1,28 @@
+---
+# MANAGEMENT (VLAN 10) — full internal access except WORK and SANDBOX.
+#
+# Rule order:
+#   1. Block MANAGEMENT → MANAGEMENT_DENIED alias (WORK + SANDBOX)
+#   2. Allow MANAGEMENT → any (all other internal VLANs + internet)
+
+- name: "MANAGEMENT | Block MANAGEMENT → MANAGEMENT_DENIED"
+  pfsensible.core.pfsense_rule:
+    name: "Block MANAGEMENT to MANAGEMENT_DENIED"
+    action: block
+    interface: "{{ pfsense_management_interface }}"
+    source: any
+    destination: "MANAGEMENT_DENIED"
+    protocol: any
+    after: top
+    state: present
+
+- name: "MANAGEMENT | Allow MANAGEMENT → any"
+  pfsensible.core.pfsense_rule:
+    name: "Allow MANAGEMENT to all"
+    action: pass
+    interface: "{{ pfsense_management_interface }}"
+    source: any
+    destination: any
+    protocol: any
+    after: "Block MANAGEMENT to MANAGEMENT_DENIED"
+    state: present

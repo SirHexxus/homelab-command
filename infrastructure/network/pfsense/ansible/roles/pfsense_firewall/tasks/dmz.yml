@@ -1,27 +1,85 @@
 ---
 # DMZ (VLAN 60) firewall rules.
-# Applied in order: block internal → allow DNS → allow internet.
+# Applied in order: service allows → block internal → allow DNS → allow internet.
 #
-# Rule ordering note: pfsense_rule uses after/before anchors.
-# Block rules anchor after: top; allow rules follow explicitly.
+# Block rules use explicit chained anchors (not after: top in a loop) to ensure
+# full idempotency. after: top loops shuffle rules on every run even when the
+# final state is stable — explicit anchors avoid that churn.
 #
-# IMPORTANT: pfsense_dmz_interface must be set to the pfSense interface name
-# (e.g. OPT5) assigned to VLAN 60 after initial creation. Verify in pfSense UI
-# under Interfaces > Assignments, then update group_vars/pfsense.yml.
+# pfsense_dmz_service_allows — list of per-service allow rules to insert BEFORE the
+# block rules. Used for NGINX Proxy Manager internal forwarding exceptions. Default: [].
+# Each entry: { name, destination, destination_port, protocol }
 
-- name: "DMZ | Block DMZ → internal subnet"
+- name: "DMZ | Allow DMZ service exception"
   pfsensible.core.pfsense_rule:
-    name: "Block DMZ to {{ item.name }}"
+    name: "{{ item.name }}"
+    action: pass
+    interface: "{{ pfsense_dmz_interface }}"
+    source: any
+    destination: "{{ item.destination }}"
+    destination_port: "{{ item.destination_port }}"
+    protocol: "{{ item.protocol }}"
+    after: top
+    state: present
+  loop: "{{ pfsense_dmz_service_allows }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: pfsense_dmz_service_allows | length > 0
+
+- name: "DMZ | Block DMZ → MANAGEMENT"
+  pfsensible.core.pfsense_rule:
+    name: "Block DMZ to MANAGEMENT"
     action: block
     interface: "{{ pfsense_dmz_interface }}"
     source: any
-    destination: "{{ item.net }}"
+    destination: "{{ pfsense_management_subnet }}"
     protocol: any
     after: top
     state: present
-  loop: "{{ pfsense_internal_subnets }}"
-  loop_control:
-    label: "Block DMZ → {{ item.name }}"
+
+- name: "DMZ | Block DMZ → PERSONAL"
+  pfsensible.core.pfsense_rule:
+    name: "Block DMZ to PERSONAL"
+    action: block
+    interface: "{{ pfsense_dmz_interface }}"
+    source: any
+    destination: "{{ pfsense_personal_subnet }}"
+    protocol: any
+    after: "Block DMZ to MANAGEMENT"
+    state: present
+
+- name: "DMZ | Block DMZ → WORK"
+  pfsensible.core.pfsense_rule:
+    name: "Block DMZ to WORK"
+    action: block
+    interface: "{{ pfsense_dmz_interface }}"
+    source: any
+    destination: "{{ pfsense_work_subnet }}"
+    protocol: any
+    after: "Block DMZ to PERSONAL"
+    state: present
+
+- name: "DMZ | Block DMZ → IOT"
+  pfsensible.core.pfsense_rule:
+    name: "Block DMZ to IOT"
+    action: block
+    interface: "{{ pfsense_dmz_interface }}"
+    source: any
+    destination: "{{ pfsense_iot_subnet }}"
+    protocol: any
+    after: "Block DMZ to WORK"
+    state: present
+
+- name: "DMZ | Block DMZ → LAB_SERVICES"
+  pfsensible.core.pfsense_rule:
+    name: "Block DMZ to LAB_SERVICES"
+    action: block
+    interface: "{{ pfsense_dmz_interface }}"
+    source: any
+    destination: "{{ pfsense_lab_services_subnet }}"
+    protocol: any
+    after: "Block DMZ to IOT"
+    state: present
 
 - name: "DMZ | Allow DMZ → pfSense DNS resolver ({{ pfsense_dmz_dns }}:53)"
   pfsensible.core.pfsense_rule:
@@ -32,7 +90,7 @@
     destination: "{{ pfsense_dmz_dns }}"
     destination_port: "53"
     protocol: "tcp/udp"
-    after: "Block DMZ to {{ (pfsense_internal_subnets | first).name }}"
+    after: "Block DMZ to LAB_SERVICES"
     state: present
 
 - name: "DMZ | Allow DMZ → any (internet outbound)"

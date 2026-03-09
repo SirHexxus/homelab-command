@@ -1,0 +1,40 @@
+---
+# WORK (VLAN 30) — internet only; blocked from all internal VLANs except own gateway.
+#
+# Rule order:
+#   1. Allow WORK → own gateway (10.0.30.1) — DNS, DHCP
+#   2. Block WORK → ALL_RFC1918 alias
+#   3. Allow WORK → any (internet outbound)
+
+- name: "WORK | Allow WORK → own gateway ({{ pfsense_work_gateway }})"
+  pfsensible.core.pfsense_rule:
+    name: "Give WORK access to its own gateway"
+    action: pass
+    interface: "{{ pfsense_work_interface }}"
+    source: any
+    destination: "{{ pfsense_work_gateway }}"
+    protocol: "tcp/udp"
+    after: top
+    state: present
+
+- name: "WORK | Block WORK → ALL_RFC1918"
+  pfsensible.core.pfsense_rule:
+    name: "Block Work from Internal Networks"
+    action: block
+    interface: "{{ pfsense_work_interface }}"
+    source: any
+    destination: ALL_RFC1918
+    protocol: any
+    after: "Give WORK access to its own gateway"
+    state: present
+
+- name: "WORK | Allow WORK → any (internet outbound)"
+  pfsensible.core.pfsense_rule:
+    name: "Allow Work to Internet"
+    action: pass
+    interface: "{{ pfsense_work_interface }}"
+    source: any
+    destination: any
+    protocol: any
+    after: "Block Work from Internal Networks"
+    state: present

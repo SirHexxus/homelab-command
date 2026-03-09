@@ -1,0 +1,52 @@
+---
+# PERSONAL (VLAN 20) — internet + intra-VLAN + read access to LAB_SERVICES.
+#
+# Rule order:
+#   1. Allow PERSONAL → PERSONAL (intra-VLAN — device-to-device within subnet)
+#   2. Allow PERSONAL → LAB_SERVICES (TCP — access to hosted services)
+#   3. Block PERSONAL → ALL_RFC1918 (blocks all other internal VLANs)
+#   4. Allow PERSONAL → any (internet outbound)
+
+- name: "PERSONAL | Allow PERSONAL → PERSONAL (intra-VLAN)"
+  pfsensible.core.pfsense_rule:
+    name: "Allow Personal to Itself"
+    action: pass
+    interface: "{{ pfsense_personal_interface }}"
+    source: any
+    destination: "{{ pfsense_personal_subnet }}"
+    protocol: any
+    after: top
+    state: present
+
+- name: "PERSONAL | Allow PERSONAL → LAB_SERVICES (TCP)"
+  pfsensible.core.pfsense_rule:
+    name: "Allow Personal to Lab Services"
+    action: pass
+    interface: "{{ pfsense_personal_interface }}"
+    source: any
+    destination: "{{ pfsense_lab_services_subnet }}"
+    protocol: tcp
+    after: "Allow Personal to Itself"
+    state: present
+
+- name: "PERSONAL | Block PERSONAL → ALL_RFC1918"
+  pfsensible.core.pfsense_rule:
+    name: "Default Block Personal to other VLANs"
+    action: block
+    interface: "{{ pfsense_personal_interface }}"
+    source: any
+    destination: ALL_RFC1918
+    protocol: any
+    after: "Allow Personal to Lab Services"
+    state: present
+
+- name: "PERSONAL | Allow PERSONAL → any (internet outbound)"
+  pfsensible.core.pfsense_rule:
+    name: "Allow Personal to Internet"
+    action: pass
+    interface: "{{ pfsense_personal_interface }}"
+    source: any
+    destination: any
+    protocol: any
+    after: "Default Block Personal to other VLANs"
+    state: present

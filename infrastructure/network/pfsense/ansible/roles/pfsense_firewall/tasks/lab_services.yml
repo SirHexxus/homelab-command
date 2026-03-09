@@ -1,0 +1,39 @@
+---
+# LAB_SERVICES (VLAN 50) — intra-lab traffic allowed; blocked from all other VLANs.
+#
+# Rule order:
+#   1. Block LAB_SERVICES → RFC1918_excluding_LAB_SERVICES (allows intra-50 traffic)
+#   2. Allow LAB_SERVICES → any (internet outbound)
+#   3. Allow MANAGEMENT → LAB_SERVICES (on MANAGEMENT interface)
+
+- name: "LAB_SERVICES | Block LAB_SERVICES → RFC1918_excluding_LAB_SERVICES"
+  pfsensible.core.pfsense_rule:
+    name: "Block Lab Services to Other Internal Networks"
+    action: block
+    interface: "{{ pfsense_lab_services_interface }}"
+    source: any
+    destination: RFC1918_excluding_LAB_SERVICES
+    protocol: any
+    after: top
+    state: present
+
+- name: "LAB_SERVICES | Allow LAB_SERVICES → any (internet outbound)"
+  pfsensible.core.pfsense_rule:
+    name: "Allow Lab Services to Internet"
+    action: pass
+    interface: "{{ pfsense_lab_services_interface }}"
+    source: any
+    destination: any
+    protocol: any
+    after: "Block Lab Services to Other Internal Networks"
+    state: present
+
+- name: "MANAGEMENT | Allow MANAGEMENT → LAB_SERVICES"
+  pfsensible.core.pfsense_rule:
+    name: "Allow MANAGEMENT to LAB_SERVICES"
+    action: pass
+    interface: "{{ pfsense_management_interface }}"
+    source: any
+    destination: "{{ pfsense_lab_services_subnet }}"
+    protocol: any
+    state: present

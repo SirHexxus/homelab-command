@@ -1,4 +1,23 @@
 ---
+# Aliases must be created before any rules that reference them.
+- import_tasks: aliases.yml
+  tags: [aliases, management, work, lab_services, personal, iot, guest]
+
+- import_tasks: management.yml
+  tags: [management]
+
+- import_tasks: work.yml
+  tags: [work]
+
+- import_tasks: lab_services.yml
+  tags: [lab_services]
+
+- import_tasks: personal.yml
+  tags: [personal]
+
+- import_tasks: iot.yml
+  tags: [iot]
+
 - import_tasks: dmz.yml
   tags: [dmz]
 

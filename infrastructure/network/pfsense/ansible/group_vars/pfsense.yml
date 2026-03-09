@@ -66,10 +66,38 @@ pfsense_vlans:
     subnet: "10.0.70.0/24"
     existing: true
 
-# Internal subnets that DMZ must not reach.
-# Used by pfsense_firewall role to generate block rules.
-# Ordered descending — after: top inserts at position 1 each time, reversing
-# the list. Descending here produces ascending VLAN order in the firewall UI.
+# Interface names — must match pfSense Interfaces > Assignments after provisioning.
+pfsense_management_interface: "MANAGEMENT"
+pfsense_personal_interface: "PERSONAL"
+pfsense_work_interface: "WORK"
+pfsense_iot_interface: "IOT"
+pfsense_lab_services_interface: "LAB_SERVICES"
+pfsense_dmz_interface: "DMZ"
+pfsense_sandbox_interface: "SANDBOX"
+pfsense_guest_interface: "GUEST"
+
+# Gateway IPs — used for gateway-allow rules before RFC1918 blocks.
+pfsense_work_gateway: "10.0.30.1"
+
+# Subnets — used for allow/block rules targeting specific VLANs.
+pfsense_management_subnet: "10.0.10.0/24"
+pfsense_personal_subnet: "10.0.20.0/24"
+pfsense_work_subnet: "10.0.30.0/24"
+pfsense_iot_subnet: "10.0.40.0/24"
+pfsense_lab_services_subnet: "10.0.50.0/24"
+pfsense_guest_subnet: "10.0.70.0/24"
+
+# DNS resolver addresses — pfSense listens on each VLAN's gateway IP.
+pfsense_dmz_dns: "10.0.60.1"
+pfsense_guest_dns: "10.0.70.1"
+
+# DMZ per-service allow rules — inserted before block rules for NGINX Proxy Manager
+# forwarding exceptions. Add entries here when a DMZ service needs to reach an
+# internal backend. Default empty — no service exceptions.
+pfsense_dmz_service_allows: []
+
+# Subnets that DMZ must not reach (all internal VLANs).
+# Ordered descending — after: top reversal produces ascending UI order.
 pfsense_internal_subnets:
   - name: "LAB_SERVICES"
     net: "10.0.50.0/24"
@@ -82,33 +110,19 @@ pfsense_internal_subnets:
   - name: "MANAGEMENT"
     net: "10.0.10.0/24"
 
-# Interface names — must match pfSense Interfaces > Assignments after provisioning.
-pfsense_management_interface: "MANAGEMENT"
-pfsense_dmz_interface: "DMZ"
-pfsense_sandbox_interface: "SANDBOX"
-pfsense_guest_interface: "GUEST"
+# Alias content — referenced by aliases.yml to create pfSense network aliases.
+#
+# ALL_RFC1918: all three private IPv4 blocks.
+pfsense_alias_all_rfc1918: "10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
 
-# DNS resolver addresses — pfSense listens on each VLAN's gateway IP.
-pfsense_dmz_dns: "10.0.60.1"
-pfsense_guest_dns: "10.0.70.1"
+# RFC1918_excluding_LAB_SERVICES: all private ranges except LAB_SERVICES (10.0.50.0/24).
+# Allows intra-lab traffic while blocking cross-VLAN lateral movement.
+# Update this if LAB_SERVICES subnet (10.0.50.0/24) ever changes.
+pfsense_alias_rfc1918_ex_lab: >-
+  10.0.10.0/24 10.0.20.0/24 10.0.30.0/24 10.0.40.0/24
+  10.0.60.0/24 10.0.66.0/24 10.0.70.0/24
+  172.16.0.0/12 192.168.0.0/16
 
-# GUEST subnet — used for MANAGEMENT → GUEST allow rule.
-pfsense_guest_subnet: "10.0.70.0/24"
-
-# Subnets that GUEST must not reach (all internal VLANs).
-# Ordered descending — after: top reversal produces ascending UI order.
-pfsense_guest_internal_subnets:
-  - name: "SANDBOX"
-    net: "10.0.66.0/24"
-  - name: "DMZ"
-    net: "10.0.60.0/24"
-  - name: "LAB_SERVICES"
-    net: "10.0.50.0/24"
-  - name: "IOT"
-    net: "10.0.40.0/24"
-  - name: "WORK"
-    net: "10.0.30.0/24"
-  - name: "PERSONAL"
-    net: "10.0.20.0/24"
-  - name: "MANAGEMENT"
-    net: "10.0.10.0/24"
+# MANAGEMENT_DENIED: subnets that MANAGEMENT cannot initiate connections to.
+# WORK (30) is kept separate from admin access; SANDBOX (66) is quarantine.
+pfsense_alias_management_denied: "10.0.30.0/24 10.0.66.0/24"
