@@ -93,8 +93,12 @@ pfsense_guest_dns: "10.0.70.1"
 
 # DMZ per-service allow rules — inserted before block rules for NGINX Proxy Manager
 # forwarding exceptions. Add entries here when a DMZ service needs to reach an
-# internal backend. Default empty — no service exceptions.
-pfsense_dmz_service_allows: []
+# internal backend.
+pfsense_dmz_service_allows:
+  - name: "Allow DMZ to Umami"
+    destination: "10.0.50.18"
+    destination_port: "3000"
+    protocol: "tcp"
 
 # Subnets that DMZ must not reach (all internal VLANs).
 # Ordered descending — after: top reversal produces ascending UI order.
