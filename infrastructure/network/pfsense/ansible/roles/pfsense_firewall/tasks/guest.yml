@@ -1,0 +1,58 @@
+---
+# GUEST (VLAN 70) — internet only, no internal access.
+#
+# Rule order (block first, then allow):
+#   1. Block GUEST → all internal VLANs (10/20/30/40/50/60/66)
+#   2. Allow GUEST → pfSense DNS resolver (10.0.70.1:53)
+#   3. Allow GUEST → any (internet outbound)
+#   4. Allow MANAGEMENT → GUEST (on MANAGEMENT interface — enables monitoring/admin)
+#
+# pfsense_guest_internal_subnets is ordered descending so that after: top
+# insertion produces ascending VLAN order in the pfSense UI.
+
+- name: "GUEST | Block GUEST → internal subnet"
+  pfsensible.core.pfsense_rule:
+    name: "Block GUEST to {{ item.name }}"
+    action: block
+    interface: "{{ pfsense_guest_interface }}"
+    source: any
+    destination: "{{ item.net }}"
+    protocol: any
+    after: top
+    state: present
+  loop: "{{ pfsense_guest_internal_subnets }}"
+  loop_control:
+    label: "Block GUEST → {{ item.name }}"
+
+- name: "GUEST | Allow GUEST → pfSense DNS resolver ({{ pfsense_guest_dns }}:53)"
+  pfsensible.core.pfsense_rule:
+    name: "Allow GUEST DNS"
+    action: pass
+    interface: "{{ pfsense_guest_interface }}"
+    source: any
+    destination: "{{ pfsense_guest_dns }}"
+    destination_port: "53"
+    protocol: "tcp/udp"
+    after: "Block GUEST to {{ (pfsense_guest_internal_subnets | first).name }}"
+    state: present
+
+- name: "GUEST | Allow GUEST → any (internet outbound)"
+  pfsensible.core.pfsense_rule:
+    name: "Allow GUEST internet"
+    action: pass
+    interface: "{{ pfsense_guest_interface }}"
+    source: any
+    destination: any
+    protocol: any
+    after: "Allow GUEST DNS"
+    state: present
+
+- name: "MANAGEMENT | Allow MANAGEMENT → GUEST"
+  pfsensible.core.pfsense_rule:
+    name: "Allow MANAGEMENT to GUEST"
+    action: pass
+    interface: "{{ pfsense_management_interface }}"
+    source: any
+    destination: "{{ pfsense_guest_subnet }}"
+    protocol: any
+    state: present
