@@ -1,6 +1,6 @@
 # Homelab Command Project — Project Roadmap
 **Version:** 1.3
-**Last Updated:** February 2026
+**Last Updated:** March 2026
 **North Star:** Kaiser Permanente CRDC Consultant III (SOC Analyst) — application target June 2, 2026
 
 ---
@@ -29,7 +29,7 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 | Hardware Catalog | v1.2 | ✅ Complete |
 | Network & Services Architecture | v1.7 | ✅ Complete |
 | Project Roadmap | v1.3 | ✅ This document |
-| Mnemosyne Design Doc | v1.1 | ✅ Complete |
+| Mnemosyne Design Doc | v1.2 | ✅ Complete |
 | IaC Runbook | v1.3 | ✅ Complete |
 | Argus Design Doc | v1.2 | ✅ Complete |
 | Orpheus Design Doc | v1.1 | ✅ Complete |
@@ -59,12 +59,12 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 ### Network
 - [x] VLANs 10, 20, 30, 50 operational
 - [x] Create VLAN 40 (IoT) in pfSense
-- [ ] Create VLAN 60 (DMZ) in pfSense
-- [ ] Create VLAN 66 (Sandbox) in pfSense
-- [ ] Create VLAN 70 (Guest) in pfSense
+- [x] Create VLAN 60 (DMZ) in pfSense
+- [x] Create VLAN 66 (Sandbox) in pfSense
+- [x] Create VLAN 70 (Guest) in pfSense
 - [ ] Configure managed switch trunk/access ports for all VLANs
 - [x] Rename VLAN 20 "Trusted" → "Personal" in pfSense and switch
-- [ ] Use Perplexity to research TP-Link switch automation for the specific model — determine whether Ansible (community.network), SSH CLI scripting, or REST API is the best approach
+- [ ] Research TP-Link T1600G-28PS automation (model confirmed in Hardware Catalog v1.2) — determine whether Ansible (community.network), SSH CLI scripting, or REST API is the best approach
 - [ ] Implement switch configuration IaC (infrastructure/network/switch/) based on research
 
 ### Bare Metal
@@ -72,7 +72,7 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 - [x] Set pfSense static DHCP reservation for helm-log (MAC 72:c6:b9:0d:32:ac → 10.0.10.25)
 - [ ] Run ntfy provisioning playbook on helm-log (IaC ready)
 - [ ] Write Ansible post-install playbook for Proxmox (infrastructure/proxmox/ansible/) — bridges, storage pools, users, DNS
-- [ ] Research Proxmox Backup Server (PBS) — evaluate for VM/LXC backup strategy
+- [ ] Research Proxmox Backup Server (PBS) — evaluate for VM/LXC backup strategy *(Decision: PBS LXC on Proxmox node, datastore on TrueNAS NFS — implement when TrueNAS reconnected)*
 
 ### Services (IaC — Terraform + Ansible)
 - [x] Deploy n8n (10.0.50.13) — LXC 107
@@ -86,7 +86,7 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 - [ ] Deploy Hermes LXC (10.0.50.17) — LXC 110 via Terraform + Ansible
 - [ ] Verify Hermes Phase 1 operational (CLI + Ollama + filesystem/shell skills)
 - [ ] Write pfSense Terraform IaC (infrastructure/network/pfsense/terraform/) — VM provisioning
-- [ ] Export + commit pfSense XML config backup to infrastructure/network/pfsense/config.xml
+- [x] Export + commit pfSense XML config backup to infrastructure/network/pfsense/config.xml
 
 ### GitHub
 - [x] Create homelab-command repository
@@ -180,14 +180,15 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 
 ### DMZ (VLAN 60)
 - [ ] Hermes Phase 4: FastAPI web UI + NPM routing via Ariadne
-- [ ] Deploy NGINX Proxy Manager (10.0.60.10)
+- [x] Deploy nginx + certbot (10.0.60.10) — native reverse proxy; no Docker inside LXC
 - [ ] Configure WireGuard (pfSense package)
 - [ ] Configure Squid (pfSense package)
 - [ ] Configure pfSense Dynamic DNS (*.sirhexx.com wildcard → Namecheap)
 - [ ] Deploy Authelia (10.0.60.11)
-- [ ] Deploy Umami (10.0.50.18) — analytics for sirhexx.com / hexxusweb.com
+- [x] Deploy Umami (10.0.50.18) — analytics for sirhexx.com / hexxusweb.com
 - [ ] Configure Crowdsec (pfSense package)
 - [ ] Configure Fail2ban per-host
+- [ ] **OpenResty/Lua (low priority)** — swap nginx for OpenResty on 10.0.60.10 to enable Lua scripting: dynamic Redis-backed routing (instant `rpadd` without nginx reload), JWT validation, structured JSON access logs for Argus, custom rate limiting
 
 ### External Monitoring
 - [ ] Provision external VPS (provider TBD)
