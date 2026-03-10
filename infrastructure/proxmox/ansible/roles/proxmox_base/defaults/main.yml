@@ -1,0 +1,16 @@
+# roles/proxmox_base/defaults/main.yml - Default Variables
+
+# SSH hardening
+sshd_password_auth: "no"
+sshd_permit_root_login: "prohibit-password"
+
+# fail2ban
+fail2ban_packages:
+  - fail2ban
+
+# System packages installed on every Proxmox node
+proxmox_base_packages:
+  - curl
+  - vim
+  - htop
+  - net-tools

@@ -1,0 +1,60 @@
+# tasks/system.yml - SSH Hardening, Authorized Keys, fail2ban, Package Updates
+#
+# Default run (no tags needed): SSH hardening, authorized key, fail2ban
+# Opt-in (--tags updates): dist-upgrade
+
+# -----------------------------------------------------------------------------
+# Base packages
+# -----------------------------------------------------------------------------
+
+- name: Install base packages
+  apt:
+    name: "{{ proxmox_base_packages + fail2ban_packages }}"
+    state: present
+    update_cache: yes
+
+# -----------------------------------------------------------------------------
+# apt dist-upgrade (opt-in — tagged [updates, never])
+# -----------------------------------------------------------------------------
+
+- name: Run apt dist-upgrade
+  apt:
+    upgrade: dist
+    update_cache: yes
+  tags: [updates, never]
+
+# -----------------------------------------------------------------------------
+# SSH hardening
+# -----------------------------------------------------------------------------
+
+- name: Harden sshd — disable password auth
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PasswordAuthentication'
+    line: "PasswordAuthentication {{ sshd_password_auth }}"
+    state: present
+  notify: restart sshd
+
+- name: Harden sshd — set PermitRootLogin
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PermitRootLogin'
+    line: "PermitRootLogin {{ sshd_permit_root_login }}"
+    state: present
+  notify: restart sshd
+
+- name: Inject SSH authorized key for management access
+  authorized_key:
+    user: root
+    key: "{{ lookup('file', ssh_authorized_key_file) }}"
+    state: present
+
+# -----------------------------------------------------------------------------
+# fail2ban
+# -----------------------------------------------------------------------------
+
+- name: Enable and start fail2ban
+  systemd:
+    name: fail2ban
+    enabled: yes
+    state: started

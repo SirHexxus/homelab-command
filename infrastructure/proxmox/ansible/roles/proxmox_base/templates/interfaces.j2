@@ -1,0 +1,33 @@
+# /etc/network/interfaces — managed by Ansible
+# CAUTION: do not edit directly; re-run provision.yml --tags networking
+# Template source: infrastructure/proxmox/ansible/roles/proxmox_base/templates/interfaces.j2
+# Last applied by: {{ ansible_date_time.date }}
+
+auto lo
+iface lo inet loopback
+
+# {{ proxmox_wan_nic }} — WAN uplink (enslaved to vmbr0; no IP configured here)
+auto {{ proxmox_wan_nic }}
+iface {{ proxmox_wan_nic }} inet manual
+
+# {{ proxmox_lan_nic }} — LAN/trunk uplink (enslaved to vmbr1; no IP configured here)
+auto {{ proxmox_lan_nic }}
+iface {{ proxmox_lan_nic }} inet manual
+
+# vmbr0 — WAN bridge (no IP — pfSense manages WAN addressing on net0)
+auto {{ proxmox_wan_bridge }}
+iface {{ proxmox_wan_bridge }} inet manual
+	bridge-ports {{ proxmox_wan_nic }}
+	bridge-stp off
+	bridge-fd 0
+
+# vmbr1 — LAN/trunk bridge (VLAN-aware; Proxmox management IP lives here)
+auto {{ proxmox_lan_bridge }}
+iface {{ proxmox_lan_bridge }} inet static
+	address {{ proxmox_management_ip }}/{{ proxmox_management_prefix }}
+	gateway {{ proxmox_management_gateway }}
+	bridge-ports {{ proxmox_lan_nic }}
+	bridge-stp off
+	bridge-fd 0
+	bridge-vlan-aware yes
+	bridge-vids 2-4094

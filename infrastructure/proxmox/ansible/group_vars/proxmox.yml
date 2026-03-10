@@ -1,0 +1,74 @@
+# group_vars/proxmox.yml - Proxmox Node Variables (non-secret)
+#
+# Discovered 2026-03-10 from: pvesh, ip a, pvesm status, cat /etc/pve/.members
+# All values reflect the live puppetmaster configuration.
+
+# -----------------------------------------------------------------------------
+# Node identity
+# -----------------------------------------------------------------------------
+
+# Proxmox hostname (from: hostname)
+proxmox_hostname: puppetmaster
+
+# Management IP assigned to vmbr1 (LAN bridge)
+proxmox_management_ip: 10.0.10.2
+proxmox_management_prefix: 24
+proxmox_management_gateway: 10.0.10.1
+
+# -----------------------------------------------------------------------------
+# Network — bridge layout
+# -----------------------------------------------------------------------------
+
+# vmbr0 bridges eno8303 — WAN uplink (no IP, no VLAN awareness)
+proxmox_wan_bridge: vmbr0
+proxmox_wan_nic: eno8303
+
+# vmbr1 bridges eno8403 — LAN/trunk to switch (VLAN-aware, bridge-vids 2-4094)
+# Proxmox management interface: 10.0.10.2/24 lives on this bridge
+proxmox_lan_bridge: vmbr1
+proxmox_lan_nic: eno8403
+
+# -----------------------------------------------------------------------------
+# DNS (from: cat /etc/resolv.conf — confirmed correct 2026-03-10)
+# -----------------------------------------------------------------------------
+
+dns_servers:
+  - 10.0.10.1   # pfSense resolver (authoritative for homelab.internal)
+  - 1.1.1.1     # Cloudflare upstream
+  - 8.8.8.8     # Google upstream
+
+dns_search: homelab.internal
+
+# -----------------------------------------------------------------------------
+# Storage pools (from: pvesm status 2026-03-10)
+# -----------------------------------------------------------------------------
+
+# general-store: local ZFS RAIDZ pool — 11.5 TB total, ~28% used
+# Use for: bulk storage, PBS datastore, large VM disks
+proxmox_bulk_storage: general-store
+
+# local-lvm: LVM thin on SSD — 1.7 TB, ~21% used
+# Use for: most LXC containers and VMs (fast, SSD-backed)
+proxmox_container_storage: local-lvm
+proxmox_vm_storage: local-lvm
+
+# local: dir storage — 98 GB OS drive
+# Use for: ISO images, LXC templates (already configured)
+proxmox_local_storage: local
+
+# -----------------------------------------------------------------------------
+# SSH hardening
+# -----------------------------------------------------------------------------
+
+ssh_authorized_key_file: ~/.ssh/id_rsa.pub
+
+# -----------------------------------------------------------------------------
+# Terraform API user (created by api_user.yml)
+# -----------------------------------------------------------------------------
+
+# terraform@pve uses PVE realm — no local Unix account required
+# Token name: terraform (no expiry)
+# Role: PVEVMAdmin on / (cluster root)
+terraform_api_user: terraform@pve
+terraform_api_token_name: terraform
+terraform_api_role: PVEVMAdmin

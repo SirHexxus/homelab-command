@@ -1,0 +1,19 @@
+# tasks/dns.yml - Confirm /etc/resolv.conf nameservers
+#
+# Purely additive — confirms required lines exist without wiping the file.
+# No handler needed (resolv.conf changes take effect immediately).
+# Discovered values (2026-03-10): 10.0.10.1, 1.1.1.1, 8.8.8.8 — already correct.
+
+- name: Confirm DNS search domain in resolv.conf
+  lineinfile:
+    path: /etc/resolv.conf
+    regexp: '^search '
+    line: "search {{ dns_search }}"
+    state: present
+
+- name: Confirm nameservers in resolv.conf
+  lineinfile:
+    path: /etc/resolv.conf
+    line: "nameserver {{ item }}"
+    state: present
+  loop: "{{ dns_servers }}"
