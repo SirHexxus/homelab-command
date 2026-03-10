@@ -458,7 +458,106 @@ Each project's `README.md` documents any project-specific steps, variables, or p
 
 ---
 
-## 10. Deployment Lessons Learned
+## 10. Proxmox Node Spec
+
+Discovered 2026-03-10. Reference for all Ansible/Terraform targeting puppetmaster.
+
+| Property | Value |
+|----------|-------|
+| Hostname | `puppetmaster` |
+| Management IP | `10.0.10.2/24` via vmbr1 |
+| PVE version | 9.1.0 (kernel 6.17.9-1-pve) |
+| Gateway | `10.0.10.1` (pfSense LAN interface) |
+
+### Bridge layout
+
+| Bridge | NIC | Role | IP | VLAN-aware |
+|--------|-----|------|----|------------|
+| vmbr0 | eno8303 | WAN uplink — pfSense net0 | none | no |
+| vmbr1 | eno8403 | LAN/trunk — all VLANs + management | 10.0.10.2/24 | yes (bridge-vids 2-4094) |
+
+### Storage pools
+
+| Pool | Type | Size | Role |
+|------|------|------|------|
+| `general-store` | ZFS (local) | 11.5 TB | Bulk storage, PBS datastore |
+| `local-lvm` | LVM thin (SSD) | 1.7 TB | Most containers and VMs |
+| `local` | dir | 98 GB | ISO images, LXC templates |
+
+### DNS (confirmed correct — already set)
+
+```
+nameserver 10.0.10.1     # pfSense resolver (authoritative for homelab.internal)
+nameserver 1.1.1.1
+nameserver 8.8.8.8
+search homelab.internal
+```
+
+### Existing Proxmox users
+
+| User | Realm | Purpose |
+|------|-------|---------|
+| `root@pam` | PAM | Proxmox superuser |
+| `hexxus@pam` | PAM | Local admin account |
+| `hexxus@pve` | PVE | Web UI login |
+| `ansible_mgr@pam` | PAM | Ansible management |
+| `terraform@pve` | PVE | Terraform provisioning (created by post-install Ansible) |
+
+### pfSense VM
+
+| Property | Value |
+|----------|-------|
+| VMID | 200 |
+| CPU | 2 cores, type=host |
+| Memory | 4096 MB dedicated, 2048 MB balloon |
+| Disk | 32 GB, scsi0 on local-lvm |
+| net0 | vmbr0 (WAN — untagged) |
+| net1 | vmbr1 (LAN trunk — VLAN-aware) |
+| Startup order | 1 (first), up_delay=60s |
+
+IaC: `infrastructure/network/pfsense/terraform/`
+Config backup: `infrastructure/network/pfsense/config.xml`
+
+---
+
+## 11. Tag-Gated Modularity — Ansible Convention
+
+All Ansible playbooks in this project follow this convention for risky task isolation.
+
+**Core rule:** `ansible-playbook provision.yml` (no flags) runs **safe, non-destructive tasks only**. Risky or production-affecting tasks require an explicit `--tags` flag.
+
+### Implementation
+
+Tasks tagged with the Ansible `never` special tag are invisible to a default run — they only activate when their tag is explicitly requested:
+
+```yaml
+# This task ONLY runs with: ansible-playbook provision.yml --tags networking
+- name: Template /etc/network/interfaces
+  template:
+    src: interfaces.j2
+    dest: /etc/network/interfaces
+  tags: [networking, never]
+```
+
+### Tag tiers
+
+| Tag | Meaning | Default run? | Mechanism |
+|-----|---------|-------------|-----------|
+| (untagged) | Safe, non-destructive | ✅ Always | Standard Ansible |
+| `updates` | apt upgrade / dist-upgrade | ❌ Opt-in | `tags: [updates, never]` |
+| `networking` | Bridge/interface changes | ❌ Explicit only | `tags: [networking, never]` |
+| `storage` | Storage pool verification | ❌ Explicit only | `tags: [storage, never]` |
+| `storage_nfs` | TrueNAS NFS (deferred) | ❌ Explicit only | `tags: [storage_nfs, never]` |
+
+Tasks that are idempotent with no blast radius (e.g., creating an API user) are untagged — they always run as part of the default provision.
+
+### Scope
+
+This convention applies to all **new** Ansible playbooks. Existing deployed playbooks (Ariadne, n8n, Mnemosyne, etc.) are not retroactively changed.
+
+---
+
+## 12. Deployment Lessons Learned
 
 Real issues encountered during initial deployments of n8n, Postgres, Redis, and MinIO (March 2026). Documented here to prevent repeating these mistakes.
 
@@ -522,7 +621,7 @@ must exist in the ansible-level `.gitignore` (i.e., `infrastructure/platform/<se
 
 ---
 
-## 11. Maintenance
+## 13. Maintenance
 
 ### Regular tasks
 
