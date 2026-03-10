@@ -138,6 +138,8 @@
 
 # =============================================================================
 # 6. SYSTEMD SERVICE
+# Phase 1: gated by hermes_deploy_service (false until web_app.py exists)
+# Phase 4: set hermes_deploy_service: true in group_vars/hermes_containers.yml
 # =============================================================================
 
 - name: Install hermes systemd service
@@ -148,13 +150,33 @@
     group: root
     mode: '0644'
   notify: restart hermes service
+  when: hermes_deploy_service | default(false)
 
 - name: Reload systemd daemon
   systemd:
     daemon_reload: yes
+  when: hermes_deploy_service | default(false)
 
 - name: Enable and start hermes service
   systemd:
     name: hermes
     enabled: yes
     state: started
+  when: hermes_deploy_service | default(false)
+
+# =============================================================================
+# 7. CLI WRAPPER
+# Installs /usr/local/bin/hermes so root can call `hermes "task"` directly.
+# Always runs — Phase 1 primary entrypoint.
+# =============================================================================
+
+- name: Install /usr/local/bin/hermes CLI wrapper
+  copy:
+    dest: /usr/local/bin/hermes
+    mode: '0755'
+    owner: root
+    group: root
+    content: |
+      #!/bin/bash
+      source {{ hermes_venv_dir }}/bin/activate
+      exec {{ hermes_app_dir }}/bin/hermes "$@"

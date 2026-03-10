@@ -26,3 +26,7 @@ hermes_log_dir:     /opt/hermes/apps/hermes/logs
 
 # Resource settings
 max_open_files: 65535
+
+# Phase 1: CLI-only — no uvicorn/fastapi web server yet
+# Set to true in Phase 4 when web_app.py is implemented
+hermes_deploy_service: false
