@@ -1,0 +1,291 @@
+# provision.yml - Ariadne Provisioning Playbook
+#
+# Provisions four targets in order:
+#   postgres (10.0.50.14) — creates umami DB user + database (dependency play)
+#   npm      (10.0.60.10) — native nginx + certbot reverse proxy
+#   authelia (10.0.60.11) — Authelia SSO binary + file-based user DB
+#   umami    (10.0.50.18) — Umami analytics, Node.js + PM2, Postgres backend
+#
+# Dependency order: Postgres DB must be created before Umami can build.
+# This playbook handles that automatically — run it top to bottom.
+#
+# Usage:
+#   ansible-playbook -i inventory.ini provision.yml
+
+---
+
+# ===========================================================================
+# PLAY 0: Provision Umami Postgres Database
+# Runs against the shared Postgres host before the Umami container play.
+# Creates the umami role and database if they do not already exist.
+# Idempotent: uses SELECT existence checks before CREATE.
+# ===========================================================================
+- name: Provision Umami Postgres Database
+  hosts: postgres_hosts
+  vars_files:
+    - group_vars/vault.yml
+
+  tasks:
+    - name: Create umami Postgres role (idempotent)
+      shell: >
+        sudo -u postgres psql -tc
+        "SELECT 1 FROM pg_roles WHERE rolname='umami'" | grep -q 1 ||
+        sudo -u postgres psql -c
+        "CREATE ROLE umami WITH LOGIN PASSWORD '{{ vault_umami_postgres_password }}';"
+      changed_when: false
+
+    - name: Create umami Postgres database (idempotent)
+      shell: >
+        sudo -u postgres psql -tc
+        "SELECT 1 FROM pg_database WHERE datname='umami'" | grep -q 1 ||
+        sudo -u postgres psql -c
+        "CREATE DATABASE umami OWNER umami;"
+      changed_when: false
+
+    - name: Confirm umami database is accessible
+      shell: sudo -u postgres psql -d umami -c "SELECT current_database();"
+      changed_when: false
+      register: db_check
+
+    - name: Display database confirmation
+      debug:
+        msg: "Postgres ready: {{ db_check.stdout_lines[-1] | trim }}"
+
+
+# ===========================================================================
+# PLAY 1: NPM (NGINX Proxy Manager)
+# ===========================================================================
+- name: Provision NPM Container
+  hosts: npm_containers
+  vars_files:
+    - group_vars/vault.yml
+
+  pre_tasks:
+    - name: Assert Ansible version
+      assert:
+        that: ansible_version.full is version('2.10', '>=')
+        msg: "Ansible 2.10 or higher is required."
+
+    - name: Display deployment information
+      debug:
+        msg: |
+          ============================================================
+          Starting NPM Container Provisioning
+          ============================================================
+          Target Host : {{ inventory_hostname }}
+          OS          : {{ ansible_distribution }} {{ ansible_distribution_version }}
+          HTTP        : http://{{ ansible_host }}
+          HTTPS       : https://{{ ansible_host }}
+          ============================================================
+
+  tasks:
+    # 1. SYSTEM UPDATES
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade all packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    # 2. COMMON PACKAGES
+    - name: Install common packages
+      apt:
+        name:
+          - curl
+          - git
+          - jq
+          - ca-certificates
+        state: present
+
+    # 3. DOTFILES
+    - name: Install dotfiles for root
+      import_role:
+        name: dotfiles
+
+    # 4. NPM
+    - name: Deploy NGINX Proxy Manager
+      import_role:
+        name: npm
+
+    - name: Display connection information
+      debug:
+        msg: |
+          ============================================================
+          NPM (nginx) Provisioning Complete!
+          ============================================================
+          HTTP  : http://{{ ansible_host }}  (redirects to HTTPS)
+          HTTPS : https://{{ ansible_host }}
+          Config: /etc/nginx/proxy_hosts/*.conf  (add subdomains here)
+          SSL   : certbot --nginx -d <subdomain>.sirhexx.com
+          Logs  : /var/log/nginx/access.log | error.log
+          ============================================================
+
+  handlers:
+    - name: restart nginx
+      systemd:
+        name: nginx
+        state: restarted
+
+
+# ===========================================================================
+# PLAY 2: Authelia
+# ===========================================================================
+- name: Provision Authelia Container
+  hosts: authelia_containers
+  vars_files:
+    - group_vars/vault.yml
+
+  pre_tasks:
+    - name: Assert Ansible version
+      assert:
+        that: ansible_version.full is version('2.10', '>=')
+        msg: "Ansible 2.10 or higher is required."
+
+    - name: Display deployment information
+      debug:
+        msg: |
+          ============================================================
+          Starting Authelia Container Provisioning
+          ============================================================
+          Target Host : {{ inventory_hostname }}
+          OS          : {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Version     : {{ authelia_version }}
+          Port        : {{ authelia_port }}
+          Domain      : {{ authelia_session_domain }}
+          ============================================================
+
+  tasks:
+    # 1. SYSTEM UPDATES
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade all packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    # 2. COMMON PACKAGES
+    - name: Install common packages
+      apt:
+        name:
+          - curl
+          - git
+          - jq
+          - ca-certificates
+        state: present
+
+    # 3. DOTFILES
+    - name: Install dotfiles for root
+      import_role:
+        name: dotfiles
+
+    # 4. AUTHELIA
+    - name: Deploy Authelia
+      import_role:
+        name: authelia
+
+    - name: Display connection information
+      debug:
+        msg: |
+          ============================================================
+          Authelia Provisioning Complete!
+          ============================================================
+          URL             : http://{{ ansible_host }}:{{ authelia_port }}
+          Config dir      : {{ authelia_config_dir }}/configuration.yml
+          Users database  : {{ authelia_data_dir }}/users_database.yml
+          To change password, run on the container:
+            authelia hash-password 'YourNewPassword'
+          Then update users_database.yml with the new hash.
+          ============================================================
+
+  handlers:
+    - name: restart authelia
+      systemd:
+        name: authelia
+        state: restarted
+
+
+# ===========================================================================
+# PLAY 3: Umami
+# ===========================================================================
+- name: Provision Umami Container
+  hosts: umami_containers
+  vars_files:
+    - group_vars/vault.yml
+
+  pre_tasks:
+    - name: Assert Ansible version
+      assert:
+        that: ansible_version.full is version('2.10', '>=')
+        msg: "Ansible 2.10 or higher is required."
+
+    - name: Display deployment information
+      debug:
+        msg: |
+          ============================================================
+          Starting Umami Container Provisioning
+          ============================================================
+          Target Host : {{ inventory_hostname }}
+          OS          : {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Port        : {{ umami_port }}
+          Postgres    : {{ postgres_host }}:{{ postgres_port }}/{{ postgres_db }}
+          ============================================================
+
+  tasks:
+    # 1. SYSTEM UPDATES
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade all packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    # 2. COMMON PACKAGES
+    - name: Install common packages
+      apt:
+        name:
+          - curl
+          - git
+          - jq
+          - ca-certificates
+        state: present
+
+    # 3. DOTFILES
+    - name: Install dotfiles for root
+      import_role:
+        name: dotfiles
+
+    # 4. UMAMI
+    - name: Deploy Umami
+      import_role:
+        name: umami
+
+    - name: Display connection information
+      debug:
+        msg: |
+          ============================================================
+          Umami Provisioning Complete!
+          ============================================================
+          URL          : http://{{ ansible_host }}:{{ umami_port }}
+          Postgres     : {{ postgres_host }}:{{ postgres_port }}/{{ postgres_db }}
+          Default login: admin / umami
+          ============================================================
+
+  handlers:
+    - name: restart umami
+      shell: pm2 restart umami
+      become_user: "{{ umami_user }}"
+      environment:
+        HOME: "{{ umami_install_dir }}"
+      changed_when: false

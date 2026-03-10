@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# rpadd — add a reverse proxy host to nginx with automatic Let's Encrypt SSL
+#
+# Usage: rpadd <domain> <upstream> [--no-ssl] [--authelia]
+#
+# Examples:
+#   rpadd watch.sirhexx.com 10.0.80.10:8096
+#   rpadd request.sirhexx.com 10.0.80.14:5055 --authelia
+#   rpadd internal.sirhexx.com 10.0.50.13:5678 --no-ssl
+
+set -u
+set -o pipefail
+
+CONF_DIR="/etc/nginx/proxy_hosts"
+AUTHELIA_URL="http://10.0.60.11:9091"
+CERTBOT_EMAIL="admin@sirhexx.com"
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+usage() {
+	echo "Usage: rpadd <domain> <upstream> [--no-ssl] [--authelia]"
+	echo ""
+	echo "  domain     fully qualified domain name (e.g. watch.sirhexx.com)"
+	echo "  upstream   backend host:port            (e.g. 10.0.80.10:8096)"
+	echo "  --no-ssl   skip certbot; serve HTTP only"
+	echo "  --authelia add Authelia forward auth to this host"
+	exit 1
+}
+
+die() {
+	echo "ERROR: $*" >&2
+	exit 1
+}
+
+# ── Args ──────────────────────────────────────────────────────────────────────
+
+[[ $# -lt 2 ]] && usage
+
+DOMAIN="$1"
+UPSTREAM="$2"
+shift 2
+
+NO_SSL=false
+USE_AUTHELIA=false
+
+for arg in "$@"; do
+	case "$arg" in
+		--no-ssl)    NO_SSL=true ;;
+		--authelia)  USE_AUTHELIA=true ;;
+		*)           die "Unknown option: $arg" ;;
+	esac
+done
+
+CONF_FILE="${CONF_DIR}/${DOMAIN}.conf"
+
+# ── Guard ─────────────────────────────────────────────────────────────────────
+
+[[ -f "$CONF_FILE" ]] && die "Config already exists: $CONF_FILE\nEdit manually or run: rprm $DOMAIN"
+command -v nginx >/dev/null || die "nginx not found"
+command -v certbot >/dev/null || die "certbot not found"
+
+# ── Authelia forward-auth block ───────────────────────────────────────────────
+
+if [[ "$USE_AUTHELIA" == "true" ]]; then
+	AUTHELIA_BLOCK="
+	# Authelia forward auth
+	auth_request        /authelia;
+	auth_request_set    \$target_url \$scheme://\$http_host\$request_uri;
+	error_page 401 =302 ${AUTHELIA_URL}?rd=\$target_url;
+
+	location /authelia {
+		internal;
+		proxy_pass              ${AUTHELIA_URL}/api/authz/forward-auth;
+		proxy_pass_request_body off;
+		proxy_set_header        Content-Length    \"\";
+		proxy_set_header        X-Original-URL    \$scheme://\$http_host\$request_uri;
+		proxy_set_header        X-Forwarded-For   \$proxy_add_x_forwarded_for;
+		proxy_set_header        X-Forwarded-Proto \$scheme;
+	}"
+else
+	AUTHELIA_BLOCK=""
+fi
+
+# ── Generate nginx config ─────────────────────────────────────────────────────
+
+echo "Creating proxy config: $CONF_FILE"
+
+cat > "$CONF_FILE" << EOF
+# ${DOMAIN}.conf — created by rpadd $(date +%Y-%m-%d)
+# Upstream : http://${UPSTREAM}
+# SSL      : $( [[ "$NO_SSL" == "true" ]] && echo "none (--no-ssl)" || echo "Let's Encrypt (certbot)" )
+# Auth     : $( [[ "$USE_AUTHELIA" == "true" ]] && echo "Authelia" || echo "none" )
+
+server {
+	listen 80;
+	server_name ${DOMAIN};
+
+	location / {
+		proxy_pass            http://${UPSTREAM};
+		proxy_http_version    1.1;
+		proxy_set_header      Upgrade           \$http_upgrade;
+		proxy_set_header      Connection        "upgrade";
+		proxy_set_header      Host              \$host;
+		proxy_set_header      X-Real-IP         \$remote_addr;
+		proxy_set_header      X-Forwarded-For   \$proxy_add_x_forwarded_for;
+		proxy_set_header      X-Forwarded-Proto \$scheme;
+		proxy_cache_bypass    \$http_upgrade;
+		proxy_read_timeout    300s;
+		proxy_connect_timeout 10s;
+	}
+${AUTHELIA_BLOCK}
+}
+EOF
+
+# ── Test + reload nginx ───────────────────────────────────────────────────────
+
+echo "Testing nginx config..."
+if ! nginx -t 2>&1; then
+	rm -f "$CONF_FILE"
+	die "nginx config test failed — config removed. Check upstream address."
+fi
+
+echo "Reloading nginx..."
+systemctl reload nginx
+
+# ── Certbot SSL ───────────────────────────────────────────────────────────────
+
+if [[ "$NO_SSL" == "false" ]]; then
+	echo "Requesting Let's Encrypt certificate for ${DOMAIN}..."
+	certbot --nginx -d "$DOMAIN" \
+		--non-interactive \
+		--agree-tos \
+		--email "$CERTBOT_EMAIL" \
+		--redirect
+
+	if [[ $? -ne 0 ]]; then
+		echo ""
+		echo "WARNING: certbot failed — proxy is running on HTTP only."
+		echo "         DNS must resolve ${DOMAIN} to this server's WAN IP."
+		echo "         Retry manually: certbot --nginx -d ${DOMAIN}"
+	fi
+fi
+
+# ── Done ──────────────────────────────────────────────────────────────────────
+
+echo ""
+echo "Done:"
+echo "  Domain   : $( [[ "$NO_SSL" == "true" ]] && echo "http://${DOMAIN}" || echo "https://${DOMAIN}" )"
+echo "  Upstream : http://${UPSTREAM}"
+echo "  Config   : ${CONF_FILE}"
+[[ "$USE_AUTHELIA" == "true" ]] && echo "  Auth     : Authelia forward auth enabled"

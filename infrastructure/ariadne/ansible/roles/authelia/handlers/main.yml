@@ -1,0 +1,7 @@
+# roles/authelia/handlers/main.yml
+
+---
+- name: restart authelia
+  systemd:
+    name: authelia
+    state: restarted

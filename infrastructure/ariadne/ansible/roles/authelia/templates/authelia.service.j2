@@ -1,0 +1,17 @@
+# authelia.service — managed by Ansible
+
+[Unit]
+Description=Authelia Authentication Server
+Documentation=https://www.authelia.com
+After=network.target
+
+[Service]
+Type=simple
+User={{ authelia_user }}
+Group={{ authelia_group }}
+ExecStart=/usr/local/bin/authelia --config {{ authelia_config_dir }}/configuration.yml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

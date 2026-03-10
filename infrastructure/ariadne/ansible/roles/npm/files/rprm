@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# rprm — remove a reverse proxy host from nginx and revoke its SSL cert
+#
+# Usage: rprm <domain> [--keep-cert]
+#
+# Examples:
+#   rprm watch.sirhexx.com
+#   rprm watch.sirhexx.com --keep-cert
+
+set -u
+set -o pipefail
+
+CONF_DIR="/etc/nginx/proxy_hosts"
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+usage() {
+	echo "Usage: rprm <domain> [--keep-cert]"
+	echo ""
+	echo "  domain       fully qualified domain name (e.g. watch.sirhexx.com)"
+	echo "  --keep-cert  remove proxy config but keep the SSL certificate"
+	exit 1
+}
+
+die() {
+	echo "ERROR: $*" >&2
+	exit 1
+}
+
+# ── Args ──────────────────────────────────────────────────────────────────────
+
+[[ $# -lt 1 ]] && usage
+
+DOMAIN="$1"
+KEEP_CERT=false
+
+[[ "${2:-}" == "--keep-cert" ]] && KEEP_CERT=true
+
+CONF_FILE="${CONF_DIR}/${DOMAIN}.conf"
+
+# ── Guard ─────────────────────────────────────────────────────────────────────
+
+[[ ! -f "$CONF_FILE" ]] && die "No config found for ${DOMAIN}: ${CONF_FILE}"
+
+# ── Remove config ─────────────────────────────────────────────────────────────
+
+echo "Removing proxy config: $CONF_FILE"
+rm -f "$CONF_FILE"
+
+echo "Testing nginx config..."
+if ! nginx -t 2>&1; then
+	die "nginx config test failed after removal — investigate /etc/nginx/"
+fi
+
+echo "Reloading nginx..."
+systemctl reload nginx
+
+# ── Revoke + delete cert ──────────────────────────────────────────────────────
+
+if [[ "$KEEP_CERT" == "false" ]]; then
+	if certbot certificates 2>/dev/null | grep -q "$DOMAIN"; then
+		echo "Deleting Let's Encrypt certificate for ${DOMAIN}..."
+		certbot delete --cert-name "$DOMAIN" --non-interactive
+	fi
+else
+	echo "Keeping SSL certificate (--keep-cert)."
+fi
+
+# ── Done ──────────────────────────────────────────────────────────────────────
+
+echo ""
+echo "Done: ${DOMAIN} removed."

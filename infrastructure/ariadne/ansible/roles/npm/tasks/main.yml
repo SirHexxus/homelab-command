@@ -1,0 +1,83 @@
+# roles/npm/tasks/main.yml
+# NGINX reverse proxy — native install (nginx + certbot)
+# Replaces Docker-based NGINX Proxy Manager with a native nginx instance
+# managed entirely via Ansible. Proxy host configs live in /etc/nginx/proxy_hosts/.
+
+---
+- name: Install nginx, certbot, and openssl
+  apt:
+    name:
+      - nginx
+      - certbot
+      - python3-certbot-nginx
+      - openssl
+    state: present
+    update_cache: yes
+
+- name: Create proxy_hosts config directory
+  file:
+    path: /etc/nginx/proxy_hosts
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create ssl directory
+  file:
+    path: /etc/nginx/ssl
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Remove default nginx site (sites-enabled)
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: restart nginx
+
+- name: Deploy base nginx.conf
+  template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    owner: root
+    group: root
+    mode: '0644'
+    validate: nginx -t -c %s
+  notify: restart nginx
+
+- name: Verify nginx configuration
+  command: nginx -t
+  changed_when: false
+
+- name: Enable and start nginx
+  systemd:
+    name: nginx
+    enabled: yes
+    state: started
+
+- name: Deploy rpadd script
+  copy:
+    src: rpadd
+    dest: /usr/local/bin/rpadd
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy rprm script
+  copy:
+    src: rprm
+    dest: /usr/local/bin/rprm
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Wait for nginx to be ready
+  uri:
+    url: "http://localhost:{{ npm_port_http }}"
+    status_code: [200, 301, 302, 404]
+  register: nginx_health
+  until: nginx_health.status in [200, 301, 302, 404]
+  retries: 10
+  delay: 3
+  changed_when: false

@@ -1,0 +1,11 @@
+# group_vars/umami_containers.yml
+
+umami_port: 3000
+umami_install_dir: /opt/umami
+umami_user: umami
+umami_group: umami
+postgres_host: 10.0.50.14
+postgres_port: 5432
+postgres_db: umami
+postgres_user: umami
+node_version: "20"

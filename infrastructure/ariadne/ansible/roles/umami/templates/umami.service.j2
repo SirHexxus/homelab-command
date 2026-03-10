@@ -1,0 +1,21 @@
+# umami.service — managed by Ansible
+
+[Unit]
+Description=Umami Analytics
+Documentation=https://umami.is/docs
+After=network.target
+
+[Service]
+Type=simple
+User={{ umami_user }}
+Group={{ umami_group }}
+WorkingDirectory={{ umami_install_dir }}
+ExecStart=/usr/bin/node {{ umami_install_dir }}/node_modules/.bin/next start
+EnvironmentFile={{ umami_install_dir }}/.env
+Environment=PORT={{ umami_port }}
+Environment=NODE_ENV=production
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

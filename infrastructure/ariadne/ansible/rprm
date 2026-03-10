@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# rprm — run rprm on the nginx container from the Ansible controller
+#
+# Usage: ./rprm <domain> [--keep-cert]
+#
+# Examples:
+#   ./rprm watch.sirhexx.com
+#   ./rprm watch.sirhexx.com --keep-cert
+
+set -u
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+[[ $# -lt 1 ]] && {
+	echo "Usage: ./rprm <domain> [--keep-cert]"
+	exit 1
+}
+
+ansible npm_containers \
+	-i "${SCRIPT_DIR}/inventory.ini" \
+	-m shell \
+	-a "rprm $*"
