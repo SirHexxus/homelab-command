@@ -1,7 +1,7 @@
 # Ariadne Project — DMZ & Perimeter Design Doc
 **Version:** 1.0
-**Last Updated:** February 2026
-**Status:** Draft — pending review and deployment
+**Last Updated:** March 2026
+**Status:** In Progress — nginx and Umami deployed; Authelia and pfSense config pending
 
 ---
 
@@ -97,9 +97,9 @@ Remote device → WireGuard UDP → pfSense WG interface
 | Service | IP | VLAN | Type | Status |
 |---------|----|------|------|--------|
 | pfSense | 10.0.60.1 | 60 | Gateway | Planned |
-| NGINX Proxy Manager | 10.0.60.10 | 60 | LXC | Planned |
+| nginx + certbot | 10.0.60.10 | 60 | LXC | Active |
 | Authelia | 10.0.60.11 | 60 | LXC | Planned |
-| Umami | 10.0.50.18 | 50 | LXC | Planned |
+| Umami | 10.0.50.18 | 50 | LXC | Active |
 
 > **Umami placement:** Umami lives on VLAN 50 (Lab Services) rather than VLAN 60 to reuse the existing Postgres LXC (10.0.50.14). NPM proxies `analytics.sirhexx.com` to Umami via a pfSense DMZ service-allow rule (port 3000). Umami is logically part of Ariadne — provisioned in the same Terraform config — but does not sit inside the DMZ itself.
 
@@ -136,21 +136,40 @@ An explicit `www` CNAME in Namecheap DNS overrides the wildcard for `www.sirhexx
 
 ---
 
-## 4. Reverse Proxy Layer — NGINX Proxy Manager
+## 4. Reverse Proxy Layer — NGINX (native)
 
-**Service:** NGINX Proxy Manager
+**Service:** nginx + certbot (native install — no Docker)
 **IP:** 10.0.60.10
 **Port exposure:** 80, 443 (inbound NAT from pfSense WAN)
 **Purpose:** SSL termination, subdomain routing, forward auth integration with Authelia
 
-NPM is the single point of ingress for all external web traffic. It handles Let's Encrypt certificate provisioning and renewal automatically, routes subdomains to internal service IPs, and enforces Authelia authentication on protected routes via the forward auth pattern.
+> **Implementation note:** The original design called for NGINX Proxy Manager (NPM). NPM has no official native install and is distributed exclusively as a Docker image. Since the LXC containers in this stack run services natively (no Docker inside LXC), the proxy layer uses nginx + certbot directly — which is what NPM wraps internally. Proxy host configs are managed via Ansible and the `rpadd`/`rprm` scripts; there is no web UI.
 
-**SSL approach:** Let's Encrypt wildcard certificate for *.sirhexx.com via DNS challenge. Single cert covers all subdomains without per-service certificate management.
+nginx is the single point of ingress for all external web traffic. certbot handles Let's Encrypt certificate provisioning and renewal. Authelia authentication is enforced on protected routes via nginx's `auth_request` forward auth directive.
+
+**SSL approach:** Per-subdomain Let's Encrypt certificates via certbot `--nginx` HTTP challenge. Certbot auto-renews via its installed systemd timer.
+
+**Adding/removing proxy hosts:**
+Proxy host configs live in `/etc/nginx/proxy_hosts/`. Use the `rpadd` and `rprm` scripts to manage them:
+
+```bash
+# From the Ansible controller:
+./rpadd watch.sirhexx.com 10.0.80.10:8096
+./rpadd request.sirhexx.com 10.0.80.14:5055 --authelia
+./rpadd internal.sirhexx.com 10.0.50.13:5678 --no-ssl
+./rprm watch.sirhexx.com
+
+# Or directly on the nginx container:
+ssh root@10.0.60.10
+rpadd watch.sirhexx.com 10.0.80.10:8096
+```
+
+`rpadd` generates an nginx server block, reloads nginx, and runs certbot automatically. `--authelia` adds forward auth headers to the block. `--no-ssl` skips certbot for internal-only proxies.
 
 **Authelia integration pattern:**
-NPM uses the `proxy_set_header` forward auth configuration to check every protected request against Authelia before passing it upstream. If Authelia returns 401, NPM redirects to the Authelia login page. If authenticated, the request proceeds with user identity headers injected.
+nginx uses the `auth_request` directive to check every protected request against Authelia before passing it upstream. If Authelia returns 401, nginx redirects to the Authelia login page. Injected via `rpadd --authelia` flag.
 
-**Services that get NPM exposure:**
+**Services that get nginx exposure:**
 
 | Subdomain | Target | Auth Required |
 |-----------|--------|---------------|
@@ -324,7 +343,7 @@ Canonical subdomain list. Cross-reference with Orpheus Design Doc v1.1 §8 for f
 | request | sirhexx.com | Jellyseerr | 10.0.80.X | Authelia | Planned |
 | books | sirhexx.com | CalibreWeb | 10.0.80.X | Authelia | Planned |
 | music | sirhexx.com | Navidrome | 10.0.80.X | Authelia | Planned |
-| analytics | sirhexx.com | Umami | 10.0.50.18 | None | Planned |
+| analytics | sirhexx.com | Umami | 10.0.50.18 | None | Active |
 
 > **TBD subdomains:** hexxusweb.com professional services TBD post-June. Additional sirhexx.com subdomains assigned at deployment time for any newly exposed services.
 
@@ -339,7 +358,7 @@ Ariadne follows the same IaC conventions as all Homelab Command projects. See Ia
 ```
 ariadne/
 ├── terraform/
-│   ├── main.tf              # NPM LXC + Authelia LXC + Umami LXC provisioning
+│   ├── main.tf              # nginx LXC + Authelia LXC + Umami LXC provisioning
 │   ├── variables.tf
 │   ├── terraform.tfvars     # gitignored
 │   └── terraform.tfvars.example
