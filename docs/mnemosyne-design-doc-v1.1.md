@@ -1,6 +1,6 @@
 # Mnemosyne Design Doc
-**Version:** 1.1
-**Last Updated:** February 2026
+**Version:** 1.2
+**Last Updated:** March 2026
 **Status:** Living Document — implementation will surface unknowns not captured here
 
 ---
@@ -228,6 +228,7 @@ Notion is not the primary data store — Postgres is. Notion is the human-browsa
 | Telegram link forward | URL → scrape → n8n | MEDIUM | Planned |
 | Email newsletter | Gmail label → n8n trigger | MEDIUM | Planned |
 | Google Keep archive | Scheduled API poll → n8n | MEDIUM | Planned |
+| Umami analytics | Scheduled API poll → n8n (weekly) | MEDIUM | Planned |
 | Google Drive archive | One-time bulk + delta sync | LOW | Planned |
 | Web content | Telegram URL forward or bookmarklet | LOW | Planned |
 
@@ -380,7 +381,38 @@ AI: summarize, extract key concepts → classify (likely REFERENCE)
 Standard ingestion pipeline
 ```
 
-### 5.6 Bulk Import (Planned)
+### 5.6 Web Analytics Ingestion — Umami (Planned)
+
+Umami (10.0.50.18) collects visitor analytics for sirhexx.com and hexxusweb.com. A weekly n8n workflow polls the Umami API and writes structured snapshots into Mnemosyne as REFERENCE items. These naturally feed the Monthly Trend Report via standard vector search — no special-case logic in the report engine.
+
+```
+Umami REST API (/api/websites/{id}/stats)
+    weekly scheduled trigger (Sunday, before Weekly Summary)
+    |
+    v
+Extract: total visitors, unique visitors, pageviews, bounce rate,
+         top 5 pages, top 3 referrers, avg session duration
+    |
+    v
+Format as structured REFERENCE note:
+    title: "sirhexx.com analytics — week of {date}"
+    metadata: { source_url: "analytics.sirhexx.com", author: "Umami",
+                key_takeaways: [...], credibility_notes: "self-hosted" }
+    |
+    v
+Standard ingestion pipeline → REFERENCE bucket
+    |
+    v
+If hexxusweb.com PURSUIT entity exists:
+    append analytics snapshot as status update
+    (visitor growth = milestone signal for professional portfolio)
+```
+
+**Umami API authentication:** Umami uses bearer token auth. Token stored in Ansible Vault; passed as `Authorization: Bearer {token}` header in n8n HTTP Request node.
+
+> **Future enhancement:** At Monthly Trend Report generation time, add a dedicated live Umami stats pull (last 30 days) so the report always has current numbers rather than relying solely on what was captured in weekly snapshots. This gives the report accurate cumulative totals without depending on snapshot completeness. Implement after the base Monthly Trend Report is operational.
+
+### 5.7 Bulk Import (Planned)
 
 - **Google Keep:** n8n scheduled workflow via Google Keep API; mark as migrated after successful transfer
 - **Google Drive:** One-time bulk ingestion + periodic delta sync; PDFs → text extraction; Docs → direct API pull; originals stay in Drive; summaries + embeddings written to Postgres
@@ -522,7 +554,7 @@ Return answer + source references to Telegram
 | Argus Security Digest | Daily, 7:05 AM | Telegram | Yesterday's notable security events; unresolved high-severity incidents; SIEM health check — see Argus Design Doc for full detail |
 | Weekly Summary | Sunday, 6:00 PM | Telegram | Week's captures by bucket; AI-identified connections; open PROJECT next actions; ADMIN due next week |
 | Idea Synthesis Report | Sunday, 6:05 PM | Telegram | Last week's IDEAs as index; AI searches full knowledge base for connections to those fresh ideas; ranked by relevance and potential value |
-| Monthly Trend Report | 1st of month, 8:00 AM | Telegram + Notion page | Topic clusters; most active projects; recurring themes; IDEAs sitting >30 days without follow-up |
+| Monthly Trend Report | 1st of month, 8:00 AM | Telegram + Notion page | Topic clusters; most active projects; recurring themes; IDEAs sitting >30 days without follow-up; web analytics summary from Umami weekly snapshots |
 
 ### 7.3 On-Demand Reports
 
@@ -576,6 +608,7 @@ Consolidation runs before the Weekly Summary so any merges are reflected in that
 | Voice memo → Whisper → pipeline | Build fresh | Whisper now has dedicated LXC |
 | Vector embedding → pgvector | Build fresh | Replacing Qdrant with pgvector |
 | Email newsletter processing | Build fresh | Planned |
+| Umami analytics ingestion | Build fresh | Planned — §5.6 |
 | Semantic search (/search) | Build fresh | Planned |
 | RAG Q&A (/ask) | Build fresh | Planned |
 | Daily Digest | Build fresh | Planned |
@@ -599,6 +632,7 @@ Consolidation runs before the Weekly Summary so any merges are reflected in that
 | Hermes | 10.0.50.17 | AI agent; connects to Mnemosyne Postgres for long-term memory |
 | Ollama | 10.0.50.10 | nomic-embed-text + Mistral 7B inference |
 | Whisper | 10.0.50.12 | Voice transcription; LXC 102 |
+| Umami | 10.0.50.18 | Web analytics source; polled weekly via n8n HTTP Request |
 
 All services on VLAN 50 (Lab Services). All IaC-deployed via Terraform + Ansible.
 
