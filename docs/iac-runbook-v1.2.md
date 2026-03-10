@@ -1,5 +1,5 @@
 # IaC Runbook
-**Version:** 1.3
+**Version:** 1.4
 **Last Updated:** March 2026
 **Status:** Living Document
 
@@ -419,8 +419,11 @@ Phase 5: SIEM Stack
     10. Grafana (10.0.50.22)
 
 Phase 6: DMZ Services
-    11. NGINX Proxy Manager (10.0.60.10)
+    11. NGINX + Certbot (10.0.60.10)       ← native nginx; no Docker
     12. Authelia (10.0.60.11)
+    13. Umami (10.0.50.18)                 ← depends on Phase 2 Postgres
+        provision.yml auto-creates the umami DB on Postgres before
+        provisioning the container — no manual DB step required.
     Note: Crowdsec is a pfSense package — configure via pfSense UI, not IaC
 
 Phase 7: Orpheus
@@ -543,6 +546,16 @@ must exist in the ansible-level `.gitignore` (i.e., `infrastructure/platform/<se
 8. Verify the service appears in the recovery sequence above; update if needed
 9. Test the full provision.yml playbook against a fresh container before merging
 
+**If the new service requires a Postgres database:**
+
+- Add it to `infrastructure/platform/postgres/ansible/group_vars/postgres_containers.yml` under `postgres_databases` — this is the canonical list of all databases managed by this Postgres instance
+- Add the corresponding `vault_<owner>_password` entry to the Postgres ansible vault (`infrastructure/platform/postgres/ansible/group_vars/vault.yml`)
+- Add the Postgres host (`postgres_hosts`) to the service's `inventory.ini`
+- Add a DB provisioning play (Play 0) to the service's `provision.yml` that creates the role and database using idempotent shell commands (see the `community.postgresql` peer auth note in §10 — use shell, not the module)
+- The service's own vault holds the DB password under a service-scoped name (e.g. `vault_umami_postgres_password`) for use in the application `.env` template; the Postgres vault holds `vault_umami_password` for use by the Postgres provisioning role
+
+See `infrastructure/ariadne/ansible/provision.yml` Play 0 as the reference implementation.
+
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.7 · Project Roadmap v1.3 · Mnemosyne Design Doc v1.1 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · Mnemosyne Design Doc v1.1 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*
