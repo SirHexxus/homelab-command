@@ -1,0 +1,6 @@
+# roles/npm/defaults/main.yml
+
+npm_port_http: 80
+npm_port_https: 443
+npm_proxy_hosts_dir: /etc/nginx/proxy_hosts
+npm_ssl_dir: /etc/nginx/ssl

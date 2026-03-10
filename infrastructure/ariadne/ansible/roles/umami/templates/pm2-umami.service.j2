@@ -1,0 +1,21 @@
+# pm2-umami.service — managed by Ansible
+# Type=oneshot + RemainAfterExit is required for LXC containers where
+# Type=forking (used by pm2 startup) fails with 'protocol' errors.
+
+[Unit]
+Description=PM2 process manager for umami
+Documentation=https://pm2.keymetrics.io/
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User={{ umami_user }}
+Environment=PM2_HOME={{ umami_install_dir }}/.pm2
+Environment=HOME={{ umami_install_dir }}
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/lib/node_modules/pm2/bin/pm2 resurrect
+ExecStop=/usr/lib/node_modules/pm2/bin/pm2 kill
+
+[Install]
+WantedBy=multi-user.target

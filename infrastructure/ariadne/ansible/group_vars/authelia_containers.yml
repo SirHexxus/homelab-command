@@ -1,0 +1,11 @@
+# group_vars/authelia_containers.yml
+
+authelia_version: "4.39.15"
+authelia_port: 9091
+authelia_config_dir: /etc/authelia
+authelia_data_dir: /var/lib/authelia
+authelia_user: authelia
+authelia_group: authelia
+authelia_session_domain: sirhexx.com
+authelia_default_redirection_url: "https://sirhexx.com"
+authelia_log_level: info

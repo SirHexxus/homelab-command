@@ -1,0 +1,14 @@
+# users_database.yml — managed by Ansible
+# To set a password, run: authelia hash-password 'yourpassword'
+# Then replace the password hash below.
+#
+# Default hash is for 'ChangeMeNow' — CHANGE THIS BEFORE USE.
+
+users:
+  james:
+    displayname: "James"
+    password: "$argon2id$v=19$m=65536,t=3,p=4$aTBhemFyOHgzOHM2Mjg1Yg$QrMjJVE9SYlqPxc4AwgSdgOZwj7QEeD47lqxM5lxVdo"
+    email: admin@sirhexx.com
+    groups:
+      - admins
+      - users

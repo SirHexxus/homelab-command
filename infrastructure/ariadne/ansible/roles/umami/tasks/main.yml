@@ -1,0 +1,213 @@
+# roles/umami/tasks/main.yml
+# Umami analytics — native Node.js installation managed by PM2.
+# PM2 handles process supervision and crash recovery.
+# pm2 startup generates a pm2-umami systemd unit for boot persistence.
+
+---
+# -----------------------------------------------------------------------
+# Node.js 20 (NodeSource)
+# -----------------------------------------------------------------------
+- name: Download NodeSource setup script
+  get_url:
+    url: "https://deb.nodesource.com/setup_{{ node_version }}.x"
+    dest: /tmp/nodesource_setup.sh
+    mode: '0755'
+
+- name: Run NodeSource setup script
+  command: bash /tmp/nodesource_setup.sh
+  args:
+    creates: /etc/apt/sources.list.d/nodesource.list
+
+- name: Install Node.js {{ node_version }}
+  apt:
+    name: nodejs
+    state: present
+    update_cache: yes
+
+- name: Verify Node.js installation
+  command: node --version
+  changed_when: false
+  register: node_ver
+
+- name: Display Node.js version
+  debug:
+    msg: "Node.js installed: {{ node_ver.stdout }}"
+
+# -----------------------------------------------------------------------
+# Build tools and postgresql-client
+# -----------------------------------------------------------------------
+- name: Install build dependencies
+  apt:
+    name:
+      - build-essential
+      - postgresql-client
+    state: present
+
+# -----------------------------------------------------------------------
+# PM2 (industry-standard Node.js process manager)
+# -----------------------------------------------------------------------
+- name: Install PM2 globally
+  npm:
+    name: pm2
+    global: yes
+    state: present
+
+- name: Verify PM2 installation
+  command: pm2 --version
+  changed_when: false
+  register: pm2_ver
+
+- name: Display PM2 version
+  debug:
+    msg: "PM2 installed: {{ pm2_ver.stdout }}"
+
+# -----------------------------------------------------------------------
+# Umami user and directory
+# -----------------------------------------------------------------------
+- name: Create umami system group
+  group:
+    name: "{{ umami_group }}"
+    system: yes
+    state: present
+
+- name: Create umami system user
+  user:
+    name: "{{ umami_user }}"
+    group: "{{ umami_group }}"
+    system: yes
+    shell: /usr/sbin/nologin
+    home: "{{ umami_install_dir }}"
+    create_home: no
+    state: present
+
+- name: Create umami install directory
+  file:
+    path: "{{ umami_install_dir }}"
+    state: directory
+    owner: "{{ umami_user }}"
+    group: "{{ umami_group }}"
+    mode: '0755'
+
+# -----------------------------------------------------------------------
+# Umami source + build
+# -----------------------------------------------------------------------
+- name: Check if umami is already a git repo
+  stat:
+    path: "{{ umami_install_dir }}/.git"
+  register: umami_git
+
+- name: Remove non-git install directory (e.g. skel remnants from prior run)
+  file:
+    path: "{{ umami_install_dir }}"
+    state: absent
+  when: not umami_git.stat.exists
+
+- name: Mark umami install dir as safe for git
+  command: git config --global --add safe.directory {{ umami_install_dir }}
+  changed_when: false
+
+- name: Clone umami repository
+  git:
+    repo: https://github.com/umami-software/umami.git
+    dest: "{{ umami_install_dir }}"
+    version: master
+    force: yes
+
+- name: Set ownership of install directory to umami user
+  file:
+    path: "{{ umami_install_dir }}"
+    state: directory
+    owner: "{{ umami_user }}"
+    group: "{{ umami_group }}"
+    recurse: yes
+
+- name: Deploy umami environment file
+  template:
+    src: umami.env.j2
+    dest: "{{ umami_install_dir }}/.env"
+    owner: "{{ umami_user }}"
+    group: "{{ umami_group }}"
+    mode: '0640'
+  notify: restart umami
+
+- name: Install npm dependencies
+  command: npm install --legacy-peer-deps
+  args:
+    chdir: "{{ umami_install_dir }}"
+    creates: "{{ umami_install_dir }}/node_modules/.package-lock.json"
+  become_user: "{{ umami_user }}"
+
+- name: Install prop-types (required by react-simple-maps peer dep)
+  command: npm install prop-types --legacy-peer-deps
+  args:
+    chdir: "{{ umami_install_dir }}"
+    creates: "{{ umami_install_dir }}/node_modules/prop-types"
+  become_user: "{{ umami_user }}"
+
+- name: Build umami
+  command: npm run build
+  args:
+    chdir: "{{ umami_install_dir }}"
+    creates: "{{ umami_install_dir }}/.next/standalone"
+  become_user: "{{ umami_user }}"
+  environment:
+    NODE_ENV: production
+
+# -----------------------------------------------------------------------
+# PM2 ecosystem config + startup
+# -----------------------------------------------------------------------
+- name: Deploy PM2 ecosystem config
+  template:
+    src: ecosystem.config.cjs.j2
+    dest: "{{ umami_install_dir }}/ecosystem.config.cjs"
+    owner: "{{ umami_user }}"
+    group: "{{ umami_group }}"
+    mode: '0644'
+  notify: restart umami
+
+- name: Start umami under PM2
+  shell: |
+    pm2 describe umami > /dev/null 2>&1 \
+      && pm2 restart {{ umami_install_dir }}/ecosystem.config.cjs \
+      || pm2 start {{ umami_install_dir }}/ecosystem.config.cjs
+  args:
+    executable: /bin/bash
+  become_user: "{{ umami_user }}"
+  environment:
+    HOME: "{{ umami_install_dir }}"
+  changed_when: false
+
+- name: Save PM2 process list
+  command: pm2 save
+  become_user: "{{ umami_user }}"
+  environment:
+    HOME: "{{ umami_install_dir }}"
+  changed_when: false
+
+- name: Deploy PM2 systemd unit
+  template:
+    src: pm2-umami.service.j2
+    dest: /etc/systemd/system/pm2-umami.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Enable and start pm2 systemd service
+  systemd:
+    name: pm2-umami
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+# -----------------------------------------------------------------------
+# Health check
+# -----------------------------------------------------------------------
+- name: Wait for umami to be ready
+  uri:
+    url: "http://localhost:{{ umami_port }}"
+    status_code: [200, 302]
+  register: umami_health
+  until: umami_health.status in [200, 302]
+  retries: 30
+  delay: 5
+  changed_when: false

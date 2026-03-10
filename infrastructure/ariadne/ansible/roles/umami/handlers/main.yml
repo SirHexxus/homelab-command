@@ -1,0 +1,9 @@
+# roles/umami/handlers/main.yml
+
+---
+- name: restart umami
+  shell: pm2 restart umami
+  become_user: "{{ umami_user }}"
+  environment:
+    HOME: "{{ umami_install_dir }}"
+  changed_when: false

@@ -1,0 +1,67 @@
+# /etc/nginx/nginx.conf — managed by Ansible
+# Ariadne reverse proxy — base nginx configuration.
+# Proxy host configs live in /etc/nginx/proxy_hosts/*.conf
+# Add a new .conf file there (via Ansible) to expose a new subdomain.
+
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+include /etc/nginx/modules-enabled/*.conf;
+
+events {
+	worker_connections 1024;
+}
+
+http {
+	sendfile on;
+	tcp_nopush on;
+	tcp_nodelay on;
+	keepalive_timeout 65;
+	types_hash_max_size 2048;
+	server_tokens off;
+
+	include /etc/nginx/mime.types;
+	default_type application/octet-stream;
+
+	# Logging
+	access_log /var/log/nginx/access.log;
+	error_log  /var/log/nginx/error.log;
+
+	# Gzip
+	gzip on;
+	gzip_vary on;
+	gzip_proxied any;
+	gzip_types text/plain text/css application/json application/javascript
+	           text/xml application/xml text/javascript;
+
+	# SSL defaults — applied to all server blocks that use SSL
+	ssl_protocols TLSv1.2 TLSv1.3;
+	ssl_prefer_server_ciphers on;
+	ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+	ssl_session_cache shared:SSL:10m;
+	ssl_session_timeout 1d;
+	ssl_session_tickets off;
+
+	# Proxy defaults — applied in every proxy_pass block
+	proxy_http_version  1.1;
+	proxy_set_header    Upgrade           $http_upgrade;
+	proxy_set_header    Connection        "upgrade";
+	proxy_set_header    Host              $host;
+	proxy_set_header    X-Real-IP         $remote_addr;
+	proxy_set_header    X-Forwarded-For   $proxy_add_x_forwarded_for;
+	proxy_set_header    X-Forwarded-Proto $scheme;
+	proxy_cache_bypass  $http_upgrade;
+	proxy_read_timeout  300s;
+	proxy_connect_timeout 10s;
+
+	# Default server — redirect HTTP → HTTPS for any unmatched request
+	server {
+		listen {{ npm_port_http }} default_server;
+		listen [::]:{{ npm_port_http }} default_server;
+		server_name _;
+		return 301 https://$host$request_uri;
+	}
+
+	# Include per-subdomain proxy configs (added by Ansible roles)
+	include /etc/nginx/proxy_hosts/*.conf;
+}

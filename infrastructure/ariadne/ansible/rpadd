@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# rpadd — run rpadd on the nginx container from the Ansible controller
+#
+# Usage: ./rpadd <domain> <upstream> [--no-ssl] [--authelia]
+#
+# Examples:
+#   ./rpadd watch.sirhexx.com 10.0.80.10:8096
+#   ./rpadd request.sirhexx.com 10.0.80.14:5055 --authelia
+#   ./rpadd internal.sirhexx.com 10.0.50.13:5678 --no-ssl
+
+set -u
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+[[ $# -lt 2 ]] && {
+	echo "Usage: ./rpadd <domain> <upstream> [--no-ssl] [--authelia]"
+	exit 1
+}
+
+ansible npm_containers \
+	-i "${SCRIPT_DIR}/inventory.ini" \
+	-m shell \
+	-a "rpadd $*"

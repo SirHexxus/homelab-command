@@ -1,0 +1,23 @@
+// ecosystem.config.js — managed by Ansible
+// PM2 process definition for Umami analytics.
+// Manage with: pm2 status | pm2 logs umami | pm2 restart umami
+
+module.exports = {
+  apps: [
+    {
+      name: 'umami',
+      script: 'node_modules/.bin/next',
+      args: 'start',
+      cwd: '{{ umami_install_dir }}',
+      env: {
+        NODE_ENV: 'production',
+        PORT: {{ umami_port }},
+      },
+      restart_delay: 5000,
+      max_restarts: 10,
+      autorestart: true,
+      watch: false,
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+    },
+  ],
+};
