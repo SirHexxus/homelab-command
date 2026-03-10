@@ -1,0 +1,9 @@
+---
+# Role defaults for switch_config.
+#
+# These values are overridden by group_vars/switch.yml in normal operation.
+# Defined here so the role is self-documenting about what variables it expects.
+
+switch_vlans: []
+switch_trunk_port: {}
+switch_access_ports: []

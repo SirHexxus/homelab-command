@@ -1,0 +1,21 @@
+---
+# switch_config role — entry point.
+# Imports task files in dependency order: VLANs must exist before ports can
+# reference them. Config is saved last so a failed mid-run does not persist
+# partial state across a reboot.
+
+- name: SWITCH | Ensure all VLANs exist
+  import_tasks: vlans.yml
+  tags: vlans
+
+- name: SWITCH | Configure trunk port
+  import_tasks: trunk.yml
+  tags: trunk
+
+- name: SWITCH | Configure access ports
+  import_tasks: access_ports.yml
+  tags: access_ports
+
+- name: SWITCH | Save running config to startup config
+  import_tasks: save.yml
+  tags: save

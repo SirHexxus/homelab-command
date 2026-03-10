@@ -1,0 +1,28 @@
+---
+# Configure known access ports with their assigned VLANs.
+#
+# Each access port requires two commands:
+#   switchport general allowed vlan X untagged  — permits untagged frames for VLAN X
+#   switchport pvid X                           — tags incoming untagged frames as VLAN X
+#
+# Both commands must match. A mismatch (e.g. pvid 20 but VLAN 20 not in the
+# allowed untagged list) results in frames being dropped on ingress.
+#
+# Ports 1/0/21 and 1/0/22 are already configured correctly from the initial
+# web UI setup. These tasks are idempotent — re-applying the same config is
+# a no-op and confirms the desired state is in place.
+#
+# No tasks are written for unconfigured ports (1/0/2–20, 1/0/23–28) to keep
+# the playbook non-destructive. Add entries to switch_access_ports in
+# group_vars/switch.yml when new ports are assigned.
+
+- name: "SWITCH | Set port {{ item.port }} untagged VLAN {{ item.vlan }} ({{ item.description }})"
+  ansible.netcommon.cli_config:
+    config: |
+      interface {{ item.port }}
+       switchport mode general
+       switchport general allowed vlan {{ item.vlan }} untagged
+       switchport pvid {{ item.vlan }}
+  loop: "{{ switch_access_ports }}"
+  loop_control:
+    label: "{{ item.port }} → VLAN {{ item.vlan }}"

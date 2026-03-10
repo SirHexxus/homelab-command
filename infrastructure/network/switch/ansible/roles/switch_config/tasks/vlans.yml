@@ -1,0 +1,20 @@
+---
+# Ensure all required VLANs exist on the switch.
+#
+# The T1600G-28PS `vlan <id>` command is idempotent — reissuing it for a VLAN
+# that already exists enters the VLAN config sub-mode without creating a
+# duplicate. VLANs 20, 30, and 50 pre-exist from the initial web UI setup;
+# they are included in switch_vlans so this file remains the single source
+# of truth for desired state.
+#
+# Each VLAN is created and named in a single cli_config block. The `name`
+# command sets the VLAN description visible in the web UI and show vlan output.
+
+- name: "SWITCH | Ensure VLAN {{ item.id }} ({{ item.name }}) exists"
+  ansible.netcommon.cli_config:
+    config: |
+      vlan {{ item.id }}
+       name {{ item.name }}
+  loop: "{{ switch_vlans }}"
+  loop_control:
+    label: "VLAN {{ item.id }} — {{ item.name }}"
