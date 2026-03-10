@@ -1,0 +1,10 @@
+# roles/proxmox_base/tasks/main.yml - Task Dispatcher
+#
+# Imports sub-task files in order. Tags are applied at the individual task level
+# in each sub-file. Tasks tagged [X, never] only run with --tags X.
+
+- import_tasks: system.yml
+- import_tasks: dns.yml
+- import_tasks: api_user.yml
+- import_tasks: bridges.yml
+- import_tasks: storage.yml

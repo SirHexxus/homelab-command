@@ -1,0 +1,54 @@
+# tasks/storage.yml - Storage pool verification and NFS configuration
+#
+# storage     — verify expected pools exist (read-only, safe)
+# storage_nfs — add TrueNAS NFS datastore (DEFERRED — R710 not yet reconnected)
+#
+# Tagged [storage, never] and [storage_nfs, never] — EXPLICIT ONLY.
+
+# -----------------------------------------------------------------------------
+# Storage pool verification (--tags storage)
+# -----------------------------------------------------------------------------
+
+- name: Get current storage pool status
+  command: pvesm status
+  register: pvesm_output
+  changed_when: false
+  tags: [storage, never]
+
+- name: Assert general-store pool exists
+  assert:
+    that: "'general-store' in pvesm_output.stdout"
+    fail_msg: "MISSING: general-store ZFS pool not found in pvesm status"
+    success_msg: "OK: general-store found"
+  tags: [storage, never]
+
+- name: Assert local-lvm pool exists
+  assert:
+    that: "'local-lvm' in pvesm_output.stdout"
+    fail_msg: "MISSING: local-lvm LVM pool not found in pvesm status"
+    success_msg: "OK: local-lvm found"
+  tags: [storage, never]
+
+- name: Assert local storage exists
+  assert:
+    that: "'local ' in pvesm_output.stdout"
+    fail_msg: "MISSING: local dir storage not found in pvesm status"
+    success_msg: "OK: local found"
+  tags: [storage, never]
+
+- name: Display storage pool status
+  debug:
+    msg: "{{ pvesm_output.stdout }}"
+  tags: [storage, never]
+
+# -----------------------------------------------------------------------------
+# TrueNAS NFS datastore (--tags storage_nfs)
+# DEFERRED: run after R710 TrueNAS is reconnected
+# -----------------------------------------------------------------------------
+
+- name: "[DEFERRED] Add TrueNAS NFS datastore"
+  debug:
+    msg: |
+      storage_nfs task is a placeholder — configure pvesm add nfs after
+      TrueNAS R710 is reconnected and the NFS export path is confirmed.
+  tags: [storage_nfs, never]

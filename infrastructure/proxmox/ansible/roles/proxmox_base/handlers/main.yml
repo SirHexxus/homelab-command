@@ -1,0 +1,13 @@
+# roles/proxmox_base/handlers/main.yml
+
+# Only fires when --tags networking is used and the interfaces template changes.
+# ifreload applies changes without a full reboot; still potentially disruptive.
+- name: reload network interfaces
+  command: ifreload -a
+  listen: reload network interfaces
+
+- name: restart sshd
+  systemd:
+    name: sshd
+    state: restarted
+  listen: restart sshd

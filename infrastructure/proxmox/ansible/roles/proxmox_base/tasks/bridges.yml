@@ -1,0 +1,41 @@
+# tasks/bridges.yml - /etc/network/interfaces template
+#
+# Tagged [networking, never] — EXPLICIT ONLY.
+# Run with: ansible-playbook provision.yml --tags networking
+#
+# CAUTION: rewrites /etc/network/interfaces and reloads with ifreload -a.
+# This will briefly interrupt network connectivity. Verify the template
+# matches the live config before running on a production node.
+#
+# Known-good config (discovered 2026-03-10):
+#   vmbr0: eno8303, WAN, no IP, no VLAN awareness
+#   vmbr1: eno8403, LAN/trunk, 10.0.10.2/24, VLAN-aware, bridge-vids 2-4094
+
+- name: Show current /etc/network/interfaces before overwrite
+  command: cat /etc/network/interfaces
+  register: current_interfaces
+  changed_when: false
+  tags: [networking, never]
+
+- name: Display current interfaces (verify before proceeding)
+  debug:
+    msg: "{{ current_interfaces.stdout }}"
+  tags: [networking, never]
+
+- name: Confirm before writing new /etc/network/interfaces
+  pause:
+    prompt: |
+      Review the current interfaces above.
+      Press ENTER to write new config from template, or Ctrl+C → A to abort.
+  tags: [networking, never]
+
+- name: Template /etc/network/interfaces
+  template:
+    src: interfaces.j2
+    dest: /etc/network/interfaces
+    owner: root
+    group: root
+    mode: '0644'
+    backup: yes
+  notify: reload network interfaces
+  tags: [networking, never]

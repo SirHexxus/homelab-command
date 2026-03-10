@@ -1,0 +1,36 @@
+# provision.yml - Proxmox Post-Install Provisioning
+#
+# Usage:
+#   ansible-playbook provision.yml                    # Safe default: SSH hardening, DNS confirm, API user
+#   ansible-playbook provision.yml --tags updates     # + dist-upgrade
+#   ansible-playbook provision.yml --tags networking  # CAUTION: rewrites /etc/network/interfaces
+#   ansible-playbook provision.yml --tags storage     # Verify storage pools exist
+#   ansible-playbook provision.yml --tags storage_nfs # After TrueNAS R710 reconnected
+#
+# Secrets:
+#   ansible-playbook provision.yml --ask-vault-pass
+
+- name: Provision Proxmox node (puppetmaster)
+  hosts: proxmox
+  gather_facts: yes
+  vars_files:
+    - group_vars/vault.yml
+
+  pre_tasks:
+    - name: Display deployment info and tag reminder
+      debug:
+        msg: |
+          ================================================================
+          Proxmox post-install provisioning — puppetmaster (10.0.10.2)
+          PVE version: 9.1.0 | Kernel: 6.17.9-1-pve
+          ================================================================
+          Default run: SSH hardening, DNS confirm, terraform@pve API user
+          Use --tags updates     to also run dist-upgrade
+          Use --tags networking  to rewrite /etc/network/interfaces (CAUTION)
+          Use --tags storage     to verify storage pools
+          Use --tags storage_nfs to configure TrueNAS NFS (deferred)
+          ================================================================
+
+  roles:
+    - role: proxmox_base
+      tags: always

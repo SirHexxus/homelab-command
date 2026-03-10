@@ -1,0 +1,38 @@
+# tasks/api_user.yml - Create terraform@pve API user and token
+#
+# Runs by default (no tags — fully idempotent, no blast radius).
+# terraform@pve uses PVE realm: no local Unix account is created.
+# Token printed in task output — copy it to all terraform.tfvars files.
+#
+# ansible_mgr@pam already exists and is left untouched.
+
+- name: Create terraform@pve user
+  command: pveum user add terraform@pve --comment "Terraform provisioning user"
+  register: pveum_user_add
+  failed_when: pveum_user_add.rc != 0 and 'already exists' not in pveum_user_add.stderr
+  changed_when: pveum_user_add.rc == 0
+
+- name: Grant PVEVMAdmin role to terraform@pve on cluster root
+  command: pveum acl modify / --user terraform@pve --role {{ terraform_api_role }}
+  register: pveum_acl
+  failed_when: pveum_acl.rc != 0
+  changed_when: pveum_acl.rc == 0
+
+- name: Create terraform API token (no expiry)
+  command: pveum user token add terraform@pve {{ terraform_api_token_name }} --expire 0 --output-format json
+  register: token_result
+  failed_when: token_result.rc != 0 and 'already exists' not in token_result.stderr
+  changed_when: token_result.rc == 0
+
+- name: Display Terraform API token — copy to all terraform.tfvars files
+  debug:
+    msg: |
+      ================================================================
+      Terraform API token created — copy this to all terraform.tfvars:
+
+      proxmox_api_token_id = "terraform@pve!{{ terraform_api_token_name }}"
+      proxmox_api_token    = "{{ (token_result.stdout | from_json).value }}"
+
+      Also save proxmox_api_token to group_vars/vault.yml.
+      ================================================================
+  when: token_result.changed

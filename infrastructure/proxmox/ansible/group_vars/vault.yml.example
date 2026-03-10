@@ -1,0 +1,18 @@
+# vault.yml.example - Secret Variables Template
+#
+# Copy this file to vault.yml and encrypt it with Ansible Vault:
+#   cp vault.yml.example vault.yml
+#   ansible-vault encrypt vault.yml
+#
+# To edit after encryption:
+#   ansible-vault edit vault.yml
+#
+# To run playbooks with vault:
+#   ansible-playbook provision.yml --ask-vault-pass
+#   ansible-playbook provision.yml --vault-password-file ~/.vault-password
+#
+# vault_terraform_api_token_secret is populated after running:
+#   ansible-playbook provision.yml  (which creates the token and prints it)
+# Copy the printed token secret here, then copy to all terraform.tfvars files.
+
+vault_terraform_api_token_secret: ""
