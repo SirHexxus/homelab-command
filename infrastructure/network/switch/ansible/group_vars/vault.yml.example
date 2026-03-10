@@ -1,0 +1,8 @@
+---
+# Ansible Vault template — copy to vault.yml and encrypt with:
+#   ansible-vault create group_vars/vault.yml
+#
+# Variables prefixed vault_ are referenced in inventory.ini and roles.
+# The live vault.yml is .gitignored; only this example file is committed.
+
+vault_switch_password: "REPLACE_WITH_SWITCH_ADMIN_PASSWORD"

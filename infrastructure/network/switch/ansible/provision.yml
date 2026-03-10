@@ -1,0 +1,33 @@
+---
+# TP-Link T1600G-28PS switch provisioning playbook.
+#
+# Usage:
+#   VLANs only:
+#     ansible-playbook provision.yml --ask-vault-pass --tags vlans
+#
+#   Trunk port only:
+#     ansible-playbook provision.yml --ask-vault-pass --tags trunk
+#
+#   Access ports only:
+#     ansible-playbook provision.yml --ask-vault-pass --tags access_ports
+#
+#   Full run (VLANs + ports + save):
+#     ansible-playbook provision.yml --ask-vault-pass
+#
+#   Dry-run (no changes applied):
+#     ansible-playbook provision.yml --ask-vault-pass --check
+#
+# Prerequisites:
+#   1. Install collections: ansible-galaxy collection install -r requirements.yml
+#   2. Create vault:        ansible-vault create group_vars/vault.yml
+#      (copy group_vars/vault.yml.example as a template)
+#
+# See README.md for the SSH host key limitation and paramiko requirement.
+
+- name: Provision TP-Link T1600G-28PS switch
+  hosts: switch
+  gather_facts: false
+
+  roles:
+    - role: switch_config
+      tags: [vlans, trunk, access_ports, save]

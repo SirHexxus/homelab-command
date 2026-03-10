@@ -1,0 +1,64 @@
+---
+# Source of truth: all VLAN and port configuration for the TP-Link T1600G-28PS.
+#
+# VLANs 20, 30, and 50 already exist on the switch. Listing them here keeps this
+# file the single source of truth for the desired state. The vlan creation command
+# is idempotent on this firmware — reissuing it for an existing VLAN is a no-op.
+
+# ------------------------------------------------------------------------------
+# VLANs
+# All 8 VLANs that must exist on the switch. IDs and names match pfSense.
+# ------------------------------------------------------------------------------
+switch_vlans:
+  - id: 10
+    name: MANAGEMENT
+  - id: 20
+    name: PERSONAL
+  - id: 30
+    name: WORK
+  - id: 40
+    name: IOT
+  - id: 50
+    name: LAB_SERVICES
+  - id: 60
+    name: DMZ
+  - id: 66
+    name: SANDBOX
+  - id: 70
+    name: GUEST
+
+# ------------------------------------------------------------------------------
+# Trunk port
+# Port 1/0/1 carries all VLANs tagged toward pfSense. VLAN 1 is intentionally
+# omitted from tagged_vlans — the switch uses VLAN 1 for management and it must
+# not be removed or overridden on this port. The switchport general command is
+# additive, so running it again will not remove VLANs already tagged.
+# ------------------------------------------------------------------------------
+switch_trunk_port:
+  name: "gigabitEthernet 1/0/1"
+  tagged_vlans: "10,20,30,40,50,60,66,70"
+
+# ------------------------------------------------------------------------------
+# Access ports
+# Only the two known access ports are managed here. All other ports are left
+# unconfigured — this keeps the playbook non-destructive and avoids touching
+# ports whose use may change over time.
+# ------------------------------------------------------------------------------
+switch_access_ports:
+  - port: "gigabitEthernet 1/0/21"
+    vlan: 20
+    description: "Personal — DESKTOP-PRSIJDR (desktop), James S24 (phone), eero (wireless AP)"
+  - port: "gigabitEthernet 1/0/22"
+    vlan: 30
+    description: "Work — D0:AD:08:B3:FB:3E (work laptop)"
+
+# ------------------------------------------------------------------------------
+# Port inventory (informational — NOT managed by this playbook)
+# Cross-referenced from MAC address table + pfSense ARP/DHCP (2026-03-10).
+# These ports are on VLAN 1 (native) and left unconfigured intentionally.
+# ------------------------------------------------------------------------------
+# Port 1/0/1   — Trunk to pfSense (BC:24:11:49:A2:3C) + Proxmox (B8:CB:29:F1:2A:5E)
+# Port 1/0/19  — Unknown device "YS-L160303193e" (D8:8B:4C:FC:19:3E); VLAN 1; purpose TBD
+# Port 1/0/24  — helm-log (72:C6:B9:0D:32:AC) + james-laptop wired (80:6D:97:29:ED:1C); VLAN 1
+#                NOTE: helm-log should be on VLAN 10 (MANAGEMENT) per network design.
+#                Currently on native VLAN 1 — reconfigure when VLAN 10 is fully operational.

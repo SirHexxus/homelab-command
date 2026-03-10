@@ -1,0 +1,18 @@
+---
+# Persist running configuration to startup configuration.
+#
+# Without this step, all changes made during the playbook run are lost on the
+# next switch reboot. This task runs last to ensure only a fully successful
+# configuration is persisted.
+#
+# The T1600G-28PS prompts for confirmation when overwriting startup-config.
+# The `prompt` and `answer` fields handle this automatically. The switch
+# responds with a [Y/N] prompt — answering Y proceeds with the save.
+
+- name: "SWITCH | Save running config to startup config"
+  ansible.netcommon.cli_command:
+    command: "copy running-config startup-config"
+    prompt:
+      - "[Y/N]"
+    answer:
+      - "Y"

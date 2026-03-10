@@ -1,0 +1,15 @@
+---
+# Ansible collections required for switch management.
+#
+# Install with:
+#   ansible-galaxy collection install -r requirements.yml
+#
+# ansible.netcommon provides the network_cli connection plugin and cli_config /
+# cli_command modules used throughout the switch_config role.
+#
+# community.tplink provides the tplink network_os definition that tells
+# network_cli how to handle login prompts and terminal mode for this switch.
+
+collections:
+  - name: ansible.netcommon
+  - name: community.tplink

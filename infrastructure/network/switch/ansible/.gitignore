@@ -1,0 +1,2 @@
+# Encrypted vault file — never commit the live vault, only vault.yml.example
+group_vars/vault.yml
