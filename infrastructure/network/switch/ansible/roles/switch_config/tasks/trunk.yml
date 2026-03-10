@@ -5,21 +5,27 @@
 # it appends to the port's allowed VLAN list rather than replacing it. Running
 # this task repeatedly will not remove VLANs or disrupt active traffic.
 #
-# VLAN 1 is intentionally excluded from tagged_vlans. The switch management
-# interface depends on VLAN 1 and it must not be overridden. Removing VLAN 1
-# from port 1/0/1 would break web UI access.
+# `switchport mode general` is not a valid command on this firmware — ports are
+# already in general (hybrid) mode by default and no mode change is needed.
 #
-# The port mode is set to general (hybrid) which supports both tagged and
-# untagged VLANs on the same port — required for the trunk-to-pfSense link.
+# VLAN 1 is intentionally excluded from tagged_vlans. The switch management
+# interface depends on VLAN 1 and it must not be overridden.
 
-- name: "SWITCH | Set port {{ switch_trunk_port.name }} mode to general"
-  ansible.netcommon.cli_config:
-    config: |
-      interface {{ switch_trunk_port.name }}
-       switchport mode general
-
-- name: "SWITCH | Add tagged VLANs {{ switch_trunk_port.tagged_vlans }} to trunk {{ switch_trunk_port.name }}"
-  ansible.netcommon.cli_config:
-    config: |
-      interface {{ switch_trunk_port.name }}
-       switchport general allowed vlan {{ switch_trunk_port.tagged_vlans }} tagged
+- name: "SWITCH | Configure trunk port {{ switch_trunk_port.name }}"
+  ansible.netcommon.telnet:
+    host: "{{ ansible_host }}"
+    user: "{{ ansible_user }}"
+    password: "{{ ansible_password }}"
+    login_prompt: "User:"
+    password_prompt: "Password:"
+    prompts:
+      - "T1600G-28PS"
+    crlf: true
+    command:
+      - enable
+      - configure
+      - "interface {{ switch_trunk_port.name }}"
+      - "switchport general allowed vlan {{ switch_trunk_port.tagged_vlans }} tagged"
+      - exit
+      - exit
+  delegate_to: localhost

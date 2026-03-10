@@ -4,12 +4,11 @@
 # Install with:
 #   ansible-galaxy collection install -r requirements.yml
 #
-# ansible.netcommon provides the network_cli connection plugin and cli_config /
-# cli_command modules used throughout the switch_config role.
+# ansible.netcommon provides the ansible.netcommon.telnet module used to
+# send CLI commands to the switch over Telnet (port 23).
 #
-# community.tplink provides the tplink network_os definition that tells
-# network_cli how to handle login prompts and terminal mode for this switch.
+# community.tplink does not exist on Ansible Galaxy — it was a false lead.
+# The switch uses local connection + ansible.netcommon.telnet module instead.
 
 collections:
   - name: ansible.netcommon
-  - name: community.tplink

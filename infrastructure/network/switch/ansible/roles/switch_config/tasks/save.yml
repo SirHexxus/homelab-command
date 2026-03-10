@@ -5,14 +5,19 @@
 # next switch reboot. This task runs last to ensure only a fully successful
 # configuration is persisted.
 #
-# The T1600G-28PS prompts for confirmation when overwriting startup-config.
-# The `prompt` and `answer` fields handle this automatically. The switch
-# responds with a [Y/N] prompt — answering Y proceeds with the save.
+# The T1600G-28PS prompts for [Y/N] confirmation when overwriting startup-config.
 
 - name: "SWITCH | Save running config to startup config"
-  ansible.netcommon.cli_command:
-    command: "copy running-config startup-config"
-    prompt:
-      - "[Y/N]"
-    answer:
-      - "Y"
+  ansible.netcommon.telnet:
+    host: "{{ ansible_host }}"
+    user: "{{ ansible_user }}"
+    password: "{{ ansible_password }}"
+    login_prompt: "User:"
+    password_prompt: "Password:"
+    prompts:
+      - "T1600G-28PS"
+    crlf: true
+    command:
+      - enable
+      - copy running-config startup-config
+  delegate_to: localhost

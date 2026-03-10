@@ -2,19 +2,28 @@
 # Ensure all required VLANs exist on the switch.
 #
 # The T1600G-28PS `vlan <id>` command is idempotent — reissuing it for a VLAN
-# that already exists enters the VLAN config sub-mode without creating a
-# duplicate. VLANs 20, 30, and 50 pre-exist from the initial web UI setup;
-# they are included in switch_vlans so this file remains the single source
-# of truth for desired state.
+# that already exists enters VLAN config sub-mode without creating a duplicate.
+# VLANs 20, 30, and 50 pre-exist from initial web UI setup; they are included
+# in switch_vlans so this file remains the single source of truth.
 #
-# Each VLAN is created and named in a single cli_config block. The `name`
-# command sets the VLAN description visible in the web UI and show vlan output.
+# All VLAN commands are sent in one Telnet session for efficiency.
 
-- name: "SWITCH | Ensure VLAN {{ item.id }} ({{ item.name }}) exists"
-  ansible.netcommon.cli_config:
-    config: |
-      vlan {{ item.id }}
-       name {{ item.name }}
+- name: "SWITCH | Build VLAN command list"
+  ansible.builtin.set_fact:
+    _vlan_cmds: "{{ _vlan_cmds | default([]) + ['vlan ' + (item.id | string), 'name ' + item.name, 'exit'] }}"
   loop: "{{ switch_vlans }}"
   loop_control:
     label: "VLAN {{ item.id }} — {{ item.name }}"
+
+- name: "SWITCH | Configure VLANs"
+  ansible.netcommon.telnet:
+    host: "{{ ansible_host }}"
+    user: "{{ ansible_user }}"
+    password: "{{ ansible_password }}"
+    login_prompt: "User:"
+    password_prompt: "Password:"
+    prompts:
+      - "T1600G-28PS"
+    crlf: true
+    command: "{{ ['enable', 'configure'] + _vlan_cmds + ['exit'] }}"
+  delegate_to: localhost
