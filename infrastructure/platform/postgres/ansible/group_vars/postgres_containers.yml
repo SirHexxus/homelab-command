@@ -18,6 +18,9 @@ postgres_databases:
   - name: n8n
     owner: n8n
     extensions: []
+  - name: umami
+    owner: umami
+    extensions: []
 
 # postgresql.conf tuning
 postgres_max_connections: 200
