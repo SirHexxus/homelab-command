@@ -1,0 +1,25 @@
+# terraform.tfvars.example - pfSense Terraform Variables Template
+#
+# Copy to terraform.tfvars and fill in real values. Never commit terraform.tfvars.
+#
+# Get the API token from:
+#   1. Run Proxmox post-install Ansible: infrastructure/proxmox/ansible/
+#   2. The api_user.yml task will print the token after creating it
+#
+# Usage:
+#   cp terraform.tfvars.example terraform.tfvars
+#   terraform init && terraform plan
+#   terraform apply   # Only during Proxmox rebuild/recovery
+
+proxmox_endpoint     = "https://10.0.10.2:8006/"
+proxmox_api_token_id = "terraform@pve!terraform"
+proxmox_api_token    = ""
+proxmox_tls_insecure = true
+proxmox_node         = "puppetmaster"
+
+# VM spec — defaults match live VM (change only if rebuilding with different specs)
+pfsense_vmid         = 200
+pfsense_cpu_cores    = 2
+pfsense_memory_mb    = 4096
+pfsense_balloon_mb   = 2048
+pfsense_disk_gb      = 32
