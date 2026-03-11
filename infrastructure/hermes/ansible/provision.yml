@@ -8,6 +8,8 @@
 ---
 - name: Provision Hermes AI Agent Container
   hosts: hermes_containers
+  vars_files:
+    - group_vars/vault.yml
 
   vars:
     apt_cache_valid_time: 3600
