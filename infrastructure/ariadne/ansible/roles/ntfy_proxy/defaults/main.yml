@@ -1,0 +1,10 @@
+# roles/ntfy_proxy/defaults/main.yml
+
+ntfy_proxy_domain: "ntfy.sirhexx.com"
+ntfy_proxy_upstream: "10.0.10.25:2586"
+ntfy_proxy_certbot_email: "admin@sirhexx.com"
+ntfy_proxy_max_body_size: "10m"
+
+# Set to true after DNS is pointed at this server's WAN IP.
+# Triggers certbot to obtain a Let's Encrypt certificate.
+ntfy_proxy_ssl: false

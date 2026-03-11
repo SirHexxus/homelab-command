@@ -1,0 +1,63 @@
+---
+# roles/ntfy_proxy/tasks/main.yml — ntfy reverse proxy via nginx
+#
+# Deploys an nginx proxy host for ntfy.sirhexx.com → 10.0.10.25:2586.
+# Use force: no so certbot's SSL injection is not overwritten on re-runs.
+#
+# SSL workflow:
+#   1. Run playbook (ntfy_proxy_ssl: false) — deploys HTTP config, proxy works
+#   2. Point DNS: ntfy.sirhexx.com → this server's WAN IP
+#   3. Set ntfy_proxy_ssl: true, re-run — certbot obtains cert + injects HTTPS
+
+# =========================================================================
+# 1. DEPLOY NGINX CONFIG
+# =========================================================================
+- name: Deploy ntfy proxy host config
+  template:
+    src: ntfy.conf.j2
+    dest: "{{ npm_proxy_hosts_dir }}/{{ ntfy_proxy_domain }}.conf"
+    owner: root
+    group: root
+    mode: '0644'
+    force: no  # preserve certbot's SSL modifications on subsequent runs
+  notify: reload nginx
+
+# =========================================================================
+# 2. VALIDATE + RELOAD NGINX
+# =========================================================================
+- name: Test nginx configuration
+  command: nginx -t
+  changed_when: false
+
+- name: Display ntfy proxy status
+  debug:
+    msg: "ntfy proxy active — http://{{ ntfy_proxy_domain }} → http://{{ ntfy_proxy_upstream }}"
+
+# =========================================================================
+# 3. SSL (optional — requires DNS to resolve before running)
+# =========================================================================
+- name: Check if Let's Encrypt certificate already exists
+  stat:
+    path: "/etc/letsencrypt/live/{{ ntfy_proxy_domain }}/fullchain.pem"
+  register: ntfy_cert
+  when: ntfy_proxy_ssl | bool
+
+- name: Obtain Let's Encrypt certificate
+  command: >
+    certbot --nginx -d {{ ntfy_proxy_domain }}
+    --non-interactive --agree-tos
+    --email {{ ntfy_proxy_certbot_email }}
+    --redirect
+  when:
+    - ntfy_proxy_ssl | bool
+    - not ntfy_cert.stat.exists
+  register: certbot_result
+  retries: 2
+  delay: 5
+  until: certbot_result.rc == 0
+  notify: reload nginx
+
+- name: Display SSL status
+  debug:
+    msg: "ntfy proxy SSL active — https://{{ ntfy_proxy_domain }} → http://{{ ntfy_proxy_upstream }}"
+  when: ntfy_proxy_ssl | bool
