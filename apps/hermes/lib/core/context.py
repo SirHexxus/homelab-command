@@ -61,6 +61,7 @@ class Context:
     tone: str                                  # "casual" | "professional"
     allowed_paths: list[str]
     allowed_commands: list[str]
+    ollama_base_url: str = "http://localhost:11434"
     model: ModelPreferences = field(default_factory=ModelPreferences)
     email: EmailConfig | None = None
     # Paths to style/brand guide files injected into every system prompt
@@ -148,12 +149,15 @@ def load_context(name: str, config_path: Path = DEFAULT_CONFIG_PATH) -> Context:
             sys.exit(1)
         email = EmailConfig(**{k: email_raw[k] for k in required})
 
+    global_cfg = load_global_config(config_path)
+
     return Context(
         name=name,
         display_name=raw.get("display_name", name),
         tone=raw.get("tone", "casual"),
         allowed_paths=raw.get("allowed_paths", []),
         allowed_commands=raw.get("allowed_commands", []),
+        ollama_base_url=global_cfg.get("ollama_base_url", "http://localhost:11434"),
         model=model,
         email=email,
         style_guides=raw.get("style_guides", []),
