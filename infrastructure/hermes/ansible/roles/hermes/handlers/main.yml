@@ -5,3 +5,4 @@
     name: hermes
     state: restarted
   listen: "restart hermes service"
+  when: hermes_deploy_service | default(false)
