@@ -115,7 +115,7 @@ class LLMRouter:
 
     def __init__(self, context: Context) -> None:
         self.context = context
-        self._ollama = OllamaClient(model=context.model.ollama_model)
+        self._ollama = OllamaClient(model=context.model.ollama_model, base_url=context.ollama_base_url)
 
     def complete(self, prompt: str, system: str = "") -> tuple[str, str]:
         """Route a prompt to the best available LLM and return the response.
