@@ -18,7 +18,7 @@ from lib.core.context import Context
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_TIMEOUT_SECONDS = 120
+OLLAMA_TIMEOUT_SECONDS = 300
 
 
 # ── Exceptions ────────────────────────────────────────────────────────────────
