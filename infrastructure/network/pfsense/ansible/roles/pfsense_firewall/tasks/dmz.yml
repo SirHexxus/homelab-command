@@ -102,7 +102,7 @@
     name: "{{ item.name }}"
     action: pass
     interface: "{{ pfsense_dmz_interface }}"
-    source: any
+    source: "{{ item.source | default('any') }}"
     destination: "{{ item.destination }}"
     destination_port: "{{ item.destination_port }}"
     protocol: "{{ item.protocol }}"
@@ -112,11 +112,3 @@
   loop_control:
     label: "{{ item.name }}"
   when: pfsense_dmz_service_allows | length > 0
-
-# Remove the manual "NGINX to Umami" rule created during initial troubleshooting.
-# It is superseded by the IaC-managed "Allow DMZ to Umami" rule above.
-- name: "DMZ | Remove manual NGINX to Umami rule"
-  pfsensible.core.pfsense_rule:
-    name: "NGINX to Umami"
-    interface: "{{ pfsense_dmz_interface }}"
-    state: absent

@@ -95,9 +95,16 @@ pfsense_guest_dns: "10.0.70.1"
 # forwarding exceptions. Add entries here when a DMZ service needs to reach an
 # internal backend.
 pfsense_dmz_service_allows:
-  - name: "Allow DMZ to Umami"
+  - name: "Allow Ariadne nginx → Umami"
+    source: "10.0.60.10"
     destination: "10.0.50.18"
     destination_port: "3000"
+    protocol: "tcp"
+
+  - name: "Allow Ariadne nginx → helm-log ntfy"
+    source: "10.0.60.10"
+    destination: "10.0.10.25"
+    destination_port: "2586"
     protocol: "tcp"
 
 # Subnets that DMZ must not reach (all internal VLANs).
