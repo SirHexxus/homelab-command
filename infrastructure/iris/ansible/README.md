@@ -74,6 +74,16 @@ The following will be added when the log stack is deployed:
 - `roles/wazuh_agent/` — Wazuh agent for SIEM integration
 - `group_vars/vault.yml` — Ansible Vault for syslog-ng/Vector secrets
 
+## Troubleshooting
+
+### SSH refuses connections after baseline playbook
+
+If helm-log returns `kex_exchange_identification: read: Connection reset by peer` and port 22 is TCP-reachable (nc succeeds), SSH broke during the baseline run — not a firewall issue.
+
+Use the serial console (USB-C, 115200 baud) to recover. Full diagnostic steps and fixes are in [ssh-fix-runbook.md](./ssh-fix-runbook.md).
+
+---
+
 ## Reflashing
 
 If the device needs a fresh Armbian image, use the `flash-helm` script in
