@@ -19,16 +19,13 @@
     shell: /usr/sbin/nologin
     state: present
 
-- name: Create hermes directories
+- name: Create hermes install directory
   file:
-    path: "{{ item }}"
+    path: "{{ hermes_install_dir }}"
     state: directory
     owner: "{{ hermes_user }}"
     group: "{{ hermes_group }}"
     mode: '0755'
-  loop:
-    - "{{ hermes_install_dir }}"
-    - "{{ hermes_log_dir }}"
 
 # =============================================================================
 # 2. PYTHON 3.12
@@ -62,6 +59,14 @@
     force: no
   become: yes
   become_user: "{{ hermes_user }}"
+
+- name: Create hermes log directory
+  file:
+    path: "{{ hermes_log_dir }}"
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: '0755'
 
 # =============================================================================
 # 4. PYTHON VIRTUAL ENVIRONMENT
