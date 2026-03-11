@@ -1,7 +1,7 @@
 # roles/hermes/tasks/main.yml - Hermes Installation Tasks
 
 # =============================================================================
-# 1. SYSTEM USER & DIRECTORIES
+# 1. SYSTEM USER & GROUP
 # =============================================================================
 
 - name: Create hermes system group
@@ -15,17 +15,10 @@
     name: "{{ hermes_user }}"
     group: "{{ hermes_group }}"
     system: yes
-    home: "{{ hermes_install_dir }}"
+    home: /nonexistent
+    create_home: no
     shell: /usr/sbin/nologin
     state: present
-
-- name: Create hermes install directory
-  file:
-    path: "{{ hermes_install_dir }}"
-    state: directory
-    owner: "{{ hermes_user }}"
-    group: "{{ hermes_group }}"
-    mode: '0755'
 
 # =============================================================================
 # 2. PYTHON 3.12
@@ -49,7 +42,13 @@
 
 # =============================================================================
 # 3. CLONE REPOSITORY
+# Clone as root so /opt/hermes is created cleanly, then fix ownership.
 # =============================================================================
+
+- name: Check if repo already cloned
+  stat:
+    path: "{{ hermes_install_dir }}/.git"
+  register: hermes_git_dir
 
 - name: Clone homelab-command repository
   git:
@@ -57,8 +56,15 @@
     dest: "{{ hermes_install_dir }}"
     version: main
     force: no
-  become: yes
-  become_user: "{{ hermes_user }}"
+  when: not hermes_git_dir.stat.exists
+
+- name: Set ownership of install directory
+  file:
+    path: "{{ hermes_install_dir }}"
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    recurse: yes
 
 - name: Create hermes log directory
   file:
