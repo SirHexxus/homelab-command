@@ -4,6 +4,12 @@
 # 1. SYSTEM USER & DIRECTORIES
 # =============================================================================
 
+- name: Create hermes system group
+  group:
+    name: "{{ hermes_group }}"
+    system: yes
+    state: present
+
 - name: Create hermes system user
   user:
     name: "{{ hermes_user }}"
