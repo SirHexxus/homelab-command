@@ -19,8 +19,7 @@ resource "proxmox_virtual_environment_container" "hermes" {
 
   # Initialization: hostname, network IP, and SSH key injection
   initialization {
-    hostname    = var.container_hostname
-    dns_servers = ["10.0.50.1", "1.1.1.1", "8.8.8.8"]
+    hostname = var.container_hostname
 
     ip_config {
       ipv4 {
