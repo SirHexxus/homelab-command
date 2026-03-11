@@ -111,6 +111,11 @@
       import_role:
         name: npm
 
+    # 5. NTFY PROXY
+    - name: Deploy ntfy reverse proxy
+      import_role:
+        name: ntfy_proxy
+
     - name: Display connection information
       debug:
         msg: |
