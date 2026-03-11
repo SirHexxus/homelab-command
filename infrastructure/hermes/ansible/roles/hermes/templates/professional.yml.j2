@@ -24,7 +24,7 @@ allowed_commands:
 
 style_guides: []
 
-telegram_token: "{{ telegram_token_professional }}"
+telegram_token: "{{ telegram_token_professional | default('') }}"
 
 model:
   ollama_model: llama3.2
@@ -37,5 +37,5 @@ email:
   smtp_host: mail.purelymail.com
   smtp_port: 587
   username: "{{ purelymail_professional_username | default('') }}"
-  password: "{{ purelymail_professional_password }}"
+  password: "{{ purelymail_professional_password | default('') }}"
   from_address: "{{ purelymail_professional_from | default('') }}"
