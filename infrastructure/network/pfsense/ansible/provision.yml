@@ -11,6 +11,7 @@
 #     ansible-playbook provision.yml --tags dmz
 #     ansible-playbook provision.yml --tags sandbox
 #     ansible-playbook provision.yml --tags guest
+#     ansible-playbook provision.yml --tags media
 #
 #   Aliases only:
 #     ansible-playbook provision.yml --tags aliases
@@ -32,10 +33,10 @@
 
   roles:
     - role: pfsense_vlans
-      tags: [vlans, dmz, sandbox, guest]
+      tags: [vlans, dmz, sandbox, guest, media]
 
     - role: pfsense_interfaces
-      tags: [interfaces, dmz, sandbox, guest]
+      tags: [interfaces, dmz, sandbox, guest, media]
 
     - role: pfsense_firewall
-      tags: [firewall, aliases, management, work, lab_services, personal, iot, dmz, sandbox, guest]
+      tags: [firewall, aliases, management, work, lab_services, personal, iot, dmz, sandbox, guest, media]

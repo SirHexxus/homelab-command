@@ -29,6 +29,17 @@
     after: "Allow Personal to Itself"
     state: present
 
+- name: "PERSONAL | Allow PERSONAL → MEDIA (TCP)"
+  pfsensible.core.pfsense_rule:
+    name: "Allow Personal to Media"
+    action: pass
+    interface: "{{ pfsense_personal_interface }}"
+    source: any
+    destination: "{{ pfsense_media_subnet }}"
+    protocol: tcp
+    after: "Allow Personal to Lab Services"
+    state: present
+
 - name: "PERSONAL | Block PERSONAL → ALL_RFC1918"
   pfsensible.core.pfsense_rule:
     name: "Default Block Personal to other VLANs"
@@ -37,7 +48,7 @@
     source: any
     destination: ALL_RFC1918
     protocol: any
-    after: "Allow Personal to Lab Services"
+    after: "Allow Personal to Media"
     state: present
 
 - name: "PERSONAL | Allow PERSONAL → any (internet outbound)"
