@@ -8,3 +8,36 @@ npm_ssl_dir: /etc/nginx/ssl
 
 # ntfy reverse proxy
 ntfy_proxy_ssl: true
+
+# media reverse proxy — services proxied by the media_proxy role
+# websocket: true  → adds Upgrade/Connection headers (Jellyfin, Navidrome, Immich, n8n)
+# websocket: false → standard HTTP proxy
+media_proxy_services:
+  # VLAN 80 — TrueNAS R710 media services (ports confirmed from TrueNAS UI 2026-03-18)
+  - domain: "watch.sirhexx.com"
+    upstream: "10.0.80.5:30013"
+    websocket: true       # Jellyfin uses websockets
+  - domain: "audible.sirhexx.com"
+    upstream: "10.0.80.5:30067"
+    websocket: false
+  - domain: "music.sirhexx.com"
+    upstream: "10.0.80.5:30043"
+    websocket: true       # Navidrome uses websockets
+  - domain: "books.sirhexx.com"
+    upstream: "10.0.80.5:31067"
+    websocket: false
+  - domain: "request.sirhexx.com"
+    upstream: "10.0.80.5:30042"
+    websocket: false
+  - domain: "photos.sirhexx.com"
+    upstream: "10.0.80.5:30041"
+    websocket: true       # Immich uses websockets
+  # NOTE: Vaultwarden is temporary on TrueNAS. When migrated to Docker VM,
+  # update upstream to 10.0.50.30:<new_port> and re-run --tags media_proxy.
+  - domain: "passwd.sirhexx.com"
+    upstream: "10.0.80.5:30032"
+    websocket: false
+  # VLAN 50 — Proxmox LXC (authoritative n8n instance)
+  - domain: "automation.hexxusweb.com"
+    upstream: "10.0.50.13:5678"
+    websocket: true       # n8n uses websockets

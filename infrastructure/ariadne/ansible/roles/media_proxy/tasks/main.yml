@@ -1,0 +1,55 @@
+---
+# roles/media_proxy/tasks/main.yml — deploy nginx proxy configs + SSL certs
+# for all services listed in media_proxy_services.
+#
+# SSL workflow (mirrors ntfy_proxy pattern):
+#   1. Run with media_proxy_ssl: false — deploys HTTP-only configs, proxy works
+#   2. Point DNS for each domain → Ariadne WAN IP
+#   3. Set media_proxy_ssl: true, re-run — certbot obtains certs per domain
+
+# =========================================================================
+# 1. DEPLOY NGINX CONFIGS
+# =========================================================================
+- name: "media_proxy | Deploy proxy config — {{ item.domain }}"
+  ansible.builtin.template:
+    src: proxy.conf.j2
+    dest: "{{ media_proxy_proxy_hosts_dir }}/{{ item.domain }}.conf"
+    owner: root
+    group: root
+    mode: "0644"
+    force: no  # preserve certbot's SSL modifications on subsequent runs
+  loop: "{{ media_proxy_services }}"
+  loop_control:
+    label: "{{ item.domain }}"
+  notify: restart nginx
+
+# =========================================================================
+# 2. SSL — obtain Let's Encrypt certs (skipped if cert already exists)
+# =========================================================================
+- name: "media_proxy | Check SSL cert — {{ item.domain }}"
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ item.domain }}/fullchain.pem"
+  register: media_proxy_cert
+  loop: "{{ media_proxy_services }}"
+  loop_control:
+    label: "{{ item.domain }}"
+  when: media_proxy_ssl | bool
+
+- name: "media_proxy | Obtain SSL certificate — {{ item.item.domain }}"
+  ansible.builtin.command:
+    cmd: >
+      certbot --nginx -d {{ item.item.domain }}
+      --non-interactive --agree-tos
+      --email {{ media_proxy_certbot_email }}
+      --redirect
+  loop: "{{ media_proxy_cert.results }}"
+  loop_control:
+    label: "{{ item.item.domain }}"
+  when:
+    - media_proxy_ssl | bool
+    - not item.stat.exists
+  register: certbot_result
+  retries: 2
+  delay: 5
+  until: certbot_result.rc == 0
+  notify: restart nginx

@@ -116,6 +116,12 @@
       import_role:
         name: ntfy_proxy
 
+    # 6. MEDIA PROXY
+    - name: Deploy media reverse proxy configs
+      import_role:
+        name: media_proxy
+      tags: [media_proxy]
+
     - name: Display connection information
       debug:
         msg: |

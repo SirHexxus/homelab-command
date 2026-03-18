@@ -1,0 +1,5 @@
+# roles/media_proxy/defaults/main.yml
+
+media_proxy_certbot_email: "admin@sirhexx.com"
+media_proxy_ssl: true
+media_proxy_proxy_hosts_dir: /etc/nginx/proxy_hosts
