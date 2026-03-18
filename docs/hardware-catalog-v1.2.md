@@ -10,7 +10,7 @@
 | Device | Make/Model | Specs | Current Status | Notes |
 |---|---|---|---|---|
 | Proxmox Server | Dell EMC PowerEdge T150 | Intel Xeon E-2378, 62GB RAM, eno8303 (WAN NIC), eno8403 (LAN NIC) | **Active — Primary compute host** | Running pfSense VM + LXC containers. GPU slot available; RTX 3060 12GB or Intel Arc B580 planned. vmbr0 (WAN bridge), vmbr1 (VLAN-aware LAN bridge) |
-| NAS Server | Dell PowerEdge R710 | SSD boot disk, 1TB SSD datastore, 9TB ZFS pool (4x 3TB SAS HDDs, RAIDZ), 4x NICs (1 configured) | **Disconnected — Offline** | Running TrueNAS Scale. Was primary services host pre-pfSense migration. Reconnection to 10.0.0.0/8 network is a planned task. |
+| NAS Server | Dell PowerEdge R710 | Dual Intel Xeon X5650 @ 2.67GHz (24 threads), 94.4 GiB ECC RAM, general_pool (4x 3TB SAS RAIDZ, ~7.8TB raw, 4.79TB free), ssd_pool (1TB SSD, 820GB free), 4x NICs | **Active — Online at 10.0.10.30** | TrueNAS Scale 25.10.1 (Goldeye). VLAN 10 (Management). Static IP 10.0.10.30 (eno1). Hostname: truenas-r710. NICs: eno1=00:26:b9:55:a7:6d, eno2=00:26:b9:55:a7:6f, eno3=00:26:b9:55:a7:71, eno4=00:26:b9:55:a7:73 |
 
 ---
 
@@ -83,7 +83,7 @@
 - [ ] Source charger for Microsoft Surface Pro
 - [ ] Migrate Nintendo Switch to appropriate VLAN (Trusted or IoT)
 - [ ] Plan Living Room TV migration to IoT VLAN
-- [ ] Reconnect R710 to 10.0.0.0/8 network
+- [x] Reconnect R710 to 10.0.0.0/8 network — live at 10.0.10.30 (VLAN 10)
 - [ ] Identify and source GPU for Proxmox server (RTX 3060 12GB or Intel Arc B580)
 - [x] Flash Helm HPS20 with Armbian (Armbian_22.11.2-build-48_Helm-v2b, 2026-02-24)
 - [x] Set pfSense DHCP static mapping for Helm HPS20: MAC 72:c6:b9:0d:32:ac → 10.0.10.25

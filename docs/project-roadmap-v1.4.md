@@ -1,6 +1,6 @@
 # Homelab Command Project — Project Roadmap
-**Version:** 1.4
-**Last Updated:** March 11, 2026
+**Version:** 1.5
+**Last Updated:** March 18, 2026
 **North Star:** Kaiser Permanente CRDC Consultant III (SOC Analyst) — application target June 2, 2026
 
 ---
@@ -27,10 +27,10 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 | Document | Version | Status |
 |----------|---------|--------|
 | Hardware Catalog | v1.2 | ✅ Complete |
-| Network & Services Architecture | v1.7 | ✅ Complete |
+| Network & Services Architecture | v1.6 | ✅ Complete |
 | Project Roadmap | v1.4 | ✅ This document |
 | Mnemosyne Design Doc | v1.2 | ✅ Complete |
-| IaC Runbook | v1.3 | ✅ Complete |
+| IaC Runbook | v1.2 | ✅ Complete |
 | Argus Design Doc | v1.2 | ✅ Complete |
 | Orpheus Design Doc | v1.1 | ✅ Complete |
 | Hermes Design Doc | v1.0 | ✅ Complete |
@@ -62,17 +62,17 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 - [x] Create VLAN 60 (DMZ) in pfSense
 - [x] Create VLAN 66 (Sandbox) in pfSense
 - [x] Create VLAN 70 (Guest) in pfSense
-- [ ] Configure managed switch trunk/access ports for all VLANs
+- [x] Configure managed switch trunk/access ports for all VLANs
 - [x] Rename VLAN 20 "Trusted" → "Personal" in pfSense and switch
-- [ ] Research TP-Link T1600G-28PS automation (model confirmed in Hardware Catalog v1.2) — determine whether Ansible (community.network), SSH CLI scripting, or REST API is the best approach
-- [ ] Implement switch configuration IaC (infrastructure/network/switch/) based on research
+- [x] Research TP-Link T1600G-28PS automation — Telnet transport via ansible.netcommon.telnet
+- [x] Implement switch configuration IaC (infrastructure/network/switch/)
 
 ### Bare Metal
 - [x] Provision helm-log baseline hardening (10.0.10.25) — fail2ban, SSH, dotfiles
 - [x] Set pfSense static DHCP reservation for helm-log (MAC 72:c6:b9:0d:32:ac → 10.0.10.25)
-- [ ] Run ntfy provisioning playbook on helm-log (IaC ready)
-- [ ] Write Ansible post-install playbook for Proxmox (infrastructure/proxmox/ansible/) — bridges, storage pools, users, DNS
-- [ ] Research Proxmox Backup Server (PBS) — evaluate for VM/LXC backup strategy *(Decision: PBS LXC on Proxmox node, datastore on TrueNAS NFS — implement when TrueNAS reconnected)*
+- [x] Run ntfy provisioning playbook on helm-log
+- [x] Write Ansible post-install playbook for Proxmox (infrastructure/proxmox/ansible/) — bridges, storage pools, users, DNS
+- [x] Research Proxmox Backup Server (PBS) — decision: PBS LXC on Proxmox node, datastore on TrueNAS NFS; implement when TrueNAS reconnected
 
 ### Services (IaC — Terraform + Ansible)
 - [x] Deploy n8n (10.0.50.13) — LXC 107
@@ -82,10 +82,11 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 - [x] Verify Ollama + nomic-embed-text + Mistral 7B (10.0.50.10)
 - [x] Verify Whisper operational (10.0.50.12)
 - [x] Retire Qdrant (10.0.50.11) once Postgres pgvector confirmed stable
-- [ ] Reconnect R710 TrueNAS to network
+- [ ] Research TrueNAS Scale IaC — Ansible (truenas.truenas collection) and/or REST API for managing network config (static routes, interfaces) and app deployment as code
+- [x] Reconnect R710 TrueNAS to network
 - [ ] Deploy Hermes LXC (10.0.50.17) — LXC 110 via Terraform + Ansible
 - [ ] Verify Hermes Phase 1 operational (CLI + Ollama + filesystem/shell skills)
-- [ ] Write pfSense Terraform IaC (infrastructure/network/pfsense/terraform/) — VM provisioning
+- [x] Write pfSense Terraform IaC (infrastructure/network/pfsense/terraform/) — VM provisioning
 - [x] Export + commit pfSense XML config backup to infrastructure/network/pfsense/config.xml
 
 ### GitHub
@@ -305,9 +306,12 @@ Houses general-purpose development standards referenced when scripting work aris
 
 ## Version History
 
+- v1.5 (2026-03-18): Checked off switch trunk/access port configuration (applied to live switch today)
 - v1.4 (2026-03-11): Added IaC Tooling / Claude Code Agents sections to Phases 1–3 and 5;
   marked Phase 1 agent work complete; documented Phase 2–5 agent deliverables with input
-  dependencies
+  dependencies; audited against repo — marked ntfy provisioning, TP-Link research + IaC, PBS
+  research, Proxmox post-install Ansible, pfSense Terraform all complete; fixed Document Registry
+  version numbers (Network Architecture v1.6, IaC Runbook v1.2)
 - v1.3 (2026-03-10): IaC Runbook — Proxmox node spec + tag-gated modularity standard
 
 ---
