@@ -1,0 +1,88 @@
+# tasks/repos.yml - Proxmox Repository Hardening + Subscription Nag + HA Services
+#
+# Covers the gaps vs. the community PVE post-install script:
+#   1. Disable pve-enterprise repo (requires paid subscription — throws 401 on apt update)
+#   2. Enable pve-no-subscription repo (free tier)
+#   3. Fix Ceph repo to use no-subscription source
+#   4. Remove subscription nag from the web UI
+#   5. Disable HA services (single-node — corosync/pve-ha-* are dead weight)
+
+# -----------------------------------------------------------------------------
+# 1. pve-enterprise repo — disable
+# -----------------------------------------------------------------------------
+
+- name: Disable pve-enterprise repository
+  lineinfile:
+    path: /etc/apt/sources.list.d/pve-enterprise.list
+    regexp: '^deb https://enterprise.proxmox.com'
+    line: '# deb https://enterprise.proxmox.com/debian/pve bookworm pve-enterprise'
+    create: no
+  when: ansible_facts['distribution_release'] == 'bookworm'
+
+# -----------------------------------------------------------------------------
+# 2. pve-no-subscription repo — enable
+# -----------------------------------------------------------------------------
+
+- name: Enable pve-no-subscription repository
+  copy:
+    dest: /etc/apt/sources.list.d/pve-no-subscription.list
+    content: |
+      # Proxmox VE no-subscription repository (free tier)
+      deb http://download.proxmox.com/debian/pve bookworm pve-no-subscription
+    owner: root
+    group: root
+    mode: '0644'
+
+# -----------------------------------------------------------------------------
+# 3. Ceph repo — switch to no-subscription source
+# -----------------------------------------------------------------------------
+
+- name: Disable Ceph enterprise repository
+  lineinfile:
+    path: /etc/apt/sources.list.d/ceph.list
+    regexp: '^deb https://enterprise.proxmox.com/debian/ceph'
+    line: '# deb https://enterprise.proxmox.com/debian/ceph-reef bookworm enterprise'
+    create: no
+
+- name: Enable Ceph no-subscription repository
+  copy:
+    dest: /etc/apt/sources.list.d/ceph-no-subscription.list
+    content: |
+      # Ceph no-subscription repository (free tier)
+      deb http://download.proxmox.com/debian/ceph-reef bookworm no-subscription
+    owner: root
+    group: root
+    mode: '0644'
+
+# -----------------------------------------------------------------------------
+# 4. Subscription nag — remove from web UI
+# -----------------------------------------------------------------------------
+
+- name: Check proxmox-widget-toolkit version for nag patch
+  command: dpkg-query -W -f='${Version}' proxmox-widget-toolkit
+  register: pve_widget_version
+  changed_when: false
+  failed_when: false
+
+- name: Remove subscription nag from proxmoxlib.js
+  replace:
+    path: /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+    regexp: "res === null \\|\\| res === undefined \\|\\| !res \\|\\| res\\.data\\.status\\.toLowerCase\\(\\) !== 'active'"
+    replace: "false"
+  when: pve_widget_version.rc == 0
+  notify: restart pveproxy
+
+# -----------------------------------------------------------------------------
+# 5. HA services — disable (single-node deployment)
+# -----------------------------------------------------------------------------
+
+- name: Disable and stop HA services (single-node — not needed)
+  systemd:
+    name: "{{ item }}"
+    enabled: no
+    state: stopped
+  loop:
+    - pve-ha-lrm
+    - pve-ha-crm
+    - corosync
+  failed_when: false
