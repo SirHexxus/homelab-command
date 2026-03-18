@@ -70,6 +70,17 @@
     after: "Block DMZ to IOT"
     state: present
 
+- name: "DMZ | Block DMZ → MEDIA"
+  pfsensible.core.pfsense_rule:
+    name: "Block DMZ to MEDIA"
+    action: block
+    interface: "{{ pfsense_dmz_interface }}"
+    source: any
+    destination: "{{ pfsense_media_subnet }}"
+    protocol: any
+    after: "Block DMZ to LAB_SERVICES"
+    state: present
+
 - name: "DMZ | Allow DMZ → pfSense DNS resolver ({{ pfsense_dmz_dns }}:53)"
   pfsensible.core.pfsense_rule:
     name: "Allow DMZ DNS"
@@ -79,7 +90,7 @@
     destination: "{{ pfsense_dmz_dns }}"
     destination_port: "53"
     protocol: "tcp/udp"
-    after: "Block DMZ to LAB_SERVICES"
+    after: "Block DMZ to MEDIA"
     state: present
 
 - name: "DMZ | Allow DMZ → any (internet outbound)"

@@ -66,6 +66,13 @@ pfsense_vlans:
     subnet: "10.0.70.0/24"
     existing: true
 
+  - id: 80
+    name: MEDIA
+    description: "Media services — Jellyfin, ABS, Navidrome, CalibreWeb, *Arr (TrueNAS R710)"
+    gateway: "10.0.80.1"
+    subnet: "10.0.80.0/24"
+    existing: false
+
 # Interface names — must match pfSense Interfaces > Assignments after provisioning.
 pfsense_management_interface: "MANAGEMENT"
 pfsense_personal_interface: "PERSONAL"
@@ -75,6 +82,7 @@ pfsense_lab_services_interface: "LAB_SERVICES"
 pfsense_dmz_interface: "DMZ"
 pfsense_sandbox_interface: "SANDBOX"
 pfsense_guest_interface: "GUEST"
+pfsense_media_interface: "MEDIA"
 
 # Gateway IPs — used for gateway-allow rules before RFC1918 blocks.
 pfsense_work_gateway: "10.0.30.1"
@@ -86,6 +94,8 @@ pfsense_work_subnet: "10.0.30.0/24"
 pfsense_iot_subnet: "10.0.40.0/24"
 pfsense_lab_services_subnet: "10.0.50.0/24"
 pfsense_guest_subnet: "10.0.70.0/24"
+pfsense_media_subnet: "10.0.80.0/24"
+pfsense_media_dns: "10.0.80.1"
 
 # DNS resolver addresses — pfSense listens on each VLAN's gateway IP.
 pfsense_dmz_dns: "10.0.60.1"
@@ -107,9 +117,63 @@ pfsense_dmz_service_allows:
     destination_port: "2586"
     protocol: "tcp"
 
+  # VLAN 80 — TrueNAS media services (all run on R710, co-located with ZFS storage)
+  - name: "Allow Ariadne → Jellyfin"
+    source: "10.0.60.10"
+    destination: "10.0.80.5"
+    destination_port: "30013"
+    protocol: "tcp"
+
+  - name: "Allow Ariadne → ABS"
+    source: "10.0.60.10"
+    destination: "10.0.80.5"
+    destination_port: "30067"
+    protocol: "tcp"
+
+  - name: "Allow Ariadne → Navidrome"
+    source: "10.0.60.10"
+    destination: "10.0.80.5"
+    destination_port: "30043"
+    protocol: "tcp"
+
+  - name: "Allow Ariadne → CalibreWeb"
+    source: "10.0.60.10"
+    destination: "10.0.80.5"
+    destination_port: "31067"
+    protocol: "tcp"
+
+  - name: "Allow Ariadne → Jellyseerr"
+    source: "10.0.60.10"
+    destination: "10.0.80.5"
+    destination_port: "30042"
+    protocol: "tcp"
+
+  - name: "Allow Ariadne → Immich"
+    source: "10.0.60.10"
+    destination: "10.0.80.5"
+    destination_port: "30041"
+    protocol: "tcp"
+
+  # NOTE: Vaultwarden is temporarily on TrueNAS (:30032). When migrated to Docker VM
+  # (10.0.50.30), update destination/port here and re-run --tags dmz.
+  - name: "Allow Ariadne → Vaultwarden"
+    source: "10.0.60.10"
+    destination: "10.0.80.5"
+    destination_port: "30032"
+    protocol: "tcp"
+
+  # VLAN 50 — Proxmox LXC (n8n is authoritative instance; TrueNAS n8n being migrated away from)
+  - name: "Allow Ariadne → n8n"
+    source: "10.0.60.10"
+    destination: "10.0.50.13"
+    destination_port: "5678"
+    protocol: "tcp"
+
 # Subnets that DMZ must not reach (all internal VLANs).
 # Ordered descending — after: top reversal produces ascending UI order.
 pfsense_internal_subnets:
+  - name: "MEDIA"
+    net: "10.0.80.0/24"
   - name: "LAB_SERVICES"
     net: "10.0.50.0/24"
   - name: "IOT"
@@ -131,7 +195,7 @@ pfsense_alias_all_rfc1918: "10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
 # Update this if LAB_SERVICES subnet (10.0.50.0/24) ever changes.
 pfsense_alias_rfc1918_ex_lab: >-
   10.0.10.0/24 10.0.20.0/24 10.0.30.0/24 10.0.40.0/24
-  10.0.60.0/24 10.0.66.0/24 10.0.70.0/24
+  10.0.60.0/24 10.0.66.0/24 10.0.70.0/24 10.0.80.0/24
   172.16.0.0/12 192.168.0.0/16
 
 # MANAGEMENT_DENIED: subnets that MANAGEMENT cannot initiate connections to.

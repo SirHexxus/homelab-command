@@ -1,0 +1,34 @@
+---
+# MEDIA (VLAN 80) — TrueNAS R710 media-serving NIC (eno4, 10.0.80.5).
+# Media services receive connections; they do not initiate internal ones.
+#
+# Rule order:
+#   1. Block MEDIA → ALL_RFC1918 (no lateral movement to other VLANs)
+#   2. Allow MEDIA → any (internet — metadata, torrents, updates)
+#
+# Inbound access FROM other VLANs is handled on those interfaces:
+#   - PERSONAL → MEDIA: see personal.yml
+#   - DMZ (Ariadne) → MEDIA: see dmz.yml service allows
+#   - MANAGEMENT → MEDIA: covered by management.yml blanket pass
+
+- name: "MEDIA | Block MEDIA → ALL_RFC1918"
+  pfsensible.core.pfsense_rule:
+    name: "Block Media to Internal Networks"
+    action: block
+    interface: "{{ pfsense_media_interface }}"
+    source: any
+    destination: ALL_RFC1918
+    protocol: any
+    after: top
+    state: present
+
+- name: "MEDIA | Allow MEDIA → any (internet)"
+  pfsensible.core.pfsense_rule:
+    name: "Allow Media to Internet"
+    action: pass
+    interface: "{{ pfsense_media_interface }}"
+    source: any
+    destination: any
+    protocol: any
+    after: "Block Media to Internal Networks"
+    state: present
