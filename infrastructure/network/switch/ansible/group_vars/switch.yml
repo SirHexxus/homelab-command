@@ -26,6 +26,8 @@ switch_vlans:
     name: SANDBOX
   - id: 70
     name: GUEST
+  - id: 80
+    name: MEDIA
 
 # ------------------------------------------------------------------------------
 # Trunk port
@@ -36,7 +38,7 @@ switch_vlans:
 # ------------------------------------------------------------------------------
 switch_trunk_port:
   name: "gigabitEthernet 1/0/1"
-  tagged_vlans: "10,20,30,40,50,60,66,70"
+  tagged_vlans: "10,20,30,40,50,60,66,70,80"
 
 # ------------------------------------------------------------------------------
 # Access ports
@@ -51,6 +53,9 @@ switch_access_ports:
   - port: "gigabitEthernet 1/0/22"
     vlan: 30
     description: "Work — D0:AD:08:B3:FB:3E (work laptop)"
+  - port: "gigabitEthernet 1/0/4"
+    vlan: 80
+    description: "Media — TrueNAS R710 eno4 (00:26:b9:55:a7:73) — media-serving NIC"
 
 # ------------------------------------------------------------------------------
 # Port inventory (informational — NOT managed by this playbook)
