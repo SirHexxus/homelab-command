@@ -1,6 +1,6 @@
 # Homelab Command: Network & Services Architecture
-**Version:** 1.7
-**Last Updated:** 2026-03-05
+**Version:** 1.8
+**Last Updated:** 2026-03-18
 **Status:** Living Document — Update as architecture evolves
 
 ---
@@ -29,7 +29,7 @@
   eno8303 (Port 1) = vmbr0  <-- WAN Bridge -> pfSense vtnet0
   eno8403 (Port 2) = vmbr1  <-- LAN/VLAN Bridge -> pfSense vtnet1
        |
-       | (Trunk: VLAN 10, 20, 30, 40, 50, 80 tagged — 60, 66, 70 planned)
+       | (Trunk: all VLANs tagged — 10, 20, 30, 40, 50, 60, 66, 70, 80)
        |
 [TP-Link T1600G-28PS] @ 10.0.10.50
   Port 1 = Trunk -> T150 (all VLANs)
@@ -41,6 +41,7 @@
        |      |-- James's Laptop, wired (10.0.10.x)
        |      |-- Helm HPS20 / helm-log (10.0.10.25) [ntfy :2586 IaC-deployed; Phase 3: syslog-ng + Vector]
        |      |-- Portainer Server LXC (10.0.10.20) [NOT YET DEPLOYED]
+       |      |-- TrueNAS Scale / R710 (10.0.10.30)
        |
        |-- VLAN 20 (Personal)
        |      |-- eero Pro 6 (10.0.20.100) -- Bridge Mode
@@ -70,35 +71,32 @@
        |      |    |-- [future: Nextcloud, Vaultwarden]
        |      |-- [Planned: SIEM stack]
        |
-       |-- VLAN 80 (Media) [PLANNED]
-       |      |-- Jellyfin (10.0.80.X)
-       |      |-- Audiobookshelf (10.0.80.X)
-       |      |-- CalibreWeb (10.0.80.X)
-       |      |-- Navidrome (10.0.80.X)
-       |      |-- Jellyseerr (10.0.80.X)
+       |-- VLAN 80 (Media)
+       |      |-- TrueNAS R710 eno4 (10.0.80.5) — Jellyfin, ABS, Navidrome, CalibreWeb, *Arr, qBittorrent [eno4 config pending]
+       |      |-- Jellyseerr (10.0.80.X) — TrueNAS app
        |      |-- [deferred: Komga, RomM]
        |
        |-- VLAN 40 (IoT)
        |      |-- Smart switches, sensors
        |      |-- Note: TV and Switch remain on VLAN 20 (eero limitation)
        |
-       |-- VLAN 60 (DMZ) [PLANNED]
-       |      |-- NGINX Proxy Manager
-       |      |-- WireGuard VPN (via pfSense package)
-       |      |-- Squid forward proxy (via pfSense)
-       |      |-- Authelia (SSO)
-       |      |-- Crowdsec (behavioral IPS)
-       |      |-- Fail2ban
+       |-- VLAN 60 (DMZ)
+       |      |-- Ariadne nginx + certbot (10.0.60.10) — reverse proxy; ntfy + media + analytics proxied
+       |      |-- Authelia (10.0.60.11) — SSO
+       |      |-- WireGuard VPN (via pfSense package) [planned]
+       |      |-- Squid forward proxy (via pfSense) [planned]
+       |      |-- Crowdsec (behavioral IPS) [planned]
+       |      |-- Fail2ban [planned]
        |
-       |-- VLAN 66 (Sandbox) [PLANNED]
+       |-- VLAN 66 (Sandbox)
        |      |-- Isolated testing; quarantine target for Ansible playbook
        |
-       |-- VLAN 70 (Guest) [PLANNED]
+       |-- VLAN 70 (Guest)
               |-- eero SSID 2: "Guest" -> VLAN 70
               |-- Temporary/untrusted WiFi devices; internet-only
 ```
 
-> **Note:** Dell PowerEdge R710 (TrueNAS Scale) is currently **disconnected**. Reconnection pending. Target VLAN TBD (likely VLAN 10 or 50).
+> **Note:** Dell PowerEdge R710 (TrueNAS Scale) has two active NICs — eno1 (10.0.10.30, VLAN 10, management + PBS) and eno4 (10.0.80.5, VLAN 80, media serving). Media apps (Jellyfin, ABS, Navidrome, CalibreWeb, *Arr, qBittorrent) run directly on TrueNAS co-located with ZFS storage. VLAN 80 requires switch port 4 reconfigured as VLAN 80 untagged access port.
 
 > **WiFi limitation:** eero Pro 6 supports 2 SSIDs in bridge mode. Nintendo Switch and Smart TV remain on VLAN 20 (Personal) until eero is replaced with a VLAN-capable AP (e.g., UniFi).
 
@@ -136,6 +134,7 @@
 | TP-Link Switch | 10.0.10.50 | DHCP static mapping |
 | YoLink Hub | 10.0.10.65 | DHCP static mapping |
 | Helm HPS20 (helm-log) | 10.0.10.25 | Static DHCP reservation — MAC 72:c6:b9:0d:32:ac; ntfy broker :2586 |
+| TrueNAS Scale (R710) | 10.0.10.30 | Static — eno1 MAC 00:26:b9:55:a7:6d; management + PBS |
 | James's Laptop (wired) | 10.0.10.x | DHCP |
 
 ### VLAN 20 -- Personal
@@ -177,7 +176,7 @@
 | Grafana | 10.0.50.22 | LXC (planned) | TimescaleDB dashboards |
 | Docker VM | 10.0.50.30 | VM (planned) | Shared Docker Compose host; Portainer Agent + Immich + future services |
 
-### VLAN 60 -- DMZ (Planned)
+### VLAN 60 -- DMZ
 
 | Service | IP | Notes |
 |---------|----|-------|
@@ -201,27 +200,31 @@
 | Smart Switches (brand TBD) | 10.0.40.x | Confirm HA compatibility first |
 | Future AP | -- | VLAN-capable AP replacement enables TV + Switch migration |
 
-### VLAN 66 -- Sandbox (Planned)
+### VLAN 66 -- Sandbox
 
 | Purpose | Notes |
 |---------|-------|
 | Risky/compromised system testing | Fully isolated; no internal or internet access by default |
 | Ansible quarantine target | quarantine.yml playbook moves devices here during IR |
 
-### VLAN 80 -- Media (Planned)
+### VLAN 80 -- Media
 
 | Service | IP | Type | Notes |
 |---------|----|------|-------|
 | pfSense | 10.0.80.1 | Gateway | |
-| Jellyfin | TBD (10.0.80.X) | LXC | Movies, TV, Kids, Internet video |
-| Audiobookshelf | TBD (10.0.80.X) | LXC | Audiobooks + podcasts |
-| CalibreWeb | TBD (10.0.80.X) | LXC | Ebooks (fiction, non-fiction, reference) |
-| Navidrome | TBD (10.0.80.X) | LXC | Music streaming |
-| Jellyseerr | TBD (10.0.80.X) | LXC | Family media request UI |
-| Komga | TBD (10.0.80.X) | LXC | Comics/Manga (deferred post-June) |
-| RomM | TBD (10.0.80.X) | LXC | ROMs + EmulatorJS (deferred post-June) |
+| TrueNAS R710 (eno4) | 10.0.80.5 | Physical NIC | Media-serving interface — MAC 00:26:b9:55:a7:73; Jellyfin, ABS, Navidrome, CalibreWeb, *Arr stack, qBittorrent, Libation run here. Switch port 4 → VLAN 80 untagged. |
+| Jellyseerr | TBD (10.0.80.X) | TrueNAS app | Family media request UI |
+| Komga | TBD (10.0.80.X) | TrueNAS app | Comics/Manga (deferred post-June) |
+| RomM | TBD (10.0.80.X) | TrueNAS app | ROMs + EmulatorJS (deferred post-June) |
 
-IPs assigned at deployment time. All VLAN 80 LXCs mount media from TrueNAS via NFS.
+Media apps run directly on TrueNAS R710 (co-located with ZFS storage, no NFS hop). VLAN 80 access via eno4 (10.0.80.5). *Arr stack + qBittorrent also stay on TrueNAS for direct pool access.
+
+> **TrueNAS static routes (manual — UI only):** TrueNAS has two NICs with different gateways. Replies to internal VLANs must be routed back out eno4, not the default route (eno1 → 10.0.10.1). Three static routes are configured in TrueNAS UI (System → Network → Static Routes):
+> - `10.0.20.0/24` via `10.0.80.1` — PERSONAL devices
+> - `10.0.50.0/24` via `10.0.80.1` — LAB_SERVICES
+> - `10.0.60.0/24` via `10.0.80.1` — DMZ (Ariadne reverse proxy)
+>
+> **Deferred:** Research TrueNAS Scale Ansible/API automation to manage these as IaC instead of manual UI config.
 
 > **Media file storage:** R710 TrueNAS holds all media files on ZFS. *Arr stack (Radarr, Sonarr, Lidarr, Readarr, Prowlarr, Bazarr, qBittorrent) runs as TrueNAS Scale apps. See Orpheus Design Doc v1.1.
 
@@ -263,19 +266,23 @@ Floating: Block | !10.0.30.0/24 -> 10.0.30.0/24  | Block internal -> Work
 - Block: IoT -> All internal VLANs
 - Pass: Management -> IoT (for Home Assistant)
 
-**VLAN 60 -- DMZ (Planned)**
+**VLAN 60 -- DMZ**
 - Pass: DMZ -> Internet
-- Block: DMZ -> All internal VLANs
-- Inbound NAT rules per exposed service (NPM handles routing internally)
-- WireGuard: inbound UDP on designated port -> pfSense WG interface
+- Block: DMZ -> All internal VLANs (except per-service allows for Ariadne backends)
+- Service allows: Ariadne (10.0.60.10) → ntfy :2586, Umami :3000, all VLAN 80 media services, n8n :5678
+- WireGuard: inbound UDP on designated port -> pfSense WG interface [planned]
 
-**VLAN 66 -- Sandbox (Planned)**
+**VLAN 66 -- Sandbox**
 - Block: Sandbox -> All internal VLANs
 - Block: Sandbox -> Internet (default; enable case-by-case)
 
-**VLAN 70 -- Guest (Planned)**
+**VLAN 70 -- Guest**
 - Pass: Guest -> Internet only
 - Block: Guest -> All internal VLANs
+
+**VLAN 80 -- Media**
+- Block: MEDIA -> ALL_RFC1918 (no lateral movement)
+- Pass: MEDIA -> Internet (metadata APIs, torrents, updates)
 
 ---
 
@@ -295,7 +302,9 @@ Floating: Block | !10.0.30.0/24 -> 10.0.30.0/24  | Block internal -> Work
 | Redis | T150 LXC 106 | 10.0.50.15 | Session/ephemeral cache | Operational |
 | MinIO | T150 LXC 108 | 10.0.50.16 | S3-compatible object storage | Operational |
 | Iris (helm-log, Helm HPS20) | Bare metal | 10.0.10.25 | Notification broker (ntfy); Phase 3: central log collector | Baseline operational; ntfy IaC-deployed (pending run) |
-| TrueNAS Scale | R710 | -- | NAS / ZFS storage | Disconnected |
+| TrueNAS Scale | R710 | 10.0.10.30 | NAS / ZFS storage; NFS host for VLAN 80 + PBS | Operational |
+| Ariadne (nginx + certbot) | T150 LXC 120 | 10.0.60.10 | Reverse proxy + SSL. Proxies: ntfy, Umami, 8 media/automation services | Operational |
+| Authelia | T150 LXC 121 | 10.0.60.11 | SSO / OIDC identity layer | Operational |
 
 ### Planned Services
 
@@ -309,10 +318,8 @@ Floating: Block | !10.0.30.0/24 -> 10.0.30.0/24  | Block internal -> Work
 | Grafana | 10.0.50.22 | MEDIUM | TimescaleDB visualization |
 | Docker VM | 10.0.50.30 | MEDIUM | Shared Docker Compose host (Immich, future Nextcloud/Vaultwarden) |
 | Portainer Server LXC | 10.0.10.20 | MEDIUM | Docker container management UI (binary install, no Docker) |
-| NGINX Proxy Manager | 10.0.60.10 | MEDIUM | Reverse proxy + SSL |
 | WireGuard VPN | pfSense pkg | MEDIUM | VPN access |
 | Squid | pfSense pkg | MEDIUM | Outbound forward proxy |
-| Authelia | 10.0.60.11 | MEDIUM | SSO / identity layer |
 | Fail2ban | per-host | MEDIUM | SSH + service brute force protection |
 | Uptime Kuma | External VPS | LOW | Outside-in service monitoring |
 | Jellyfin | 10.0.80.X | MEDIUM | Media server (VLAN 80) |
@@ -365,8 +372,8 @@ See: **Mnemosyne Design Doc**, **Argus Design Doc**, and **Ariadne Design Doc** 
 | ✅ DONE | Deploy Redis (LXC 106) | — |
 | ✅ DONE | Deploy MinIO (LXC 108) | — |
 | ✅ DONE | Create VLAN 40 (IoT) in pfSense + switch | None |
-| HIGH | Create VLANs 60, 66, 70 in pfSense + switch | None |
-| HIGH | Create VLAN 80 (Media) in pfSense + switch | None |
+| ✅ DONE | Create VLANs 60, 66, 70 in pfSense + switch | — |
+| ✅ DONE | Create VLAN 80 (Media) in pfSense + switch; Ariadne media proxy deployed (8 configs) | — |
 | HIGH | Run ntfy provisioning playbook on helm-log | helm-log accessible via SSH |
 | HIGH | Create GitHub repo; commit existing docs + IaC | None |
 | HIGH | Deploy Splunk Free + pfSense log forwarding | VLAN 50 stable |
@@ -379,8 +386,9 @@ See: **Mnemosyne Design Doc**, **Argus Design Doc**, and **Ariadne Design Doc** 
 | MEDIUM | Deploy NPM, WireGuard, Squid, Authelia (VLAN 60) | VLAN 66 done |
 | MEDIUM | Deploy Jellyfin + ABS + CalibreWeb + Navidrome (VLAN 80) | TrueNAS reconnected; library cleanup done |
 | MEDIUM | Deploy Jellyseerr + *Arr stack | Jellyfin + TrueNAS ready |
+| MEDIUM | Deploy Libation as custom Docker app on TrueNAS (headless/CLI mode) — auto-pull + decrypt Audible audiobooks into ABS library | ABS deployed + library dataset defined |
 | ✅ DONE | Retire Qdrant LXC 103 | pgvector on Postgres confirmed stable |
-| HIGH | Reconnect R710 (TrueNAS) | None |
+| ✅ DONE | Reconnect R710 (TrueNAS) — live at 10.0.10.30 | — |
 | MEDIUM | Deploy Grafana | TimescaleDB running |
 | MEDIUM | Deploy Uptime Kuma on external VPS | VPS provisioned |
 | LOW | Deploy Pi-hole | None |
@@ -401,11 +409,11 @@ See: **Mnemosyne Design Doc**, **Argus Design Doc**, and **Ariadne Design Doc** 
 |---|------|--------|
 | 1 | ~~n8n not on VLAN 50~~ | ✅ Deployed LXC 107 (10.0.50.13) |
 | 2 | VLAN 20 not yet renamed in pfSense/switch | Rename interface to "Personal" |
-| 4 | VLAN 60 (DMZ) not created | Create when DMZ services ready to deploy |
-| 5 | VLAN 66 (Sandbox) not created | High priority; low effort; do next |
-| 6 | VLAN 70 (Guest) not created | Prerequisite for eero SSID 2 (Guest) |
-| 7 | VLAN 80 (Media) not created | Create before Orpheus deployment |
-| 8 | R710 disconnected | Reconnect; assign static IP; restore TrueNAS; establish NFS exports |
+| 4 | ~~VLAN 60 (DMZ) not created~~ | ✅ Live. Ariadne (nginx + certbot) deployed at 10.0.60.10; Authelia at 10.0.60.11 |
+| 5 | ~~VLAN 66 (Sandbox) not created~~ | ✅ Live. Firewall rules applied |
+| 6 | ~~VLAN 70 (Guest) not created~~ | ✅ Live. Firewall rules applied |
+| 7 | ~~VLAN 80 (Media) not created~~ | ✅ pfSense + switch IaC applied; 8 Ariadne proxy configs deployed. **Pending:** TrueNAS eno4 UI config (10.0.80.5/24), DNS, SSL |
+| 8 | ~~R710 disconnected~~ | ✅ Live at 10.0.10.30 (VLAN 10). Next: establish NFS exports + DHCP static mapping in pfSense |
 | 9 | ~~Postgres/Redis/MinIO not deployed~~ | ✅ Deployed — LXC 105/106/108 |
 | 10 | ~~Qdrant marked for retirement~~ | ✅ Retired — LXC 103 destroyed |
 | 11 | SIEM stack not deployed | Splunk + Wazuh + Suricata + Crowdsec; SOC portfolio milestone |
@@ -417,7 +425,7 @@ See: **Mnemosyne Design Doc**, **Argus Design Doc**, and **Ariadne Design Doc** 
 | 17 | Uptime Kuma VPS provider TBD | Evaluate options; deploy externally |
 | 18 | Home Assistant not deployed | Requires VLAN 40 first; defer until post-June |
 | 19 | GPU not sourced | RTX 3060 12GB or Intel Arc B580 |
-| 20 | TrueNAS service history | Document what apps ran pre-migration |
+| 20 | ~~TrueNAS service history~~ | ✅ Documented. SMB: media, photos, videos, test-share (general_pool). NFS: /mnt/general_pool/media (live). TrueNAS Scale apps inventory (as of 2026-03-17): **Running:** audiobookshelf, authentik-personal, baserow, calibre-web, dashy, drawio, freshrss, handbrake, home-assistant, immich, it-tools, jellyfin, metube, n8n, navidrome, nginx-proxy-manager, portainer, prowlarr, qbittorrent, radarr, redis, sonarr, syncthing, vaultwarden, wg-easy. **Deploying:** baserow-hexxusweb, ddns-updater, jellyseerr, stirling-pdf. **Stopped:** calibre. Note: *Arr stack (radarr, sonarr, prowlarr, qbittorrent) poorly configured — to be reconfigured on TrueNAS per Orpheus plan. n8n + redis duplicated on Proxmox (authoritative). NPM + WireGuard running here but planned for DMZ VLAN 60 on Proxmox. **Dataset cleanup required** — apps duplicated across general_pool + ssd_pool; test-share (97.99 GiB, likely Immich library — confirm before touching); no Orpheus dataset structure yet. DO NOT delete test-share until Immich storage path confirmed and data migrated to proper dataset. |
 | 21 | eero SSID limit | TV + Switch on VLAN 20; resolved by future AP upgrade |
 | 22 | Crowdsec IP 10.0.60.12 freed | Crowdsec is pfSense package only; .12 address available |
 | 23 | ~~Helm HPS20 DHCP reservation~~ | ✅ Static mapping set in pfSense: MAC 72:c6:b9:0d:32:ac → 10.0.10.25 |
