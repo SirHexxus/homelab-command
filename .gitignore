@@ -25,6 +25,10 @@ id_ed25519
 .DS_Store
 Thumbs.db
 
+# Hermes benchmark artifacts
+infrastructure/hermes/scripts/
+infrastructure/hermes/test-results/
+
 # Logs
 *.log
 
