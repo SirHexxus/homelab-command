@@ -1,8 +1,8 @@
 # Mnemosyne: Project Task Tracker
 
 **PM:** Mnemosyne Project  
-**Last Updated:** 2026-04-10  
-**Status:** Architecture finalized — execution pending Hermes deliverables
+**Last Updated:** 2026-04-10 (updated)
+**Status:** Phase 0 largely complete; Phase 1 foundation scaffolded; Claude Code direct path live
 
 ---
 
@@ -39,11 +39,13 @@ See `apps/hermes/ToDo.md` for the full Hermes requirements spec.
 
 The following tasks have no external dependencies and can be worked immediately.
 
-- [ ] Write `SCHEMA.md` — wiki governance document (see Phase 0, Task 3)
-- [ ] Create wiki git repo and initial directory structure (see Phase 1, Task 1)
+- [x] Write `SCHEMA.md` — wiki governance document (see Phase 0, Task 3)
+- [x] Create wiki git repo and initial directory structure (see Phase 1, Task 1)
+- [x] Update Mnemosyne design doc to reflect wiki model architecture (see Phase 0, Task 1)
+- [x] Write `/mneme` and `/mneme-ask` Claude Code skills (direct path — no Hermes needed)
 - [ ] Configure Obsidian vault pointing at wiki repo (see Phase 1, Task 2)
 - [ ] Install and configure Obsidian git plugin (see Phase 1, Task 3)
-- [ ] Update Mnemosyne design doc to reflect wiki model architecture (see Phase 0, Task 1)
+- [ ] Create private GitHub remote for wiki repo and push initial scaffold (see Phase 1, Task 1)
 - [ ] Draft n8n workflow designs for ingest and retrieval (can design before Hermes is live)
 
 ---
@@ -52,18 +54,18 @@ The following tasks have no external dependencies and can be worked immediately.
 **Status:** In progress  
 **Blocked by:** Nothing — all Phase 0 tasks are independent
 
-- [ ] **0.1** Update `docs/mnemosyne-design-doc-v1.1.md` to reflect the wiki model  
+- [x] **0.1** Update `docs/mnemosyne-design-doc-v1.1.md` to reflect the wiki model  
   *Replace all Postgres/pgvector references. Document the new architecture: git wiki repo,
   Obsidian UI, Hermes as wiki agent, 7 buckets as directories, index.md + log.md, YAML
   frontmatter for structured fields. Retire the Notion database IDs section.*  
   **Depends on:** Nothing
 
-- [ ] **0.2** Define the `IngestItem` interface spec in the design doc  
+- [x] **0.2** Define the `IngestItem` interface spec in the design doc  
   *Document the normalized ingestion envelope that all sources produce. This spec will be
   handed to Hermes as a requirement and used by the Mnemosyne n8n workflows.*  
   **Depends on:** 0.1
 
-- [ ] **0.3** Write `SCHEMA.md` — the wiki governance document  
+- [x] **0.3** Write `SCHEMA.md` — the wiki governance document  
   *This is the most important Mnemosyne artifact. Hermes reads it at the start of every wiki
   operation. Must define: directory structure for 7 buckets, page naming conventions,
   frontmatter schema for each bucket, [[wikilink]] syntax requirements, index.md entry format
@@ -85,12 +87,14 @@ The following tasks have no external dependencies and can be worked immediately.
 **Status:** Not started  
 **Blocked by:** Nothing — all Phase 1 tasks are local/desktop work, no Hermes dependency
 
-- [ ] **1.1** Create private GitHub repo for the wiki  
+- [ ] **1.1** Create private GitHub repo for the wiki and push initial scaffold  
+  *Local repo initialized at `~/mneme/wiki/` with initial commit. Needs GitHub remote + push.*  
   *Name: `mnemosyne-wiki` (or similar). Initialize with a `README.md` only. Private repo.
   This is the persistent knowledge store — treat it with appropriate care.*  
   **Depends on:** 0.3 (need the schema before creating structure)
 
-- [ ] **1.2** Create initial wiki directory structure and scaffold files  
+- [x] **1.2** Create initial wiki directory structure and scaffold files  
+  *Done: `~/mneme/wiki/` with 11 bucket dirs, SCHEMA.md, index.md, log.md — initial commit made.*  
   *Directories: `wiki/ideas/`, `wiki/admin/`, `wiki/reference/`, `wiki/journal/`,
   `wiki/people/`, `wiki/projects/`, `wiki/pursuits/`, `wiki/raw-sources/`, `wiki/reports/`,
   `wiki/synthesis/`, `wiki/inbox/`*  
