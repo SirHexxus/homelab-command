@@ -39,13 +39,10 @@ class EmailConfig:
 class ModelPreferences:
     """Per-context model routing preferences."""
 
-    # Complexity score (0–10) at which to escalate from Tier 1 → Tier 2
-    ollama_threshold: float = 3.0
-    # Complexity score at which to escalate from Tier 2 → Tier 3
-    gemini_threshold: float = 7.0
-    # Ollama model name to use for this context
-    ollama_model: str = "llama3.2"
-    # Force a specific tier (1, 2, 3) — None means use routing logic
+    # Ollama model name to use for this context.
+    # Confirmed available on Ollama (10.0.50.10): mistral:7b (fast), qwen3:4b (reasoning)
+    ollama_model: str = "mistral:7b"
+    # Force a specific tier (1=local, 2=gemini, 3=claude) — None means use task_type routing
     force_tier: int | None = None
 
 
@@ -129,9 +126,7 @@ def load_context(name: str, config_path: Path = DEFAULT_CONFIG_PATH) -> Context:
 
     model_raw = raw.get("model", {})
     model = ModelPreferences(
-        ollama_threshold=model_raw.get("ollama_threshold", 3.0),
-        gemini_threshold=model_raw.get("gemini_threshold", 7.0),
-        ollama_model=model_raw.get("ollama_model", "llama3.2"),
+        ollama_model=model_raw.get("ollama_model", "mistral:7b"),
         force_tier=model_raw.get("force_tier", None),
     )
 

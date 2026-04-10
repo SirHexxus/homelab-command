@@ -23,8 +23,8 @@ from lib.core.context import get_default_context_name, load_context  # noqa: E40
 
 # Trigger skill auto-registration by importing the skill modules
 import lib.skills.filesystem  # noqa: F401, E402
-import lib.skills.mneme  # noqa: F401, E402
 import lib.skills.shell  # noqa: F401, E402
+import lib.skills.wiki  # noqa: F401, E402
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 HERMES_VERSION = "0.1.0"
