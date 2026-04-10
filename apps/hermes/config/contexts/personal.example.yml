@@ -34,10 +34,11 @@ style_guides: []
 
 # LLM routing preferences (optional — falls back to global config)
 model:
-  ollama_model: llama3.2
-  ollama_threshold: 3.0
-  gemini_threshold: 7.0
-  # force_tier: 1    # uncomment to always use Ollama regardless of complexity
+  # Available on Ollama (10.0.50.10):
+  #   mistral:7b  — fast (7–60s), reliable across all task types (default)
+  #   qwen3:4b    — slower (60–340s), extended reasoning; supports /no_think suffix
+  ollama_model: mistral:7b
+  # force_tier: 1    # uncomment to always use Ollama regardless of task_type
 
 # PurelyMail email account (fill in once credentials are available)
 # email:

@@ -4,25 +4,37 @@
 # The context used when --context is not specified on the CLI
 default_context: personal
 
-# Ollama server URL (default: local)
-ollama_base_url: "http://localhost:11434"
+# Ollama server URL
+ollama_base_url: "http://10.0.50.10:11434"
 
-# Phase 2: Gemini API key (leave blank until Phase 2)
+# ── LLM Tier API keys ──────────────────────────────────────────────────────────
+
+# Gemini API key (Tier 2 — wiki_write, synthesis, report tasks)
+# Set here or export GEMINI_API_KEY in the environment (env var takes precedence)
 # gemini_api_key: ""
 
-# Mnemosyne — Postgres connection
-# Uncomment and fill in when Mnemosyne DB is running
-# NOTE: Hermes IP is 10.0.50.17 (not 10.0.50.13 — that's n8n; see Mnemosyne design doc)
-# mnemosyne:
-#   postgres_host: 10.0.50.14
-#   postgres_port: 5432
-#   postgres_db: mnemosyne
-#   postgres_user: hermes
-#   postgres_password: ""    # use Ansible Vault in production
+# Claude tier uses `claude -p` subprocess — no API key needed.
+# Requires Claude Code installed and authenticated on the host running Hermes.
+# Model alias passed to `claude --model` (haiku | sonnet | opus)
+claude_model: sonnet
 
-# Complexity scoring thresholds (0–10 scale)
-# Used by LLMRouter when deciding which tier to use.
-# Can be overridden per-context in contexts/<name>.yml
-routing:
-  ollama_max_complexity: 3.0    # tasks above this score go to Gemini
-  gemini_max_complexity: 7.0    # tasks above this score go to Claude
+# ── Task-type → LLM tier routing ──────────────────────────────────────────────
+#
+# Tiers: local (Ollama), gemini, claude
+# Fixed tiers (nomic, whisper) are dispatched directly — no waterfall fallback.
+#
+model_routing:
+  classify:     local      # fast classification — Ollama is fine
+  wiki_read:    local      # reading pages — Ollama is fine
+  wiki_write:   gemini     # writing/integrating pages — needs Gemini Flash
+  synthesis:    gemini     # multi-source synthesis
+  judgment:     claude     # conflict resolution / editorial judgment
+  report:       gemini     # structured report generation
+  embed:        nomic      # fixed — nomic-embed-text via Ollama, never cloud
+  transcribe:   whisper    # fixed — Whisper LXC (10.0.50.12), never cloud
+  default:      local      # fallback for unrecognised task types
+
+# ── Mnemosyne wiki ─────────────────────────────────────────────────────────────
+mnemosyne:
+  wiki_path: ~/wiki
+  wiki_remote: git@github.com:SirHexxus/wiki.git
