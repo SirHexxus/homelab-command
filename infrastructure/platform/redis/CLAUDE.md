@@ -1,23 +1,23 @@
-# Redis
+# Redis (Platform)
 
-Shared cache and ephemeral state store — used by n8n for its job queue, and by Hermes for
-model routing counters and short-lived task state.
+**Claude's role in this directory: System Administrator.**
+This service is deployed and stable. The work here is maintenance and targeted updates —
+not new implementation. If a task crosses into version upgrades or credential rotation,
+stop and confirm before proceeding.
 
-## Components
+## Current State
 
-| Name | Type | VMID | IP | Port | VLAN | Status |
-|------|------|------|----|------|------|--------|
-| Redis LXC | LXC | 106 | 10.0.50.15 | 6379 | 50 | Deployed |
+LXC 106 at 10.0.50.15:6379, VLAN 50. Deployed. Ansible-managed only — no Terraform (LXC
+was provisioned manually).
 
 ## Role in Stack
 
-**Depends on:**
-- Nothing
+**Depends on:** Nothing
 
 **Depended on by:**
 - `platform/n8n` — job queue backend
 - `hermes` — model routing counters, ephemeral agent state
-- `mnemosyne` — caching layer (via n8n pipelines)
+- `mnemosyne` — session state for Telegram bot clarification flow
 - `ariadne` (Authelia) — session storage
 
 ## IaC Layout
@@ -38,8 +38,21 @@ infrastructure/platform/redis/
 
 - `vault_redis_password`
 
-## Notes
+## Hard Constraints
 
-- No Terraform — LXC provisioned manually; Ansible manages configuration only
+- Do not rotate `vault_redis_password` without updating all dependent services first:
+  n8n, Hermes, Authelia
 - `roles_path` is 3-level: `roles:../../../ansible/roles`
-- See root `CLAUDE.md` for IaC conventions
+
+## Escalation Criteria
+
+Stop and confirm if the work involves any of the following:
+
+- Redis version upgrade
+- Credential rotation
+- Persistence configuration changes (RDB/AOF)
+- Memory limit or eviction policy changes
+
+## Reference
+
+IaC conventions: see root `CLAUDE.md`

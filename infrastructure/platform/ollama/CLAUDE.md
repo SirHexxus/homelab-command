@@ -1,29 +1,30 @@
-# Ollama
+# Ollama (Platform)
 
-Local LLM inference engine — runs Mistral 7B for general tasks and nomic-embed-text for
-vector embeddings. Hermes routes to Ollama first before escalating to Gemini or Claude API.
+**Claude's role in this directory: System Administrator.**
+This service is deployed and stable. The work here is maintenance and targeted updates —
+not new implementation. Model changes have downstream effects on Hermes routing — stop
+and confirm before adding or removing models.
 
-## Components
+## Current State
 
-| Name | Type | VMID | IP | Port | VLAN | Status |
-|------|------|------|----|------|------|--------|
-| Ollama LXC | LXC | 101 | 10.0.50.10 | 11434 | 50 | Deployed |
+LXC 101 at 10.0.50.10:11434, VLAN 50. Deployed. Terraform + Ansible managed.
+GPU passthrough is not configured — Ollama runs on CPU only. GPU sourcing is deferred
+(target: RTX 3060 12GB or Intel Arc B580).
 
 ## Models Loaded
 
 | Model | Purpose |
 |-------|---------|
-| `mistral:7b` | General reasoning and task execution |
-| `nomic-embed-text` | Vector embedding generation for Mnemosyne |
+| `qwen3:8b` | General reasoning and task execution (Tier 1 in Hermes routing) |
+| `nomic-embed-text` | Vector embedding generation — never routed to cloud |
 
 ## Role in Stack
 
-**Depends on:**
-- Nothing
+**Depends on:** Nothing
 
 **Depended on by:**
-- `hermes` — primary LLM inference (Tier 1 in routing: Ollama → Gemini → Claude)
-- `platform/n8n` — LLM calls within Mnemosyne ingestion and Argus analysis pipelines
+- `hermes` — Tier 1 LLM inference (Ollama → Gemini → Claude)
+- `platform/n8n` — LLM calls within Mnemosyne and Argus pipelines
 - `mnemosyne` — embedding generation via nomic-embed-text
 
 ## IaC Layout
@@ -47,10 +48,21 @@ infrastructure/platform/ollama/
     provision.yml
 ```
 
-## Notes
+## Hard Constraints
 
-- One of two platform services with Terraform (the other is whisper)
+- `nomic-embed-text` must remain loaded — Mnemosyne embedding generation depends on it
+- Do not remove models without checking Hermes routing config in `apps/hermes/config/config.yml`
 - `roles_path` is 3-level: `roles:../../../ansible/roles`
-- GPU passthrough is not yet configured — Ollama runs on CPU only; GPU sourcing deferred
-  (target: RTX 3060 12GB or Intel Arc B580)
-- See root `CLAUDE.md` for IaC conventions
+
+## Escalation Criteria
+
+Stop and confirm if the work involves any of the following:
+
+- Adding or removing models
+- GPU passthrough configuration
+- Ollama version upgrade
+- Memory or resource limit changes
+
+## Reference
+
+IaC conventions: see root `CLAUDE.md`

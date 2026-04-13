@@ -1,15 +1,19 @@
-# n8n
+# n8n (Platform)
 
-Workflow automation engine — orchestrates all Mnemosyne ingestion pipelines (capture → classify
-→ embed → store) and Argus AI analysis pipelines (query → Ollama → enrich → alert).
+**Claude's role in this directory: System Administrator.**
+This service is deployed and stable. The work here is maintenance and targeted updates —
+not new implementation. Workflow development happens inside n8n itself, not here. If a task
+crosses into database changes or version upgrades, stop and confirm.
 
-## Components
+## Current State
 
-| Name | Type | VMID | IP | Port | VLAN | Status |
-|------|------|------|----|------|------|--------|
-| n8n LXC | LXC | 107 | 10.0.50.13 | 5678 | 50 | Deployed |
+LXC 107 at 10.0.50.13:5678, VLAN 50. Deployed. Ansible-managed only — no Terraform (LXC
+was provisioned manually).
 
 External access: `automation.hexxusweb.com` → Ariadne NPM → 10.0.50.13:5678
+
+**Note:** A legacy n8n instance exists on TrueNAS Scale apps. The Proxmox LXC (107) is
+authoritative. The TrueNAS instance should be stopped and removed.
 
 ## Role in Stack
 
@@ -21,8 +25,8 @@ External access: `automation.hexxusweb.com` → Ariadne NPM → 10.0.50.13:5678
 
 **Depended on by:**
 - `mnemosyne` — all ingestion pipelines run as n8n workflows
-- `argus` — AI analysis pipeline (runs every 5 min: query TimescaleDB → analyze → enrich)
-- `hermes` — multi-step task execution via n8n workflows
+- `argus` — AI analysis pipeline (runs every 5 min)
+- `hermes` — multi-step task execution
 
 ## IaC Layout
 
@@ -42,10 +46,20 @@ infrastructure/platform/n8n/
 
 - `vault_n8n_password` — n8n Postgres DB user (also referenced in postgres group_vars)
 
-## Notes
+## Hard Constraints
 
-- No Terraform — LXC provisioned manually; Ansible manages configuration only
+- Do not modify the n8n Postgres DB schema directly — n8n manages its own schema
 - `roles_path` is 3-level: `roles:../../../ansible/roles`
-- n8n is duplicated on TrueNAS Scale apps — the Proxmox LXC (107) is **authoritative**;
-  the TrueNAS instance is a legacy artifact and should be stopped/removed
-- See root `CLAUDE.md` for IaC conventions
+
+## Escalation Criteria
+
+Stop and confirm if the work involves any of the following:
+
+- n8n version upgrade
+- Credential rotation
+- Database changes
+- Changes to the external proxy config (`automation.hexxusweb.com` → Ariadne)
+
+## Reference
+
+IaC conventions: see root `CLAUDE.md`

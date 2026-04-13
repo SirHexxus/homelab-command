@@ -1,6 +1,6 @@
 # Homelab Command Project — Project Roadmap
-**Version:** 1.5
-**Last Updated:** March 18, 2026
+**Version:** 1.6
+**Last Updated:** 2026-04-03
 **North Star:** Kaiser Permanente CRDC Consultant III (SOC Analyst) — application target June 2, 2026
 
 ---
@@ -42,7 +42,7 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 | Iris Design Doc | v1.0 | 🔲 Planned — authoring follow-on after rename |
 | Home Assistant Design Doc | v1.0 | 🔲 Planned (Post-June) |
 | AD + Authentik Design Doc | v1.0 | 🔲 Planned (Post-June) |
-| Productivity Stack Design Doc | v1.0 | 🔲 Planned (Post-June) — Nextcloud, Vaultwarden (existing instance on TrueNAS; migrate to Docker VM) |
+| Productivity Stack Design Doc | v1.0 | 🔲 Planned (Post-June) — Nextcloud, Vaultwarden (existing instance on TrueNAS; migrate to Hephaestus) |
 
 ---
 
@@ -271,7 +271,7 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 |---------|-------|
 | Home Assistant | Post-June; Design Doc planned |
 | AD + Authentik (replace Authelia) | Post-June; mirrors enterprise identity architecture; Design Doc planned |
-| Nextcloud + Vaultwarden (Productivity Stack) | Post-June; Vaultwarden currently on TrueNAS pending migration to Docker VM; Design Doc planned |
+| Nextcloud + Vaultwarden (Productivity Stack) | Post-June; Vaultwarden currently on TrueNAS pending migration to Hephaestus; Design Doc planned |
 | Hardware upgrades (GPU, SSD, charger) | Budget-dependent |
 | UniFi AP (replace eero) | Post-June; enables true IoT VLAN isolation for TV + Nintendo Switch |
 | Google Keep bulk import | Post-Phase 5 |
@@ -306,6 +306,7 @@ Houses general-purpose development standards referenced when scripting work aris
 
 ## Version History
 
+- v1.6 (2026-04-03): All Orpheus media services stay on TrueNAS Scale (no VLAN 80 LXC migration); Docker VM renamed Hephaestus; Portainer Server LXC back-burnered
 - v1.5 (2026-03-18): Checked off switch trunk/access port configuration (applied to live switch today)
 - v1.4 (2026-03-11): Added IaC Tooling / Claude Code Agents sections to Phases 1–3 and 5;
   marked Phase 1 agent work complete; documented Phase 2–5 agent deliverables with input

@@ -1,47 +1,52 @@
 # Orpheus
 
-Self-hosted family media platform — video (Jellyfin), photos (Immich), audiobooks + podcasts
-(Audiobookshelf), ebooks (CalibreWeb), music (Navidrome), download automation (*Arr stack +
-qBittorrent). All services run as TrueNAS Scale apps on the R710, co-located with ZFS storage.
+**Claude's role in this directory: System Administrator — with one active escalation trigger.**
+Media delivery services (Jellyfin, Immich, etc.) are in maintenance mode. The *Arr download
+automation stack requires a full fresh deployment — when that work begins, treat the session
+as PM scope, not maintenance.
 
-## Components
+## Current State
 
-All services are TrueNAS Scale apps on the R710. The host has two NICs:
+All services are TrueNAS Scale apps on the R710. Orpheus has no LXC/VM IaC of its own —
+see below for where the relevant IaC lives. The host has two NICs:
 - `eno1` → 10.0.10.30 (VLAN 10, management + PBS)
 - `eno4` → 10.0.80.5 (VLAN 80, media serving)
 
-### Media Delivery (VLAN 80 — family-accessible)
+TrueNAS has static routes for return traffic to VLAN 20/50/60 configured in the TrueNAS UI
+— not IaC.
 
-| Name | Type | IP | Port | Status |
-|------|------|----|------|--------|
-| Jellyfin | TrueNAS Scale app | 10.0.80.5 | 8096 | Running — needs reconfiguration |
-| Immich | TrueNAS Scale app | 10.0.80.5 | 2283 | Running — needs reconfiguration |
-| Audiobookshelf | TrueNAS Scale app | 10.0.80.5 | 13378 | Running — needs reconfiguration |
-| CalibreWeb | TrueNAS Scale app | 10.0.80.5 | 8083 | Running — needs reconfiguration |
-| Navidrome | TrueNAS Scale app | 10.0.80.5 | 4533 | Running — needs reconfiguration |
-| Jellyseerr | TrueNAS Scale app | 10.0.80.5 | 5055 | Deploying |
-| Komga | TrueNAS Scale app | 10.0.80.5 | 25600 | Deferred — post-June |
-| RomM | TrueNAS Scale app | 10.0.80.5 | 8998 | Deferred — post-June |
+### Media Delivery (VLAN 80 — SysAdmin scope)
 
-### Download & Automation (internal-only)
+| Name | IP | Port | Status |
+|------|----|------|--------|
+| Jellyfin | 10.0.80.5 | 8096 | Running — needs reconfiguration |
+| Immich | 10.0.80.5 | 2283 | Running — needs reconfiguration |
+| Audiobookshelf | 10.0.80.5 | 13378 | Running — needs reconfiguration |
+| CalibreWeb | 10.0.80.5 | 8083 | Running — needs reconfiguration |
+| Navidrome | 10.0.80.5 | 4533 | Running — needs reconfiguration |
+| Jellyseerr | 10.0.80.5 | 5055 | Deploying |
+| Komga | 10.0.80.5 | 25600 | Deferred — post-June |
+| RomM | 10.0.80.5 | 8998 | Deferred — post-June |
 
-| Name | Type | IP | Port | Status |
-|------|------|----|------|--------|
-| Prowlarr | TrueNAS Scale app | 10.0.80.5 | 9696 | Needs fresh deployment |
-| Radarr | TrueNAS Scale app | 10.0.80.5 | 7878 | Needs fresh deployment |
-| Sonarr | TrueNAS Scale app | 10.0.80.5 | 8989 | Needs fresh deployment |
-| Lidarr | TrueNAS Scale app | 10.0.80.5 | 8686 | Needs fresh deployment |
-| Readarr | TrueNAS Scale app | 10.0.80.5 | 8787 | Needs fresh deployment |
-| Bazarr | TrueNAS Scale app | 10.0.80.5 | 6767 | Needs fresh deployment |
-| qBittorrent | TrueNAS Scale app | 10.0.80.5 | 8080 | Needs fresh deployment |
-| Libation | TrueNAS Scale app | 10.0.80.5 | — | Audible audiobook CLI |
+### Download & Automation (PM scope when active — see Escalation Criteria)
+
+| Name | IP | Port | Status |
+|------|----|------|--------|
+| Prowlarr | 10.0.80.5 | 9696 | Needs fresh deployment |
+| Radarr | 10.0.80.5 | 7878 | Needs fresh deployment |
+| Sonarr | 10.0.80.5 | 8989 | Needs fresh deployment |
+| Lidarr | 10.0.80.5 | 8686 | Needs fresh deployment |
+| Readarr | 10.0.80.5 | 8787 | Needs fresh deployment |
+| Bazarr | 10.0.80.5 | 6767 | Needs fresh deployment |
+| qBittorrent | 10.0.80.5 | 8080 | Needs fresh deployment |
+| Libation | 10.0.80.5 | — | Audible audiobook CLI |
 
 ## Role in Stack
 
 **Depends on:**
 - `network/pfsense` — VLAN 80 firewall rules, NAT
 - `network/switch` — VLAN 80 port assignment (switch port 4 → VLAN 80 untagged)
-- `ariadne` — reverse proxy for all public subdomains (watch, images, audible, etc.)
+- `ariadne` — reverse proxy for all public subdomains
 
 **Depended on by:**
 - Family devices — only consumer of VLAN 80 media services
@@ -54,11 +59,10 @@ infrastructure/orpheus/
   terraform/   ← placeholder (.gitkeep)
 ```
 
-**Orpheus has no LXC/VM IaC.** All services are TrueNAS Scale apps — configured through
-the TrueNAS UI, not Terraform or Ansible. The IaC that touches Orpheus is:
-- pfSense Terraform: `infrastructure/network/pfsense/` (VLAN 80 rules)
-- Switch Ansible: `infrastructure/network/switch/` (VLAN 80 port)
-- Ariadne Ansible: `infrastructure/ariadne/ansible/roles/media_proxy/` (proxy configs)
+The IaC that touches Orpheus lives in:
+- `infrastructure/network/pfsense/` — VLAN 80 firewall rules
+- `infrastructure/network/switch/` — VLAN 80 port assignment
+- `infrastructure/ariadne/ansible/roles/media_proxy/` — proxy configs
 
 ## External Subdomains (sirhexx.com)
 
@@ -69,12 +73,23 @@ the TrueNAS UI, not Terraform or Ansible. The IaC that touches Orpheus is:
 | audible.sirhexx.com | Audiobookshelf |
 | TBD | Jellyseerr, CalibreWeb, Navidrome |
 
-## Notes
+## Hard Constraints
 
-- *Arr stack on TrueNAS is poorly configured — full fresh deployment planned; see §12 of design doc
-- TrueNAS has static routes configured (UI only) for return traffic to VLAN 20/50/60 via eno4
-- Never directly access/write/delete `general_pool/archive` without explicit direction
-- `test-share` on TrueNAS (97.99 GiB) is likely the Immich library — do NOT delete until
-  Immich storage path confirmed and data migrated to proper dataset
-- See root `CLAUDE.md` for VLAN topology
-- Design doc: `docs/orpheus-design-doc-v1.1.md`
+- Do not access, write, or delete `general_pool/archive` without explicit direction
+- Do not delete `test-share` (97.99 GiB) — likely the Immich library; confirm storage path
+  and complete data migration before any action
+
+## Escalation Criteria
+
+**Automatic PM trigger:** Any work involving the *Arr stack (Prowlarr, Radarr, Sonarr,
+Lidarr, Readarr, Bazarr, qBittorrent) is a fresh deployment project — stop and confirm
+before proceeding. Read `docs/orpheus-design-doc-v1.1.md` §12 first.
+
+Additional escalation triggers:
+- ZFS dataset restructuring or deletion
+- TrueNAS app removal or reinstallation
+- eno4 or VLAN 80 network configuration changes
+
+## Reference
+
+Design doc: `docs/orpheus-design-doc-v1.1.md`. VLAN topology: see root `CLAUDE.md`
