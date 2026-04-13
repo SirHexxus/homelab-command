@@ -1,6 +1,6 @@
 # Homelab Command: Network & Services Architecture
-**Version:** 1.8
-**Last Updated:** 2026-03-18
+**Version:** 1.9
+**Last Updated:** 2026-04-03
 **Status:** Living Document — Update as architecture evolves
 
 ---
@@ -40,7 +40,7 @@
        |      |-- YoLink Hub (10.0.10.65)
        |      |-- James's Laptop, wired (10.0.10.x)
        |      |-- Helm HPS20 / helm-log (10.0.10.25) [ntfy :2586 IaC-deployed; Phase 3: syslog-ng + Vector]
-       |      |-- Portainer Server LXC (10.0.10.20) [NOT YET DEPLOYED]
+       |      |-- Portainer Server LXC (10.0.10.20) [DEFERRED — back-burnered]
        |      |-- TrueNAS Scale / R710 (10.0.10.30)
        |
        |-- VLAN 20 (Personal)
@@ -65,10 +65,9 @@
        |      |-- Postgres (10.0.50.14) -- LXC 105
        |      |-- Redis (10.0.50.15) -- LXC 106
        |      |-- MinIO (10.0.50.16) -- LXC 108
-       |      |-- Docker VM (10.0.50.30) -- VM [NOT YET DEPLOYED]
-       |      |    |-- Portainer Agent (container)
-       |      |    |-- Immich (container stack)
-       |      |    |-- [future: Nextcloud, Vaultwarden]
+       |      |-- Hephaestus (10.0.50.30) -- VM [NOT YET DEPLOYED]
+       |      |    |-- wger (container stack)
+       |      |    |-- [future: Nextcloud, Vaultwarden, Healthchecks, NetBox, Guacamole]
        |      |-- [Planned: SIEM stack]
        |
        |-- VLAN 80 (Media)
@@ -108,15 +107,15 @@
 
 | VLAN | Name | Subnet | Gateway | Purpose |
 |------|------|--------|---------|---------|
-| 10 | Management | 10.0.10.0/24 | 10.0.10.1 | Infrastructure: Proxmox, switch, hub, admin workstation, Portainer Server |
+| 10 | Management | 10.0.10.0/24 | 10.0.10.1 | Infrastructure: Proxmox, switch, hub, admin workstation |
 | 20 | Personal | 10.0.20.0/24 | 10.0.20.1 | Family WiFi (SSID 1); identified personal devices |
 | 30 | Work | 10.0.30.0/24 | 10.0.30.1 | KP work device; fully isolated from all internal networks |
 | 40 | IoT | 10.0.40.0/24 | 10.0.40.1 | Smart switches, sensors; internet-only |
-| 50 | Lab Services | 10.0.50.0/24 | 10.0.50.1 | Self-hosted services, AI stack, automation, SIEM, Docker VM |
+| 50 | Lab Services | 10.0.50.0/24 | 10.0.50.1 | Self-hosted services, AI stack, automation, SIEM, Hephaestus |
 | 60 | DMZ | 10.0.60.0/24 | 10.0.60.1 | Publicly facing services; reverse proxy, VPN, SSO, IPS |
 | 66 | Sandbox | 10.0.66.0/24 | 10.0.66.1 | Isolated testing; quarantine target for compromised devices |
 | 70 | Guest | 10.0.70.0/24 | 10.0.70.1 | Guest WiFi (SSID 2); internet-only, no internal access |
-| 80 | Media | 10.0.80.0/24 | 10.0.80.1 | Media-serving services (Jellyfin, ABS, CalibreWeb, Navidrome); family-accessible |
+| 80 | Media | 10.0.80.0/24 | 10.0.80.1 | Media-serving services on TrueNAS R710 (Jellyfin, ABS, CalibreWeb, Navidrome, Immich, etc.); family-accessible |
 
 > **DHCP convention:** Static IPs for infrastructure/services in .2-.50 range. DHCP dynamic pool in .100-.200 range.
 
@@ -130,7 +129,7 @@
 |--------|----|-------|
 | pfSense | 10.0.10.1 | Gateway |
 | Proxmox (T150) | 10.0.10.2 | Static; /etc/network/interfaces |
-| Portainer Server LXC | 10.0.10.20 | Binary install (no Docker); manages Docker VM containers |
+| Portainer Server LXC | 10.0.10.20 | DEFERRED — back-burnered; may not be deployed |
 | TP-Link Switch | 10.0.10.50 | DHCP static mapping |
 | YoLink Hub | 10.0.10.65 | DHCP static mapping |
 | Helm HPS20 (helm-log) | 10.0.10.25 | Static DHCP reservation — MAC 72:c6:b9:0d:32:ac; ntfy broker :2586 |
@@ -174,7 +173,7 @@
 | Splunk Free | 10.0.50.20 | LXC (planned) | SIEM log aggregation |
 | Wazuh Manager | 10.0.50.21 | LXC (planned) | Host-based IDS |
 | Grafana | 10.0.50.22 | LXC (planned) | TimescaleDB dashboards |
-| Docker VM | 10.0.50.30 | VM (planned) | Shared Docker Compose host; Portainer Agent + Immich + future services |
+| Hephaestus | 10.0.50.30 | VM (planned) | Shared Docker Compose host; wger + future services (Nextcloud, Vaultwarden) |
 
 ### VLAN 60 -- DMZ
 
@@ -316,18 +315,18 @@ Floating: Block | !10.0.30.0/24 -> 10.0.30.0/24  | Block internal -> Work
 | Suricata | pfSense pkg | HIGH | Network IDS |
 | Crowdsec | pfSense pkg | HIGH | Behavioral IPS; pfSense package integration |
 | Grafana | 10.0.50.22 | MEDIUM | TimescaleDB visualization |
-| Docker VM | 10.0.50.30 | MEDIUM | Shared Docker Compose host (Immich, future Nextcloud/Vaultwarden) |
-| Portainer Server LXC | 10.0.10.20 | MEDIUM | Docker container management UI (binary install, no Docker) |
+| Hephaestus (Docker VM) | 10.0.50.30 | MEDIUM | Shared Docker Compose host (wger, future Nextcloud/Vaultwarden) |
+| Portainer Server LXC | 10.0.10.20 | LOW (deferred) | Docker container management UI — back-burnered; may not be deployed |
 | WireGuard VPN | pfSense pkg | MEDIUM | VPN access |
 | Squid | pfSense pkg | MEDIUM | Outbound forward proxy |
 | Fail2ban | per-host | MEDIUM | SSH + service brute force protection |
 | Uptime Kuma | External VPS | LOW | Outside-in service monitoring |
-| Jellyfin | 10.0.80.X | MEDIUM | Media server (VLAN 80) |
-| Immich | 10.0.50.30 (Docker VM) | MEDIUM | Photo library; Google Photos replacement |
-| Audiobookshelf | 10.0.80.X | MEDIUM | Audiobooks + podcasts (VLAN 80) |
-| CalibreWeb | 10.0.80.X | MEDIUM | Ebook serving (VLAN 80) |
-| Navidrome | 10.0.80.X | MEDIUM | Music streaming (VLAN 80) |
-| Jellyseerr | 10.0.80.X | MEDIUM | Family media request UI (VLAN 80) |
+| Jellyfin | 10.0.80.5 (TrueNAS) | MEDIUM | Media server — TrueNAS Scale app |
+| Immich | 10.0.80.5 (TrueNAS) | MEDIUM | Photo library — TrueNAS Scale app |
+| Audiobookshelf | 10.0.80.5 (TrueNAS) | MEDIUM | Audiobooks + podcasts — TrueNAS Scale app |
+| CalibreWeb | 10.0.80.5 (TrueNAS) | MEDIUM | Ebook serving — TrueNAS Scale app |
+| Navidrome | 10.0.80.5 (TrueNAS) | MEDIUM | Music streaming — TrueNAS Scale app |
+| Jellyseerr | 10.0.80.5 (TrueNAS) | MEDIUM | Family media request UI — TrueNAS Scale app |
 | Home Assistant | 10.0.10.x | LOW | IoT hub (post-June) |
 | ntfy (notification broker) | 10.0.10.25 | HIGH (Now) | Homelab push notification broker on helm-log. Topics: provisioning, general-operations, argus. IaC-deployed; pending playbook run. |
 | syslog-ng + Vector (log collector) | 10.0.10.25 | HIGH (Phase 3) | Central log ingestor for Argus; receives pfSense/Suricata/switch syslog, ships structured events to TimescaleDB on VLAN 50. Runs on Helm HPS20 (helm-log). Wazuh agent also runs on device. |
@@ -380,12 +379,11 @@ See: **Mnemosyne Design Doc**, **Argus Design Doc**, and **Ariadne Design Doc** 
 | HIGH | Deploy Wazuh + endpoint agents | Splunk running |
 | HIGH | Deploy Suricata + Crowdsec (pfSense packages) | pfSense configured |
 | HIGH | Deploy Fail2ban on all SSH hosts + NPM | NPM deployed |
-| MEDIUM | Deploy Portainer Server LXC (10.0.10.20) | None |
-| MEDIUM | Deploy Docker VM (10.0.50.30) | None |
-| MEDIUM | Deploy Immich on Docker VM | Docker VM running; TrueNAS NFS exports ready |
+| MEDIUM | Deploy Hephaestus Docker VM (10.0.50.30) | None |
+| DEFERRED | Deploy Portainer Server LXC (10.0.10.20) — back-burnered | May not be deployed |
 | MEDIUM | Deploy NPM, WireGuard, Squid, Authelia (VLAN 60) | VLAN 66 done |
-| MEDIUM | Deploy Jellyfin + ABS + CalibreWeb + Navidrome (VLAN 80) | TrueNAS reconnected; library cleanup done |
-| MEDIUM | Deploy Jellyseerr + *Arr stack | Jellyfin + TrueNAS ready |
+| MEDIUM | Configure Orpheus media services on TrueNAS (Jellyfin, ABS, CalibreWeb, Navidrome, Immich) | TrueNAS eno4 live; library cleanup done |
+| MEDIUM | Deploy Jellyseerr + *Arr stack on TrueNAS | Jellyfin configured; TrueNAS ready |
 | MEDIUM | Deploy Libation as custom Docker app on TrueNAS (headless/CLI mode) — auto-pull + decrypt Audible audiobooks into ABS library | ABS deployed + library dataset defined |
 | ✅ DONE | Retire Qdrant LXC 103 | pgvector on Postgres confirmed stable |
 | ✅ DONE | Reconnect R710 (TrueNAS) — live at 10.0.10.30 | — |
@@ -397,7 +395,7 @@ See: **Mnemosyne Design Doc**, **Argus Design Doc**, and **Ariadne Design Doc** 
 | HIGH (Phase 3) | Deploy syslog-ng + Vector on Helm HPS20 (helm-log, 10.0.10.25) | Wazuh Manager deployed; Splunk running; pfSense syslog export configured |
 | POST-JUNE | Active Directory VM + Authentik (replace Authelia) | After application |
 | POST-JUNE | UniFi AP replacement for eero (true IoT VLAN isolation) | After application |
-| POST-JUNE | Deploy Nextcloud + Vaultwarden on Docker VM | After application |
+| POST-JUNE | Deploy Nextcloud + Vaultwarden on Hephaestus | After application |
 
 > **IaC convention:** All service containers deployed via Terraform + Ansible (repo: ~/projects/IaC-Projects/). Bridge: vmbr1. VLAN tag per schema above. Static IPs in .2-.50 range.
 
@@ -418,8 +416,8 @@ See: **Mnemosyne Design Doc**, **Argus Design Doc**, and **Ariadne Design Doc** 
 | 10 | ~~Qdrant marked for retirement~~ | ✅ Retired — LXC 103 destroyed |
 | 11 | SIEM stack not deployed | Splunk + Wazuh + Suricata + Crowdsec; SOC portfolio milestone |
 | 12 | DMZ stack not deployed | NPM + WireGuard + Squid + Authelia + Fail2ban |
-| 13 | Docker VM not deployed | 10.0.50.30; prerequisite for Immich + future Docker services |
-| 14 | Portainer Server LXC not deployed | 10.0.10.20; VLAN 10; binary install |
+| 13 | Hephaestus (Docker VM) not deployed | 10.0.50.30; wger + future Docker services |
+| 14 | Portainer Server LXC — back-burnered | May not be deployed; deferred indefinitely |
 | 15 | Orpheus LXCs not deployed | VLAN 80; requires TrueNAS reconnected + library cleanup |
 | 16 | GitHub repo not created | Start in Phase 1; commit all existing docs immediately |
 | 17 | Uptime Kuma VPS provider TBD | Evaluate options; deploy externally |

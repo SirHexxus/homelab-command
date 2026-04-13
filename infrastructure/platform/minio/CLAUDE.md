@@ -1,18 +1,23 @@
-# MinIO
+# MinIO (Platform)
 
-S3-compatible object storage — stores voice memos, file attachments, and binary objects that
-don't belong in Postgres. Also used for Umami analytics backups.
+**Claude's role in this directory: System Administrator.**
+This service is deployed and stable. The work here is maintenance and targeted updates —
+not new implementation. If a task crosses into bucket restructuring or credential rotation,
+stop and confirm before proceeding.
 
-## Components
+## Current State
 
-| Name | Type | VMID | IP | Port(s) | VLAN | Status |
-|------|------|------|----|---------|------|--------|
-| MinIO LXC | LXC | 108 | 10.0.50.16 | 9000 (API), 9001 (console) | 50 | Deployed |
+LXC 108 at 10.0.50.16, VLAN 50. Deployed. Ansible-managed only — no Terraform (LXC was
+provisioned manually).
+
+| Port | Purpose |
+|------|---------|
+| 9000 | S3-compatible API |
+| 9001 | MinIO console (admin UI) |
 
 ## Role in Stack
 
-**Depends on:**
-- Nothing
+**Depends on:** Nothing
 
 **Depended on by:**
 - `mnemosyne` — voice memo storage, file attachments from Telegram ingestion
@@ -37,8 +42,21 @@ infrastructure/platform/minio/
 - `vault_minio_root_user`
 - `vault_minio_root_password`
 
-## Notes
+## Hard Constraints
 
-- No Terraform — LXC provisioned manually; Ansible manages configuration only
+- Do not delete or restructure existing buckets without explicit direction — Mnemosyne
+  and Umami data lives here
 - `roles_path` is 3-level: `roles:../../../ansible/roles`
-- See root `CLAUDE.md` for IaC conventions
+
+## Escalation Criteria
+
+Stop and confirm if the work involves any of the following:
+
+- Bucket deletion or restructuring
+- Credential rotation
+- MinIO version upgrade
+- Access policy changes
+
+## Reference
+
+IaC conventions: see root `CLAUDE.md`

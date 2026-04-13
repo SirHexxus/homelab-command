@@ -1,23 +1,21 @@
-# Whisper
+# Whisper (Platform)
 
-Speech-to-text API — exposes an OpenAI-compatible transcription endpoint used by Mnemosyne
-for voice memo ingestion.
+**Claude's role in this directory: System Administrator.**
+This service is deployed and stable. The work here is maintenance and targeted updates —
+not new implementation.
 
-## Components
+## Current State
 
-| Name | Type | VMID | IP | Port | VLAN | Status |
-|------|------|------|----|------|------|--------|
-| Whisper LXC | LXC | 102 | 10.0.50.12 | 9000 | 50 | Deployed |
+LXC 102 at 10.0.50.12:9000, VLAN 50. Deployed. Terraform + Ansible managed.
 
 **API endpoint:** `POST http://10.0.50.12:9000/v1/audio/transcriptions` (OpenAI-compatible)
 
 ## Role in Stack
 
-**Depends on:**
-- Nothing
+**Depends on:** Nothing
 
 **Depended on by:**
-- `mnemosyne` — voice memo transcription before classify → embed → store pipeline
+- `mnemosyne` — voice memo transcription before classify → file pipeline
 - `hermes` — voice input transcription (Phase 3+)
 
 ## IaC Layout
@@ -41,9 +39,20 @@ infrastructure/platform/whisper/
     provision.yml
 ```
 
-## Notes
+## Hard Constraints
 
-- One of two platform services with Terraform (the other is ollama)
+- Endpoint must remain OpenAI-compatible — Mnemosyne and Hermes clients use the OpenAI
+  audio API format unchanged
 - `roles_path` is 3-level: `roles:../../../ansible/roles`
-- Endpoint is OpenAI-compatible — any client using the OpenAI audio API works unchanged
-- See root `CLAUDE.md` for IaC conventions
+
+## Escalation Criteria
+
+Stop and confirm if the work involves any of the following:
+
+- Whisper version upgrade or model change
+- Port or endpoint path changes
+- API compatibility changes
+
+## Reference
+
+IaC conventions: see root `CLAUDE.md`

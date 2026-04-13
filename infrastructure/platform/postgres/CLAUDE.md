@@ -1,21 +1,21 @@
-# Postgres
+# Postgres (Platform)
 
-Shared database LXC — hosts all structured data for the homelab: Mnemosyne knowledge base
-(pgvector + pg_trgm), Argus security logs (TimescaleDB hypertables), n8n workflow state,
-and Umami analytics.
+**Claude's role in this directory: System Administrator.**
+This service is deployed and stable. The work here is maintenance and targeted updates —
+not new implementation. If a task crosses into schema migrations, new database creation,
+or extension upgrades, stop and confirm before proceeding. That is PM scope, not maintenance.
 
-## Components
+## Current State
 
-| Name | Type | VMID | IP | Port | VLAN | Status |
-|------|------|------|----|------|------|--------|
-| Postgres LXC | LXC | 105 | 10.0.50.14 | 5432 | 50 | Deployed |
+LXC 105 at 10.0.50.14:5432, VLAN 50. Deployed. Ansible-managed only — no Terraform (LXC
+was provisioned manually).
 
-**Extensions:** pgvector, TimescaleDB, pg_cron, pg_trgm, fuzzystrmatch
+**Extensions installed:** pgvector, TimescaleDB, pg_cron, pg_trgm, fuzzystrmatch
 
-## Databases Hosted
+## Databases
 
-| Database | Owner | Purpose |
-|----------|-------|---------|
+| Database | Owner service | Purpose |
+|----------|--------------|---------|
 | `mnemosyne` | Mnemosyne | Knowledge base — pgvector embeddings, 7 bucket tables |
 | `argus_logs` | Argus | Security event log store — TimescaleDB hypertables |
 | `n8n` | n8n | Workflow state and execution history |
@@ -23,14 +23,9 @@ and Umami analytics.
 
 ## Role in Stack
 
-**Depends on:**
-- Nothing — foundational data layer
+**Depends on:** Nothing — foundational data layer
 
-**Depended on by:**
-- `mnemosyne` — primary knowledge store
-- `argus` — `argus_logs` TimescaleDB for security events
-- `platform/n8n` — workflow state
-- `ariadne` (Umami) — analytics data
+**Depended on by:** Mnemosyne, Argus, n8n, Umami (via Ariadne)
 
 ## IaC Layout
 
@@ -53,9 +48,24 @@ infrastructure/platform/postgres/
 - `vault_umami_password` — umami DB user
 - `vault_n8n_password` — n8n DB user
 
-## Notes
+## Hard Constraints
 
-- No Terraform for this service — LXC was provisioned manually; only Ansible manages it
+- Do not drop or alter `mnemosyne` or `argus_logs` without explicit direction — both hold
+  production data
+- Do not remove or downgrade any installed extension — all four services depend on them
 - `roles_path` is 3-level: `roles:../../../ansible/roles`
-- Do NOT drop or alter the `argus_logs` or `mnemosyne` databases without explicit direction
-- See root `CLAUDE.md` for IaC conventions
+
+## Escalation Criteria
+
+Stop and confirm if the work involves any of the following:
+
+- Schema migrations on any database
+- Creating or dropping databases or users
+- Upgrading PostgreSQL or any extension
+- Changes to connection credentials
+
+These are PM-scope decisions.
+
+## Reference
+
+IaC conventions: see root `CLAUDE.md`

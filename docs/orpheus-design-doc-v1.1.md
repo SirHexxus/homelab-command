@@ -1,6 +1,6 @@
 # Orpheus Design Doc
-**Version:** 1.1
-**Last Updated:** February 2026
+**Version:** 1.3
+**Last Updated:** 2026-04-03
 **Status:** Living Document
 
 ---
@@ -10,21 +10,17 @@
 The Orpheus provides a self-hosted, family-accessible media platform covering video, photos, audiobooks, ebooks, music, podcasts, comics/manga, and ROMs. It replaces cloud services (Google Photos, Audible, streaming) with owned infrastructure wherever practical.
 
 **Design principles:**
-- Files live on TrueNAS (ZFS — data integrity, RAID protection). Services live on PVE (resource management, IaC, consistency with the rest of the homelab).
+- Files live on TrueNAS (ZFS — data integrity, RAID protection). Services run as TrueNAS Scale apps, co-located with storage for direct ZFS dataset access.
 - Every content type has exactly one authoritative service. No duplication of function.
 - File organization is standardized and enforced by automation — not manual effort.
 - Remote access for family is a first-class requirement, not an afterthought.
 - Active content types (video, photos, audiobooks, music, podcasts) are fully built out. Lower-priority types (comics, ROMs) are documented and deployable but not blocking.
 
-**Hosting split — Option A:**
-- **PVE LXCs on VLAN 80 (Media)** — content-serving services (Jellyfin, Audiobookshelf, CalibreWeb, Navidrome, Komga, RomM, Jellyseerr)
-- **Docker VM on VLAN 50 (Lab Services)** — services requiring Docker Compose (Immich; future Nextcloud and other Docker-native services across the homelab)
-- **TrueNAS Scale apps** — download and file management (*Arr stack, qBittorrent, Calibre, Libation)
-- **TrueNAS** — all media files, served to PVE via NFS mounts
+**Hosting split:**
+- **TrueNAS Scale apps** — all media delivery and management services: Jellyfin, Audiobookshelf, CalibreWeb, Navidrome, Immich, Jellyseerr, Komga, RomM, Azuracast, *Arr stack, qBittorrent, Calibre, Libation
+- **TrueNAS ZFS** — all media files; apps access datasets directly via bind mounts (no NFS hop)
 
-**Docker VM note:** The shared Docker VM (10.0.50.X) is homelab-wide infrastructure — it hosts any service that requires Docker Compose, regardless of project. Immich is the first tenant. Future tenants may include Nextcloud and Vaultwarden (Productivity Stack) and others. Managed via Ansible + Docker Compose, not nested containerization inside LXCs.
-
-**Portainer:** Docker containers on the Docker VM are managed via Portainer. Portainer Server runs as a native Linux binary (systemd service — no Docker required on the host) inside a lightweight LXC on VLAN 10 (Management), consistent with the management plane pattern (pfSense, Proxmox, TrueNAS all managed from VLAN 10). The Portainer Agent runs as a container on the Docker VM (VLAN 50) and registers with the Server. Portainer Server is not exposed externally.
+**Note:** Docker-native homelab services (wger, future Nextcloud, Vaultwarden) run on **Hephaestus** (shared Docker VM, 10.0.50.30, VLAN 50) — a separate homelab project with its own IaC. Orpheus has no services running on Hephaestus.
 
 ---
 
@@ -32,19 +28,20 @@ The Orpheus provides a self-hosted, family-accessible media platform covering vi
 
 | Content Type | Serving Service | Host | Management (TrueNAS) | Download | Priority |
 |---|---|---|---|---|---|
-| Movies | Jellyfin | PVE LXC / VLAN 80 | Radarr | qBittorrent | Active |
-| TV Shows | Jellyfin | PVE LXC / VLAN 80 | Sonarr | qBittorrent | Active |
-| Kids Movies/Shows | Jellyfin (separate libraries) | PVE LXC / VLAN 80 | Radarr / Sonarr | qBittorrent | Active |
-| Internet Videos | Jellyfin (separate library) | PVE LXC / VLAN 80 | Manual / yt-dlp | yt-dlp | Active |
-| Photos | Immich | Docker VM / VLAN 50 | Immich (self-managing) | — | Active |
-| Audiobooks | Audiobookshelf | PVE LXC / VLAN 80 | Libation / Readarr | qBittorrent | Active |
-| Ebooks (Fiction) | CalibreWeb | PVE LXC / VLAN 80 | Calibre / Readarr | qBittorrent | Active |
-| Ebooks (Non-Fiction) | CalibreWeb | PVE LXC / VLAN 80 | Calibre / Readarr | qBittorrent | Active |
-| Ebooks (Reference) | CalibreWeb | PVE LXC / VLAN 80 | Calibre / Readarr | qBittorrent | Active |
-| Music | Navidrome | PVE LXC / VLAN 80 | Lidarr | qBittorrent | Active |
-| Podcasts | Audiobookshelf | PVE LXC / VLAN 80 | ABS (native) | ABS (native) | Active |
-| Comics/Manga | Komga | PVE LXC / VLAN 80 | Manual import | Manual | Deferred |
-| ROMs | RomM + EmulatorJS | PVE LXC / VLAN 80 | Manual import | Manual | Deferred |
+| Movies (incl. anime) | Jellyfin | TrueNAS Scale app | Radarr | qBittorrent | Active |
+| TV Shows | Jellyfin | TrueNAS Scale app | Sonarr | qBittorrent | Active |
+| Kids Movies/Shows | Jellyfin (separate libraries) | TrueNAS Scale app | Radarr / Sonarr | qBittorrent | Active |
+| Anime Shows | Jellyfin (separate library) | TrueNAS Scale app | Sonarr | qBittorrent | Active |
+| Internet Videos | Jellyfin (separate library) | TrueNAS Scale app | Manual / yt-dlp | yt-dlp | Active |
+| Photos | Immich | TrueNAS Scale app | Immich (self-managing) | — | Active |
+| Audiobooks | Audiobookshelf | TrueNAS Scale app | Libation / Readarr | qBittorrent | Active |
+| Ebooks (Fiction) | CalibreWeb | TrueNAS Scale app | Calibre / Readarr | qBittorrent | Active |
+| Ebooks (Non-Fiction) | CalibreWeb | TrueNAS Scale app | Calibre / Readarr | qBittorrent | Active |
+| Ebooks (Reference) | CalibreWeb | TrueNAS Scale app | Calibre / Readarr | qBittorrent | Active |
+| Music | Navidrome | TrueNAS Scale app | Lidarr | qBittorrent | Active |
+| Podcasts | Audiobookshelf | TrueNAS Scale app | ABS (native) | ABS (native) | Active |
+| Comics/Manga | Komga | TrueNAS Scale app | Manual import | Manual | Deferred |
+| ROMs | RomM + EmulatorJS | TrueNAS Scale app | Manual import | Manual | Deferred |
 | Internet Radio | Azuracast | TBD | — | — | Post-June |
 
 ---
@@ -58,45 +55,32 @@ VLAN 80 is created specifically for media-serving services. It has its own firew
 **Firewall policy (VLAN 80):**
 - Allow: access from trusted family devices (personal device VLAN)
 - Allow: outbound internet (metadata fetching, subtitle downloads)
-- Allow: NFS to TrueNAS (media file access)
 - Block: access to VLAN 10 (Management), VLAN 50 (Lab), VLAN 60 (DMZ) except via defined rules
 - Remote access via NGINX Proxy Manager (DMZ) only — not direct external access
 
 **Note:** VLAN 80 is documented in Network & Services Architecture v1.6.
 
-### 3.2 PVE Services — VLAN 80 (Media)
+### 3.2 TrueNAS Scale Apps — Media Delivery (VLAN 80)
 
-| Service | IP | Port | Notes |
-|---------|-----|------|-------|
-| Jellyfin | TBD (10.0.80.X) | 8096 | Movies, TV, Kids, Internet video |
-| Audiobookshelf | TBD (10.0.80.X) | 13378 | Audiobooks + podcasts |
-| CalibreWeb | TBD (10.0.80.X) | 8083 | Ebook serving; fiction, non-fiction, reference |
-| Navidrome | TBD (10.0.80.X) | 4533 | Music streaming |
-| Jellyseerr | TBD (10.0.80.X) | 5055 | Family media requests → Radarr/Sonarr |
-| Komga | TBD (10.0.80.X) | 25600 | Comics/Manga (deferred) |
-| RomM | TBD (10.0.80.X) | 8998 | ROM library + EmulatorJS (deferred) |
+All media delivery services run as TrueNAS Scale apps on the R710, accessible via eno4 (10.0.80.5). They access media datasets directly via ZFS bind mounts — no NFS hop.
 
-IPs assigned at deployment time from the 10.0.80.0/24 range.
+| Service | Port | Notes |
+|---------|------|-------|
+| Jellyfin | 8096 | Movies (incl. anime), TV, kids, anime shows, internet video |
+| Audiobookshelf | 13378 | Audiobooks + podcasts |
+| CalibreWeb | 8083 | Ebook serving; fiction, non-fiction, reference |
+| Navidrome | 4533 | Music streaming |
+| Immich | 2283 | Photo library; Google Photos replacement |
+| Jellyseerr | 5055 | Family media requests → Radarr/Sonarr |
+| Komga | 25600 | Comics/Manga (deferred) |
+| RomM | 8998 | ROM library + EmulatorJS (deferred) |
+| Azuracast | TBD | Internet radio (post-June) |
 
-### 3.3 Docker VM — VLAN 50 (Lab Services)
+### 3.3 Hephaestus (Docker VM) — VLAN 50 (Lab Services)
 
-A single VM on VLAN 50 hosts all Docker Compose-based services across the homelab. Managed via Ansible; each service is a Docker Compose stack deployed and maintained by its Ansible role.
+Hephaestus (10.0.50.30) is the homelab-wide shared Docker VM — a separate project with its own IaC (`infrastructure/hephaestus/`). Orpheus has no services running on Hephaestus. Future Productivity Stack services (Nextcloud, Vaultwarden) will run there but are out of scope for this document. See the Hephaestus Design Doc (planned).
 
-| Resource | IP | Port | Project |
-|----------|----|------|---------|
-| Docker VM (host) | TBD (10.0.50.X) | — | Shared infrastructure |
-| Portainer Agent | Docker VM IP | 9001 | Management (Server on VLAN 10) |
-| Immich | Docker VM IP | 2283 | Orpheus |
-| *(future)* Nextcloud | Docker VM IP | 80/443 | Productivity Stack |
-| *(future)* Vaultwarden | Docker VM IP | 80/443 | Productivity Stack |
-
-**Docker VM specs:** 4 vCPU, 8GB RAM, 50GB OS disk. All data (photos, uploads) stored on TrueNAS via NFS — not on the VM disk.
-
-**Immich Postgres:** Immich uses its own bundled Postgres instance inside the Docker Compose stack — isolated from the homelab shared Postgres at 10.0.50.14. This is intentional: Immich is opinionated about its Postgres version and schema migrations. Back up the Immich Postgres container data separately.
-
-**Port note (Nextcloud, Vaultwarden):** Multiple Docker services cannot bind to the same host port. Each service exposes on a distinct internal port; NGINX Proxy Manager (DMZ) handles external routing by subdomain. No port conflicts on the Docker VM itself.
-
-### 3.4 TrueNAS Services (Download & File Management)
+### 3.4 TrueNAS Scale Apps — Download & File Management
 
 | Service | Port | Notes |
 |---------|------|-------|
@@ -115,9 +99,9 @@ A single VM on VLAN 50 hosts all Docker Compose-based services across the homela
 
 | Hardware | Role |
 |----------|------|
-| Xeon E-2378 (main PVE node) | Runs all VLAN 80 LXCs and Docker VM (VLAN 50) |
-| R710 TrueNAS (reconnect Phase 1) | All media file storage; TrueNAS Scale apps |
-| GPU (future) | Jellyfin hardware transcoding |
+| Xeon E-2378 (main PVE node) | Hephaestus Docker VM (VLAN 50); no Orpheus services |
+| R710 TrueNAS | All media files (ZFS) + all Orpheus services (TrueNAS Scale apps) |
+| GPU (future) | Jellyfin hardware transcoding — would live in R710 or as PCI passthrough |
 
 ---
 
@@ -125,7 +109,7 @@ A single VM on VLAN 50 hosts all Docker Compose-based services across the homela
 
 ### 4.1 Philosophy
 
-The *Arr stack enforces naming conventions for everything it manages. Manual imports follow the same conventions. One root media folder per content type on TrueNAS, mounted into every service that needs it. No service maintains a private copy of files.
+The *Arr stack enforces naming conventions for everything it manages. Manual imports follow the same conventions. One root media folder per content type on TrueNAS; all services access datasets directly via ZFS bind mounts. No service maintains a private copy of files.
 
 ### 4.2 TrueNAS Directory Structure
 
@@ -134,12 +118,13 @@ The *Arr stack enforces naming conventions for everything it manages. Manual imp
 ├── movies/                        # Radarr-managed
 │   └── Movie Name (2024)/
 │       └── Movie Name (2024).mkv
-├── tv/                            # Sonarr-managed
+├── shows/                         # Sonarr-managed
 │   └── Show Name/
 │       └── Season 01/
 │           └── Show Name - S01E01 - Episode Title.mkv
 ├── kids-movies/                   # Radarr (separate root folder)
-├── kids-tv/                       # Sonarr (separate root folder)
+├── kid-shows/                     # Sonarr (separate root folder)
+├── anime-shows/                   # Sonarr (separate root folder)
 ├── internet-video/                # Manual / yt-dlp
 │   └── {Channel Name}/
 │       └── {Video Title}.mp4
@@ -151,7 +136,7 @@ The *Arr stack enforces naming conventions for everything it manages. Manual imp
 │   └── {Artist}/
 │       └── {Album}/
 │           └── {Track} - {Title}.flac
-├── ebooks/
+├── books/
 │   ├── fiction/                   # Calibre library
 │   ├── non-fiction/               # Calibre library
 │   └── reference/                 # Calibre library
@@ -167,24 +152,9 @@ The *Arr stack enforces naming conventions for everything it manages. Manual imp
     └── incomplete/
 ```
 
-### 4.3 NFS Mounts
+### 4.3 Storage Access
 
-**TrueNAS → PVE LXCs (VLAN 80):**
-
-| Service | NFS Mount | Access |
-|---------|-----------|--------|
-| Jellyfin | /media/movies, /media/tv, /media/kids-movies, /media/kids-tv, /media/internet-video | Read-only |
-| Audiobookshelf | /media/audiobooks | Read-write (podcast downloads) |
-| CalibreWeb | /media/ebooks/fiction, /media/ebooks/non-fiction, /media/ebooks/reference | Read-only |
-| Navidrome | /media/music | Read-only |
-| Komga | /media/comics | Read-only |
-| RomM | /media/roms | Read-only |
-
-**TrueNAS → Docker VM (VLAN 50):**
-
-| Service | NFS Mount | Access |
-|---------|-----------|--------|
-| Immich | /media/photos | Read-write |
+All Orpheus services are TrueNAS Scale apps running on the same host as the ZFS pools. Each app is configured with direct bind mounts to the relevant dataset paths — no NFS involved.
 
 **Read-only principle:** Serving services never write to media directories except where they own the content. Only *Arr apps and download clients write to Arr-managed directories.
 
@@ -252,19 +222,18 @@ Readarr handles acquisition; Calibre manages the library; CalibreWeb serves it. 
 
 ### 6.1 Role
 
-Immich is the long-term replacement for Google Photos — automatic mobile backup, facial recognition, shared libraries, familiar timeline UI. Runs on the shared Docker VM (VLAN 50) via Docker Compose because its ML container (face recognition, CLIP embeddings) requires Docker and is not practical inside a standard LXC.
+Immich is the long-term replacement for Google Photos — automatic mobile backup, facial recognition, shared libraries, familiar timeline UI. Runs as a TrueNAS Scale app alongside the rest of the Orpheus media stack, with direct access to the photos dataset on ZFS.
 
 ### 6.2 Migration Path
 
 ```
-1. Deploy Immich on Docker VM
-2. Configure mobile backup on all family devices
-3. Export Google Photos via Google Takeout
-4. Bulk import Takeout archive into Immich
-5. Verify completeness; confirm family comfortable with Immich UI
-6. Disable Google Photos backup on all family devices
-7. 90-day hold on Google Photos (read-only safety net)
-8. Delete Google Photos library
+1. Configure mobile backup on all family devices
+2. Export Google Photos via Google Takeout
+3. Bulk import Takeout archive into Immich
+4. Verify completeness; confirm family comfortable with Immich UI
+5. Disable Google Photos backup on all family devices
+6. 90-day hold on Google Photos (read-only safety net)
+7. Delete Google Photos library
 ```
 
 ### 6.3 Family Access
@@ -367,14 +336,14 @@ Pre-deployment task — serving services will not scan correctly against unstruc
 
 | Service / Workflow | Status | Notes |
 |-------------------|--------|-------|
-| VLAN 80 (Media) | Build fresh | pfSense + switch config required |
-| Docker VM (VLAN 50) | Build fresh | Shared homelab infrastructure |
-| Portainer Server LXC (VLAN 10) | Build fresh | Management plane; connects to Docker VM agent |
-| Jellyfin | Migrate → PVE LXC / VLAN 80 | Currently on TrueNAS |
-| Immich | Migrate → Docker VM / VLAN 50 | Currently on TrueNAS |
-| Audiobookshelf | Migrate → PVE LXC / VLAN 80 | Currently on TrueNAS |
-| CalibreWeb | Migrate → PVE LXC / VLAN 80 | Currently on TrueNAS |
-| Navidrome | Migrate → PVE LXC / VLAN 80 | Currently on TrueNAS |
+| VLAN 80 (Media) | ✅ Done | pfSense + switch config applied |
+| Hephaestus Docker VM (VLAN 50) | Separate project | See Hephaestus Design Doc (planned) |
+| Jellyfin | Keep — configure in place | Already on TrueNAS Scale |
+| Audiobookshelf | Keep — configure in place | Already on TrueNAS Scale |
+| CalibreWeb | Keep — configure in place | Already on TrueNAS Scale |
+| Navidrome | Keep — configure in place | Already on TrueNAS Scale |
+| Immich | Keep — configure in place | Already on TrueNAS Scale |
+| Jellyseerr | Build fresh — TrueNAS Scale | New |
 | Prowlarr | Build fresh — TrueNAS Scale | New |
 | Radarr | Build fresh — TrueNAS Scale | New |
 | Sonarr | Build fresh — TrueNAS Scale | New |
@@ -382,8 +351,7 @@ Pre-deployment task — serving services will not scan correctly against unstruc
 | Readarr | Build fresh — TrueNAS Scale | New |
 | Bazarr | Build fresh — TrueNAS Scale | New |
 | qBittorrent | Build fresh — TrueNAS Scale | New |
-| Jellyseerr | Build fresh — PVE LXC / VLAN 80 | New |
-| Google Photos → Immich migration | Planned | After Immich stable on Docker VM |
+| Google Photos → Immich migration | Planned | After Immich configured and stable |
 | Komga | Deferred | Post-June |
 | RomM | Deferred | Post-June |
 
@@ -394,133 +362,62 @@ Pre-deployment task — serving services will not scan correctly against unstruc
 Requires R710 TrueNAS reconnected (Phase 1 prerequisite).
 
 **Pre-deployment:**
-1. Reconnect R710 TrueNAS; establish NFS exports for all media directories
-2. Create VLAN 80 in pfSense + managed switch; set firewall policy
-3. Update Network & Services Architecture to v1.4 (add VLAN 80, Docker VM)
-4. Clean up Movies + TV library (FileBot) before Jellyfin migration
-5. Clean up Music library (MusicBrainz Picard) before Navidrome migration
+1. ✅ Reconnect R710 TrueNAS — live at 10.0.10.30
+2. ✅ Create VLAN 80 in pfSense + managed switch; set firewall policy
+3. Clean up Movies + TV library (FileBot) before reconfiguring Radarr/Sonarr
+4. Clean up Music library (MusicBrainz Picard) before reconfiguring Navidrome/Lidarr
 
-**Infrastructure:**
-6. Provision Docker VM (VLAN 50, 10.0.50.X) via Terraform + Ansible
-7. Deploy Immich on Docker VM via Ansible (Docker Compose role)
-8. Configure Immich family accounts + mobile backup on all devices
-
-**Core media services (migrate existing):**
-9. Migrate Jellyfin → PVE LXC / VLAN 80; mount NFS media directories
-10. Migrate Audiobookshelf → PVE LXC / VLAN 80; configure Antennapod gpodder sync
-11. Migrate CalibreWeb → PVE LXC / VLAN 80; import existing Calibre library
-12. Migrate Navidrome → PVE LXC / VLAN 80; mount NFS music directory
+**Configure existing media services (TrueNAS Scale — in place):**
+5. Configure Immich family accounts + mobile backup on all devices
+6. Reconfigure Jellyfin libraries (movies, TV, kids, anime shows, internet video)
+7. Reconfigure Audiobookshelf; set up Antennapod gpodder sync
+8. Reconfigure CalibreWeb; verify Calibre library path
+9. Reconfigure Navidrome; verify music library path
 
 **Download + automation stack (new):**
-13. Deploy qBittorrent on TrueNAS Scale
-14. Deploy Prowlarr; configure indexers
-15. Deploy Radarr + Sonarr; connect Prowlarr + qBittorrent
-16. Deploy Lidarr; connect Prowlarr + qBittorrent
-17. Deploy Readarr; connect Prowlarr + qBittorrent
-18. Deploy Bazarr; connect Sonarr + Radarr
-19. Deploy Jellyseerr on PVE LXC / VLAN 80; connect Radarr + Sonarr
+10. Deploy qBittorrent on TrueNAS Scale
+11. Deploy Prowlarr; configure indexers
+12. Deploy Radarr + Sonarr; connect Prowlarr + qBittorrent
+13. Deploy Lidarr; connect Prowlarr + qBittorrent
+14. Deploy Readarr; connect Prowlarr + qBittorrent
+15. Deploy Bazarr; connect Sonarr + Radarr
+16. Deploy Jellyseerr on TrueNAS Scale; connect Radarr + Sonarr
 
 **Remote access:**
-20. Configure NGINX Proxy Manager subdomains (watch, images, audible + TBD)
-21. Test remote access for all family members on all services
+17. Configure NGINX Proxy Manager subdomains (watch, images, audible + TBD)
+18. Test remote access for all family members on all services
 
 **Google Photos migration:**
-22. Begin Google Takeout export
-23. Import into Immich; verify completeness
-24. Disable Google Photos backup on all family devices
-25. 90-day hold → delete Google Photos library
+19. Begin Google Takeout export
+20. Import into Immich; verify completeness
+21. Disable Google Photos backup on all family devices
+22. 90-day hold → delete Google Photos library
 
 **Deferred (post-June):**
-26. Deploy Komga + organize comics library
-27. Deploy RomM + EmulatorJS + organize ROM library
-28. Deploy Azuracast; connect to Navidrome music library
+23. Deploy Komga + organize comics library
+24. Deploy RomM + EmulatorJS + organize ROM library
+25. Deploy Azuracast; connect to Navidrome music library
 
 ---
 
 ## 14. Infrastructure as Code
 
-All PVE-hosted services (LXCs and Docker VM) are provisioned and configured via IaC. TrueNAS Scale apps are managed through the TrueNAS UI. For the full IaC workflow, see the **IaC Runbook v1.0**.
+All Orpheus services are TrueNAS Scale apps — configured through the TrueNAS UI, not via Terraform or Ansible. There is no `infrastructure/orpheus/` IaC directory.
 
-### 13.1 Repository Location
+The only IaC touching Orpheus is:
+- **pfSense Terraform** — VLAN 80 firewall rules (`infrastructure/network/pfsense/`)
+- **Switch Ansible** — VLAN 80 port assignments (`infrastructure/network/switch/`)
+- **Ariadne Ansible** — reverse proxy configs for Orpheus subdomains (`infrastructure/ariadne/`)
 
-```
-homelab-command/
-└── infrastructure/
-    └── orpheus/
-        ├── terraform/       # LXC + Docker VM provisioning
-        └── ansible/         # Service configuration + Docker Compose deployment
-```
+### 14.1 Recovery
 
-### 13.2 Terraform — What Gets Provisioned
-
-| Resource | Module | VLAN | IP | Notes |
-|----------|--------|------|----|-------|
-| Docker VM | proxmox-vm | 50 | TBD (10.0.50.X) | 4 vCPU, 8GB RAM, 50GB disk; shared infra |
-| Jellyfin LXC | lxc-container | 80 | TBD (10.0.80.X) | 4 vCPU, 4GB RAM, 20GB disk |
-| Audiobookshelf LXC | lxc-container | 80 | TBD (10.0.80.X) | 2 vCPU, 2GB RAM, 10GB disk |
-| CalibreWeb LXC | lxc-container | 80 | TBD (10.0.80.X) | 2 vCPU, 2GB RAM, 10GB disk |
-| Navidrome LXC | lxc-container | 80 | TBD (10.0.80.X) | 2 vCPU, 2GB RAM, 10GB disk |
-| Jellyseerr LXC | lxc-container | 80 | TBD (10.0.80.X) | 2 vCPU, 2GB RAM, 10GB disk |
-| Komga LXC | lxc-container | 80 | TBD (10.0.80.X) | 2 vCPU, 2GB RAM, 10GB disk (deferred) |
-| RomM LXC | lxc-container | 80 | TBD (10.0.80.X) | 2 vCPU, 4GB RAM, 10GB disk (deferred) |
-
-### 13.3 Ansible — What Gets Configured
-
-| Role | Target | Configures |
-|------|--------|-----------|
-| `docker-vm` | Docker VM | Docker Engine, Docker Compose, NFS mounts |
-| `immich` | Docker VM | Immich Docker Compose stack (server, ML, Redis, Postgres) |
-| `nfs-mounts` | All media LXCs | Shared role; mounts correct TrueNAS NFS shares per host |
-| `jellyfin` | Jellyfin LXC | Jellyfin install, NFS mounts, library paths |
-| `audiobookshelf` | ABS LXC | ABS install, NFS audiobook mount, gpodder config |
-| `calibreweb` | CalibreWeb LXC | CalibreWeb install, NFS ebook mounts, Calibre library path |
-| `navidrome` | Navidrome LXC | Navidrome install, NFS music mount |
-| `jellyseerr` | Jellyseerr LXC | Jellyseerr install, Radarr/Sonarr API connection |
-
-### 13.4 Secrets (Ansible Vault)
-
-```
-vault_immich_db_password
-vault_jellyfin_api_key
-vault_calibreweb_admin_password
-vault_navidrome_admin_password
-vault_jellyseerr_api_key
-vault_radarr_api_key            # Used by Jellyseerr role
-vault_sonarr_api_key            # Used by Jellyseerr role
-```
-
-### 13.5 Playbook Invocations
-
-```bash
-# Provision all Orpheus infrastructure
-cd infrastructure/orpheus/terraform/
-cp terraform.tfvars.example terraform.tfvars
-terraform init && terraform apply
-
-# Configure all services
-cd ../ansible/
-ansible-playbook provision.yml --ask-vault-pass
-
-# Deploy/update Immich only (Docker VM)
-ansible-playbook provision.yml --limit docker-vm --ask-vault-pass
-
-# Update NFS mounts only (e.g. after TrueNAS IP change)
-ansible-playbook provision.yml --tags nfs-mounts --ask-vault-pass
-
-# Ongoing maintenance
-ansible-playbook update.yml --ask-vault-pass
-```
-
-### 13.6 Recovery
-
-Orpheus deploys after core data services (Postgres, Redis, MinIO) in a full rebuild. Media files survive on TrueNAS ZFS — only services need rebuilding, not content.
+Media files survive on TrueNAS ZFS — only service configurations need rebuilding after a TrueNAS failure.
 
 Post-recovery steps:
-1. Re-establish TrueNAS NFS exports before running Ansible
-2. Immich's Postgres instance lives inside the Docker VM — restore from backup before reprovisioning Immich
-3. *Arr app configurations live on TrueNAS — back up TrueNAS app data separately from media files
-4. Jellyfin metadata cache rebuilds automatically on first scan (slow but automatic)
-5. Re-verify all sirhexx.com subdomains resolve correctly through NPM after DNS propagation
+1. Redeploy TrueNAS Scale; restore app configurations from TrueNAS backup
+2. *Arr app configurations and Immich database live on TrueNAS — include in TrueNAS backup strategy
+3. Jellyfin metadata cache rebuilds automatically on first scan (slow but automatic)
+4. Re-verify all sirhexx.com subdomains resolve correctly through Ariadne after DNS propagation
 
 ---
 
