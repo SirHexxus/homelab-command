@@ -16,7 +16,7 @@ The application runs on a single LXC (VMID 110, 10.0.50.17, VLAN 50).
 | Interface | Phase | Notes |
 |-----------|-------|-------|
 | CLI (`bin/hermes`) | 1 — done | `hermes "do something"` |
-| HTTP endpoint (`/task`, `/health`) | 2 — in progress | n8n integration; internal VLAN 50 only |
+| HTTP endpoint (`/task`, `/health`) | 2 — done | n8n integration; internal VLAN 50 only |
 | Telegram bots | 2 | Personal bot first; professional bot later |
 | FastAPI web UI | 4 | Domain-based context routing — do not build early |
 
@@ -26,6 +26,7 @@ The application runs on a single LXC (VMID 110, 10.0.50.17, VLAN 50).
 apps/hermes/
   bin/
     hermes             ← CLI entrypoint
+    hermes-api         ← API server entrypoint (Phase 2)
   config/
     contexts/          ← YAML per context (personal, professional)
   lib/
@@ -38,20 +39,19 @@ apps/hermes/
       audit.py         ← logs/audit.jsonl (every tool call + LLM invocation)
     interfaces/
       api.py           ← Minimal HTTP endpoint: POST /task, GET /health (Phase 2)
-      telegram_bot.py  ← Personal Telegram bot (Phase 2)
+      telegram_bot.py  ← Personal Telegram bot (Phase 2 — not yet built)
     skills/
       _archive/        ← Deprecated skills (mneme_postgres.py lives here)
-      wiki/            ← Mnemosyne wiki read/write skills
+      wiki.py          ← Mnemosyne wiki read/write skills (7 skills registered)
       filesystem.py
       shell.py
-      web.py
   tests/
   requirements.txt
   README.md
 ```
 
-Note: `lib/skills/mneme.py` (Postgres/pgvector) is dead code — archived to `_archive/`.
-Do not use or adapt it. The replacement is `lib/skills/wiki/`.
+Note: `lib/skills/mneme_postgres.py` (Postgres/pgvector) is archived to `_archive/`.
+Do not use or adapt it. The replacement is `lib/skills/wiki.py`.
 
 ## Runtime Dependencies
 
@@ -88,5 +88,7 @@ framework, LLM tier routing, Phase 1–5 build plan.
   LLM preferences, and email credentials — switching context changes all of these at once
 - Long-term state lives in the Mnemosyne wiki (git repo of markdown), not Postgres
 - Audit log at `logs/audit.jsonl` — every tool call and LLM invocation is recorded
-- Phase 1 (CLI) is complete. Phase 2 is the current target — see `ToDo.md`
+- `HERMES_API_TOKEN` env var must be set before starting `bin/hermes-api` — Ansible Vault
+  injects it on the LXC; for local dev, export it manually
+- Phase 1 (CLI) is complete. Phase 2 HTTP endpoint is complete — see `ToDo.md`
 - Do NOT build Phase 4 (web UI) features ahead of schedule
