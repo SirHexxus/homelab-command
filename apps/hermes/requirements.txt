@@ -9,6 +9,7 @@ rich>=13.0,<14             # CLI output formatting
 # ── Phase 2 ───────────────────────────────────────────────────────────────────
 google-generativeai>=0.8,<1    # Gemini SDK (wiki_write, synthesis, report tasks)
 filelock>=3.13,<4              # Wiki git commit lock (wiki.py)
+flask>=3.0,<4                  # Minimal HTTP interface for n8n integration (/task, /health)
 # Note: Claude tier uses `claude -p` subprocess — no anthropic SDK needed
 
 # ── Phase 3 (uncomment when implementing) ─────────────────────────────────────
