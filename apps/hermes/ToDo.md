@@ -8,7 +8,7 @@ Source of truth: `Mnemosyne-Hand-Off.md` (requirements), `THOUGHTS.md` (design r
 ## Blocking — Do These First
 
 ### 1. Archive `lib/skills/mneme.py`
-**Status:** Not started  
+**Status:** DONE (2026-04-10)  
 **Risk:** ACTIVE — `save_note`, `search_memory`, and `ask_memory` are registered in the
 skill registry right now. If the agent loop tries to call any of them, it gets a
 psycopg2 import error or connection refused. This poisons the tool list immediately.
@@ -22,7 +22,7 @@ Steps:
 ---
 
 ### 2. Resolve Terraform Provider Version Conflict
-**Status:** Not started  
+**Status:** DONE (2026-04-10) — pinned to 0.96.0, terraform init run, lock file regenerated  
 **Risk:** Cannot deploy the LXC until resolved — `terraform apply` would use 0.98.1 against
 a repo convention requiring 0.96.0.
 
@@ -36,7 +36,7 @@ Steps:
 ## Phase 2 — Core Platform (Mnemosyne Unblocked After These)
 
 ### 3. Wire Gemini + Claude into `LLMRouter`
-**Status:** Not started  
+**Status:** DONE (2026-04-10) — GeminiClient, ClaudeClient (subprocess), task_type routing  
 **Spec:** `Mnemosyne-Hand-Off.md` §1  
 **Design notes:** `THOUGHTS.md` — "LLM Router Needs Per-Task Routing"
 
@@ -51,7 +51,7 @@ Steps:
 ---
 
 ### 4. Implement `lib/skills/wiki.py`
-**Status:** Not started  
+**Status:** DONE (2026-04-10) — 7 skills registered, filelock on git_commit_push  
 **Spec:** `Mnemosyne-Hand-Off.md` §2  
 **Blocks:** HTTP endpoint (item 5), all Mnemosyne live testing
 
@@ -70,7 +70,7 @@ File lock: `wiki/.git/mnemosyne.lock` (use `fcntl.flock` or `filelock` library).
 ---
 
 ### 5. Minimal HTTP Endpoint (`/task` + `/health`)
-**Status:** Not started  
+**Status:** DONE (2026-04-11)  
 **Spec:** `Mnemosyne-Hand-Off.md` §3  
 **Design notes:** `THOUGHTS.md` — "HTTP Endpoint Should Be Minimal and Internal"
 **Depends on:** Item 4 (wiki.py must exist to have something to route to)
@@ -100,7 +100,7 @@ After item 2 is resolved:
 ## Phase 2 — Medium Priority
 
 ### 7. `IngestItem` Dataclass
-**Status:** Not started  
+**Status:** DONE (2026-04-11)  
 **Spec:** `Mnemosyne-Hand-Off.md` §7
 
 Create `lib/core/ingest.py` with the `IngestItem` dataclass. Fields:
@@ -124,7 +124,7 @@ All ingestion skill functions should accept/produce `IngestItem`.
 ## Cleanup
 
 ### 9. Update `CLAUDE.md` (this directory)
-**Status:** In progress  
+**Status:** DONE (2026-04-11)  
 After items 3–5 are delivered, update:
 - Runtime dependencies table (remove Postgres/Mnemosyne, add wiki repo path)
 - Interface phase table (HTTP endpoint is now Phase 2, not Phase 4)

@@ -16,6 +16,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from lib.core.audit import log_llm_call, log_tool_call
@@ -225,6 +226,7 @@ def run_agent(
     context: Context,
     dry_run: bool = False,
     verbose: bool = False,
+    task_type: str = "default",
 ) -> AgentResult:
     """Run the ReAct loop for a single task.
 
@@ -233,6 +235,8 @@ def run_agent(
         context: The active Hermes context.
         dry_run: If True, tool calls that modify state are skipped.
         verbose: If True, print each step's LLM response to stderr.
+        task_type: Logical task category for LLM tier routing (e.g. "wiki_write",
+                   "judgment"). Defaults to "default" — uses the local Ollama tier.
 
     Returns:
         AgentResult with the final answer and step history.
@@ -251,7 +255,7 @@ def run_agent(
         full_prompt = "\n\n".join(msg["content"] for msg in conversation)
 
         try:
-            llm_response, model_used = router.complete(full_prompt, system=system_prompt)
+            llm_response, model_used = router.complete(full_prompt, system=system_prompt, task_type=task_type)
         except LLMError as exc:
             print(f"Error: LLM failed at step {step_num}: {exc}", file=sys.stderr)
             return AgentResult(
