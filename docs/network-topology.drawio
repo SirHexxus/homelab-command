@@ -1,0 +1,385 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-04-13T00:00:00.000Z" agent="Claude" version="21.0.0" compressed="false">
+  <diagram id="homelab-topology" name="Homelab Network Topology">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="2100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ============================================================ -->
+        <!-- LEGEND                                                        -->
+        <!-- ============================================================ -->
+        <mxCell id="leg0" value="LEGEND" style="swimlane;startSize=28;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1810" y="30" width="560" height="195" as="geometry" />
+        </mxCell>
+        <mxCell id="leg1" value="Deployed — solid border" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b2dfdb;strokeColor=#00695c;fontSize=10;" vertex="1" parent="leg0">
+          <mxGeometry x="10" y="40" width="180" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="leg2" value="Planned — dashed border" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2f1;strokeColor=#00695c;fontSize=10;strokeDash=4;" vertex="1" parent="leg0">
+          <mxGeometry x="200" y="40" width="180" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="leg3" value="Physical LAN (trunk)" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#666666;strokeWidth=3;" edge="1" parent="leg0">
+          <mxGeometry x="10" y="90" width="160" height="20" relative="0" as="geometry">
+            <Array as="points" />
+            <mxPoint x="10" y="105" as="sourcePoint" />
+            <mxPoint x="170" y="105" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg3label" value="Physical LAN (trunk)" style="text;html=1;strokeColor=none;fillColor=none;fontSize=10;fontColor=#333333;" vertex="1" parent="leg0">
+          <mxGeometry x="10" y="90" width="160" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg4label" value="VLAN routing (pfSense)" style="text;html=1;strokeColor=none;fillColor=none;fontSize=10;fontColor=#333333;" vertex="1" parent="leg0">
+          <mxGeometry x="200" y="90" width="180" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg5label" value="Reverse proxy (Ariadne)" style="text;html=1;strokeColor=none;fillColor=none;fontSize=10;fontColor=#333333;" vertex="1" parent="leg0">
+          <mxGeometry x="390" y="90" width="155" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg6" value="eero Pro 6 WiFi limit: TV + Nintendo Switch remain on VLAN 20 until AP upgrade (UniFi planned post-June)" style="text;html=1;strokeColor=none;fillColor=#fff3e0;fontSize=10;fontColor=#e65100;align=left;spacingLeft=6;" vertex="1" parent="leg0">
+          <mxGeometry x="10" y="125" width="535" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="leg7" value="Static IP range: .2–.50 | DHCP dynamic pool: .100–.200" style="text;html=1;strokeColor=none;fillColor=none;fontSize=10;fontColor=#555555;align=left;" vertex="1" parent="leg0">
+          <mxGeometry x="10" y="166" width="535" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- SECTION: WAN EDGE                                            -->
+        <!-- ============================================================ -->
+
+        <!-- Internet -->
+        <mxCell id="101" value="INTERNET" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="660" y="30" width="230" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Dell T150 Proxmox Host -->
+        <mxCell id="102" value="&lt;b&gt;Dell EMC PowerEdge T150 — puppetmaster&lt;/b&gt;&lt;br&gt;Proxmox 9.1.2 | 10.0.10.2 | Intel Xeon E-2378 | 62 GB RAM&lt;br&gt;eno8303 → vmbr0 (WAN bridge) | eno8403 → vmbr1 (VLAN-aware trunk, bridge-vids 2–4094)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#333333;fontColor=#333333;align=center;arcSize=4;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="530" y="175" width="500" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- TP-Link Switch -->
+        <mxCell id="103" value="&lt;b&gt;TP-Link T1600G-28PS&lt;/b&gt; | 10.0.10.50&lt;br&gt;Port 1 = Trunk → T150 (all VLANs tagged)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#333333;fontColor=#333333;align=center;arcSize=4;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="610" y="310" width="340" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- pfSense VM — spans full width as routing spine               -->
+        <!-- ============================================================ -->
+        <mxCell id="200" value="&lt;b&gt;pfSense CE — VM VMID 200&lt;/b&gt;  |  vtnet0 ↔ WAN (vmbr0)  |  vtnet1 ↔ LAN/VLAN trunk (vmbr1)  |  Gateways: .10.1 · .20.1 · .30.1 · .40.1 · .50.1 · .60.1 · .66.1 · .70.1 · .80.1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontColor=#333333;align=center;arcSize=3;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="20" y="425" width="1760" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- VLAN 10 — MANAGEMENT                                         -->
+        <!-- ============================================================ -->
+        <mxCell id="v10" value="VLAN 10 — Management  |  10.0.10.0/24  |  gw: 10.0.10.1  |  Full admin access" style="swimlane;startSize=30;fillColor=#e8f5e9;strokeColor=#2e7d32;fontColor=#1b5e20;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="20" y="500" width="1760" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="v10-proxmox" value="&lt;b&gt;Proxmox&lt;/b&gt;&lt;br&gt;10.0.10.2&lt;br&gt;puppetmaster" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;fontSize=10;" vertex="1" parent="v10">
+          <mxGeometry x="10" y="40" width="130" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v10-switch" value="&lt;b&gt;TP-Link Switch&lt;/b&gt;&lt;br&gt;10.0.10.50&lt;br&gt;T1600G-28PS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;fontSize=10;" vertex="1" parent="v10">
+          <mxGeometry x="150" y="40" width="130" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v10-helmlog" value="&lt;b&gt;Helm HPS20 (helm-log)&lt;/b&gt;&lt;br&gt;10.0.10.25 | Armbian&lt;br&gt;ntfy broker :2586&lt;br&gt;Phase 3: syslog-ng + Vector" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;fontSize=10;" vertex="1" parent="v10">
+          <mxGeometry x="290" y="40" width="185" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v10-truenas" value="&lt;b&gt;TrueNAS R710 (eno1)&lt;/b&gt;&lt;br&gt;10.0.10.30 | management + PBS&lt;br&gt;TrueNAS Scale 25.10.1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;fontSize=10;" vertex="1" parent="v10">
+          <mxGeometry x="485" y="40" width="185" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v10-yolink" value="&lt;b&gt;YoLink Hub&lt;/b&gt;&lt;br&gt;10.0.10.65&lt;br&gt;YS1603-UC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;fontSize=10;" vertex="1" parent="v10">
+          <mxGeometry x="680" y="40" width="130" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v10-laptop" value="&lt;b&gt;James's Laptop&lt;/b&gt;&lt;br&gt;ThinkPad T590 | Debian 13&lt;br&gt;10.0.10.x (wired)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;fontSize=10;" vertex="1" parent="v10">
+          <mxGeometry x="820" y="40" width="165" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- VLAN 20 — PERSONAL                                           -->
+        <!-- ============================================================ -->
+        <mxCell id="v20" value="VLAN 20 — Personal  |  10.0.20.0/24  |  gw: 10.0.20.1  |  Pass → Internet  |  Block → Management, Lab" style="swimlane;startSize=30;fillColor=#e3f2fd;strokeColor=#1565c0;fontColor=#0d47a1;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="20" y="640" width="1760" height="145" as="geometry" />
+        </mxCell>
+        <mxCell id="v20-eero" value="&lt;b&gt;eero Pro 6&lt;/b&gt;&lt;br&gt;10.0.20.100 | bridge mode&lt;br&gt;SSID 1: Personal → VLAN 20&lt;br&gt;SSID 2: Guest → VLAN 70" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=10;" vertex="1" parent="v20">
+          <mxGeometry x="10" y="38" width="170" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="v20-jlaptop" value="James Laptop (WiFi)&lt;br&gt;10.0.20.103" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=10;" vertex="1" parent="v20">
+          <mxGeometry x="195" y="50" width="140" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="v20-jphone" value="James Phone&lt;br&gt;Galaxy S24 FE&lt;br&gt;10.0.20.104" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=10;" vertex="1" parent="v20">
+          <mxGeometry x="345" y="50" width="130" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="v20-wlaptop" value="Wife Laptop&lt;br&gt;HP Pavilion x360&lt;br&gt;10.0.20.101" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=10;" vertex="1" parent="v20">
+          <mxGeometry x="485" y="50" width="130" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="v20-wphone" value="Wife Phone&lt;br&gt;Galaxy S23 FE&lt;br&gt;10.0.20.105" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=10;" vertex="1" parent="v20">
+          <mxGeometry x="625" y="50" width="130" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="v20-tv" value="Living Room TV&lt;br&gt;TCL 75S450G&lt;br&gt;10.0.20.102&lt;br&gt;⚠ IoT migration pending" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=10;strokeDash=4;" vertex="1" parent="v20">
+          <mxGeometry x="765" y="40" width="155" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v20-switch" value="Nintendo Switch&lt;br&gt;10.0.20.x&lt;br&gt;⚠ IoT migration pending" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=10;strokeDash=4;" vertex="1" parent="v20">
+          <mxGeometry x="930" y="40" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- VLAN 30 — WORK                                               -->
+        <!-- ============================================================ -->
+        <mxCell id="v30" value="VLAN 30 — Work  |  10.0.30.0/24  |  gw: 10.0.30.1  |  Internet ONLY — fully isolated from all internal VLANs" style="swimlane;startSize=30;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontColor=#4a148c;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="20" y="795" width="1760" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="v30-workdev" value="Work Device | 10.0.30.x (DHCP)&lt;br&gt;Managed for network isolation only — no internal access" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#6a1b9a;fontSize=10;" vertex="1" parent="v30">
+          <mxGeometry x="10" y="38" width="320" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- VLAN 40 — IOT                                                -->
+        <!-- ============================================================ -->
+        <mxCell id="v40" value="VLAN 40 — IoT  |  10.0.40.0/24  |  gw: 10.0.40.1  |  Internet ONLY  |  Management → IoT allowed (Home Assistant)" style="swimlane;startSize=30;fillColor=#fff8e1;strokeColor=#e65100;fontColor=#bf360c;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="20" y="890" width="1760" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="v40-switches" value="Smart Switches&lt;br&gt;10.0.40.x" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffecb3;strokeColor=#e65100;fontSize=10;" vertex="1" parent="v40">
+          <mxGeometry x="10" y="38" width="130" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="v40-ha" value="Home Assistant [PLANNED]&lt;br&gt;10.0.10.x — Raspberry Pi 3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#e65100;fontSize=10;strokeDash=4;" vertex="1" parent="v40">
+          <mxGeometry x="150" y="38" width="210" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="v40-yolink" value="YoLink Door Sensors (2×)&lt;br&gt;via hub 10.0.10.65 on VLAN 10" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffecb3;strokeColor=#e65100;fontSize=10;" vertex="1" parent="v40">
+          <mxGeometry x="370" y="38" width="210" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- VLAN 50 — LAB SERVICES                                       -->
+        <!-- ============================================================ -->
+        <mxCell id="v50" value="VLAN 50 — Lab Services  |  10.0.50.0/24  |  gw: 10.0.50.1  |  Block → Internal  |  Pass → Internet" style="swimlane;startSize=30;fillColor=#e0f2f1;strokeColor=#00695c;fontColor=#004d40;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="20" y="985" width="1760" height="295" as="geometry" />
+        </mxCell>
+
+        <!-- Row 1: Deployed services -->
+        <mxCell id="v50-ollama" value="&lt;b&gt;Ollama&lt;/b&gt;&lt;br&gt;LXC 101&lt;br&gt;10.0.50.10&lt;br&gt;AI inference" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b2dfdb;strokeColor=#00695c;fontSize=10;" vertex="1" parent="v50">
+          <mxGeometry x="10" y="40" width="120" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="v50-whisper" value="&lt;b&gt;Whisper&lt;/b&gt;&lt;br&gt;LXC 102&lt;br&gt;10.0.50.12&lt;br&gt;STT :9000" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b2dfdb;strokeColor=#00695c;fontSize=10;" vertex="1" parent="v50">
+          <mxGeometry x="140" y="40" width="120" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="v50-postgres" value="&lt;b&gt;Postgres&lt;/b&gt;&lt;br&gt;LXC 105&lt;br&gt;10.0.50.14&lt;br&gt;pgvector + TimescaleDB&lt;br&gt;+ pg_cron" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b2dfdb;strokeColor=#00695c;fontSize=10;" vertex="1" parent="v50">
+          <mxGeometry x="270" y="40" width="145" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="v50-redis" value="&lt;b&gt;Redis&lt;/b&gt;&lt;br&gt;LXC 106&lt;br&gt;10.0.50.15&lt;br&gt;Session cache" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b2dfdb;strokeColor=#00695c;fontSize=10;" vertex="1" parent="v50">
+          <mxGeometry x="425" y="40" width="120" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="v50-n8n" value="&lt;b&gt;n8n&lt;/b&gt;&lt;br&gt;LXC 107&lt;br&gt;10.0.50.13&lt;br&gt;Workflow automation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b2dfdb;strokeColor=#00695c;fontSize=10;" vertex="1" parent="v50">
+          <mxGeometry x="555" y="40" width="130" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="v50-minio" value="&lt;b&gt;MinIO&lt;/b&gt;&lt;br&gt;LXC 108&lt;br&gt;10.0.50.16&lt;br&gt;S3 object storage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b2dfdb;strokeColor=#00695c;fontSize=10;" vertex="1" parent="v50">
+          <mxGeometry x="695" y="40" width="130" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="v50-umami" value="&lt;b&gt;Umami&lt;/b&gt;&lt;br&gt;LXC 122&lt;br&gt;10.0.50.18&lt;br&gt;Web analytics" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b2dfdb;strokeColor=#00695c;fontSize=10;" vertex="1" parent="v50">
+          <mxGeometry x="835" y="40" width="120" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- Row 2: Planned services -->
+        <mxCell id="v50-hermes" value="&lt;b&gt;Hermes&lt;/b&gt; [PLANNED]&lt;br&gt;LXC 110&lt;br&gt;10.0.50.17&lt;br&gt;AI agent + Mnemosyne" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2f1;strokeColor=#00695c;fontSize=10;strokeDash=4;" vertex="1" parent="v50">
+          <mxGeometry x="10" y="125" width="145" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="v50-hephaestus" value="&lt;b&gt;Hephaestus&lt;/b&gt; [PLANNED]&lt;br&gt;VM 10.0.50.30&lt;br&gt;Docker host&lt;br&gt;wger · Nextcloud · Vaultwarden" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2f1;strokeColor=#00695c;fontSize=10;strokeDash=4;" vertex="1" parent="v50">
+          <mxGeometry x="165" y="125" width="170" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- Argus SIEM cluster box -->
+        <mxCell id="v50-argus" value="ARGUS — SIEM Stack [PLANNED]" style="swimlane;startSize=25;fillColor=#e0f2f1;strokeColor=#00695c;fontColor=#004d40;fontStyle=1;fontSize=10;strokeDash=4;" vertex="1" parent="v50">
+          <mxGeometry x="345" y="118" width="520" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="v50-splunk" value="&lt;b&gt;Splunk Free&lt;/b&gt;&lt;br&gt;10.0.50.20&lt;br&gt;Log aggregation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2f1;strokeColor=#00695c;fontSize=10;strokeDash=4;" vertex="1" parent="v50-argus">
+          <mxGeometry x="10" y="30" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="v50-wazuh" value="&lt;b&gt;Wazuh Manager&lt;/b&gt;&lt;br&gt;10.0.50.21&lt;br&gt;Host-based IDS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2f1;strokeColor=#00695c;fontSize=10;strokeDash=4;" vertex="1" parent="v50-argus">
+          <mxGeometry x="165" y="30" width="145" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="v50-grafana" value="&lt;b&gt;Grafana&lt;/b&gt;&lt;br&gt;10.0.50.22&lt;br&gt;TimescaleDB dashboards" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2f1;strokeColor=#00695c;fontSize=10;strokeDash=4;" vertex="1" parent="v50-argus">
+          <mxGeometry x="320" y="30" width="145" height="42" as="geometry" />
+        </mxCell>
+
+        <!-- Mnemosyne note -->
+        <mxCell id="v50-mnemosyne" value="&lt;b&gt;Mnemosyne&lt;/b&gt; [DESIGNED]&lt;br&gt;No dedicated host&lt;br&gt;Uses shared Postgres&lt;br&gt;git wiki + Obsidian UI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2f1;strokeColor=#00695c;fontSize=10;strokeDash=4;" vertex="1" parent="v50">
+          <mxGeometry x="875" y="125" width="160" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- VLAN 60 — DMZ                                                -->
+        <!-- ============================================================ -->
+        <mxCell id="v60" value="VLAN 60 — DMZ  |  10.0.60.0/24  |  gw: 10.0.60.1  |  Pass → Internet  |  Block → All internal (per-service allows for Ariadne backends)" style="swimlane;startSize=30;fillColor=#ffebee;strokeColor=#b71c1c;fontColor=#7f0000;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="20" y="1290" width="1760" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="v60-ariadne" value="&lt;b&gt;Ariadne&lt;/b&gt; (nginx + certbot)&lt;br&gt;LXC 120 | 10.0.60.10&lt;br&gt;Reverse proxy + SSL termination&lt;br&gt;Proxies: ntfy · Umami · 8 media domains" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#b71c1c;fontSize=10;" vertex="1" parent="v60">
+          <mxGeometry x="10" y="40" width="190" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="v60-authelia" value="&lt;b&gt;Authelia&lt;/b&gt;&lt;br&gt;LXC 121 | 10.0.60.11&lt;br&gt;SSO / OIDC&lt;br&gt;Sits in front of NPM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#b71c1c;fontSize=10;" vertex="1" parent="v60">
+          <mxGeometry x="210" y="40" width="150" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="v60-wireguard" value="WireGuard VPN [PLANNED]&lt;br&gt;pfSense package&lt;br&gt;VPN termination at firewall" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#b71c1c;fontSize=10;strokeDash=4;" vertex="1" parent="v60">
+          <mxGeometry x="370" y="40" width="160" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="v60-crowdsec" value="Crowdsec IPS [PLANNED]&lt;br&gt;pfSense package&lt;br&gt;Behavioral IPS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#b71c1c;fontSize=10;strokeDash=4;" vertex="1" parent="v60">
+          <mxGeometry x="540" y="40" width="150" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="v60-suricata" value="Suricata [PLANNED]&lt;br&gt;pfSense package&lt;br&gt;Network IDS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#b71c1c;fontSize=10;strokeDash=4;" vertex="1" parent="v60">
+          <mxGeometry x="700" y="40" width="150" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="v60-squid" value="Squid [PLANNED]&lt;br&gt;pfSense package&lt;br&gt;Outbound forward proxy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#b71c1c;fontSize=10;strokeDash=4;" vertex="1" parent="v60">
+          <mxGeometry x="860" y="40" width="160" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="v60-fail2ban" value="Fail2ban [PLANNED]&lt;br&gt;Per-host&lt;br&gt;SSH + service brute force" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#b71c1c;fontSize=10;strokeDash=4;" vertex="1" parent="v60">
+          <mxGeometry x="1030" y="40" width="160" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- VLAN 66 — SANDBOX                                            -->
+        <!-- ============================================================ -->
+        <mxCell id="v66" value="VLAN 66 — Sandbox  |  10.0.66.0/24  |  Block → All internal  |  Block → Internet (default)  |  Ansible quarantine target" style="swimlane;startSize=30;fillColor=#eceff1;strokeColor=#37474f;fontColor=#263238;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="20" y="1450" width="1760" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="v66-label" value="Fully isolated — no internal access, no internet by default  |  quarantine.yml Ansible playbook moves devices here during incident response" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#37474f;" vertex="1" parent="v66">
+          <mxGeometry x="10" y="36" width="900" height="26" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- VLAN 70 — GUEST                                              -->
+        <!-- ============================================================ -->
+        <mxCell id="v70" value="VLAN 70 — Guest  |  10.0.70.0/24  |  gw: 10.0.70.1  |  Internet ONLY — no internal access" style="swimlane;startSize=30;fillColor=#fbe9e7;strokeColor=#795548;fontColor=#4e342e;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="20" y="1535" width="1760" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="v70-label" value="eero Pro 6 SSID 2: &quot;Guest&quot; → VLAN 70  |  Temporary and untrusted devices — internet only" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#4e342e;" vertex="1" parent="v70">
+          <mxGeometry x="10" y="36" width="700" height="26" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- VLAN 80 — MEDIA                                              -->
+        <!-- ============================================================ -->
+        <mxCell id="v80" value="VLAN 80 — Media  |  10.0.80.0/24  |  gw: 10.0.80.1  |  Block → All RFC1918  |  Pass → Internet (metadata APIs, torrents, updates)" style="swimlane;startSize=30;fillColor=#ede7f6;strokeColor=#4527a0;fontColor=#311b92;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="20" y="1620" width="1760" height="205" as="geometry" />
+        </mxCell>
+        <!-- TrueNAS hardware box -->
+        <mxCell id="v80-truenas" value="&lt;b&gt;TrueNAS Scale R710 (eno4)&lt;/b&gt;&lt;br&gt;10.0.80.5 | TrueNAS Scale 25.10.1&lt;br&gt;Dual Xeon X5650 | 94 GB ECC RAM&lt;br&gt;general_pool: RAIDZ1 4×3TB → 7.8TB raw&lt;br&gt;ssd_pool: 1×1TB (no redundancy)&lt;br&gt;Static routes back to VLANs 20, 50, 60 via 10.0.80.1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1c4e9;strokeColor=#4527a0;fontSize=10;fontStyle=1;align=left;spacingLeft=6;" vertex="1" parent="v80">
+          <mxGeometry x="10" y="40" width="225" height="140" as="geometry" />
+        </mxCell>
+        <!-- Apps container -->
+        <mxCell id="v80-apps" value="TrueNAS Scale Apps — co-located with ZFS storage (no NFS hop)" style="swimlane;startSize=25;fillColor=#ede7f6;strokeColor=#4527a0;fontColor=#311b92;fontStyle=1;fontSize=10;" vertex="1" parent="v80">
+          <mxGeometry x="245" y="35" width="1100" height="145" as="geometry" />
+        </mxCell>
+        <mxCell id="v80-jellyfin" value="&lt;b&gt;Jellyfin&lt;/b&gt;&lt;br&gt;Media server" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1c4e9;strokeColor=#4527a0;fontSize=10;" vertex="1" parent="v80-apps">
+          <mxGeometry x="10" y="33" width="110" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="v80-abs" value="&lt;b&gt;Audiobookshelf&lt;/b&gt;&lt;br&gt;Audiobooks + podcasts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1c4e9;strokeColor=#4527a0;fontSize=10;" vertex="1" parent="v80-apps">
+          <mxGeometry x="130" y="33" width="120" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="v80-navidrome" value="&lt;b&gt;Navidrome&lt;/b&gt;&lt;br&gt;Music streaming" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1c4e9;strokeColor=#4527a0;fontSize=10;" vertex="1" parent="v80-apps">
+          <mxGeometry x="260" y="33" width="115" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="v80-calibre" value="&lt;b&gt;CalibreWeb&lt;/b&gt;&lt;br&gt;Ebooks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1c4e9;strokeColor=#4527a0;fontSize=10;" vertex="1" parent="v80-apps">
+          <mxGeometry x="385" y="33" width="110" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="v80-immich" value="&lt;b&gt;Immich&lt;/b&gt;&lt;br&gt;Photo library" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1c4e9;strokeColor=#4527a0;fontSize=10;" vertex="1" parent="v80-apps">
+          <mxGeometry x="505" y="33" width="110" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="v80-jellyseerr" value="&lt;b&gt;Jellyseerr&lt;/b&gt;&lt;br&gt;Request UI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1c4e9;strokeColor=#4527a0;fontSize=10;" vertex="1" parent="v80-apps">
+          <mxGeometry x="625" y="33" width="110" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="v80-arr" value="*Arr Stack&lt;br&gt;Radarr · Sonarr · Lidarr&lt;br&gt;Readarr · Prowlarr · Bazarr" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1c4e9;strokeColor=#4527a0;fontSize=10;" vertex="1" parent="v80-apps">
+          <mxGeometry x="745" y="33" width="155" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="v80-qbit" value="&lt;b&gt;qBittorrent&lt;/b&gt;&lt;br&gt;Downloads" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1c4e9;strokeColor=#4527a0;fontSize=10;" vertex="1" parent="v80-apps">
+          <mxGeometry x="910" y="33" width="110" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="v80-libation" value="&lt;b&gt;Libation&lt;/b&gt; [PLANNED]&lt;br&gt;Audible pull → ABS&lt;br&gt;headless Docker" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede7f6;strokeColor=#4527a0;fontSize=10;strokeDash=4;" vertex="1" parent="v80-apps">
+          <mxGeometry x="1030" y="33" width="55" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- PHYSICAL HARDWARE SIDEBAR                                    -->
+        <!-- ============================================================ -->
+        <mxCell id="hw0" value="PHYSICAL HARDWARE" style="swimlane;startSize=30;fillColor=#f5f5f5;strokeColor=#424242;fontColor=#212121;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1810" y="245" width="560" height="1580" as="geometry" />
+        </mxCell>
+        <mxCell id="hw-t150" value="&lt;b&gt;Dell EMC PowerEdge T150&lt;/b&gt;&lt;br&gt;Intel Xeon E-2378 | 62 GB RAM&lt;br&gt;eno8303 → vmbr0 (WAN bridge)&lt;br&gt;eno8403 → vmbr1 (VLAN trunk, all VLANs)&lt;br&gt;Storage: local-lvm (1.7TB SSD) + general-store (ZFS 11.5TB)&lt;br&gt;GPU slot open — RTX 3060 / Arc B580 planned" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#424242;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="hw0">
+          <mxGeometry x="10" y="40" width="535" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="hw-r710" value="&lt;b&gt;Dell PowerEdge R710 (TrueNAS Scale)&lt;/b&gt;&lt;br&gt;Dual Xeon X5650 @ 2.67 GHz (24 threads)&lt;br&gt;94.4 GB ECC RAM | TrueNAS Scale 25.10.1&lt;br&gt;eno1 = VLAN 10 (10.0.10.30) — management + PBS&lt;br&gt;eno4 = VLAN 80 (10.0.80.5) — media serving&lt;br&gt;general_pool: RAIDZ1 4×3TB SAS → 7.8TB raw (4.79TB free)&lt;br&gt;ssd_pool: 1×1TB SSD — no redundancy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#424242;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="hw0">
+          <mxGeometry x="10" y="155" width="535" height="135" as="geometry" />
+        </mxCell>
+        <mxCell id="hw-helm" value="&lt;b&gt;Helm HPS20 — helm-log (Iris)&lt;/b&gt;&lt;br&gt;Hexacore ARM (2×Cortex-A72 1.8GHz + 4×Cortex-A53 1.4GHz)&lt;br&gt;1 TB NVMe | Armbian | 10.0.10.25 (VLAN 10)&lt;br&gt;ntfy broker :2586 — topics: provisioning, general-operations, argus&lt;br&gt;Phase 3: syslog-ng + Vector log collector for Argus&lt;br&gt;MAC: 72:c6:b9:0d:32:ac" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#424242;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="hw0">
+          <mxGeometry x="10" y="300" width="535" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="hw-switch" value="&lt;b&gt;TP-Link T1600G-28PS Managed Switch&lt;/b&gt;&lt;br&gt;10.0.10.50 | LACP-capable&lt;br&gt;Port 1 = trunk to T150 (all VLANs tagged)&lt;br&gt;VLANs: 10/20/30/40/50/60/66/70/80 — all applied via IaC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#424242;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="hw0">
+          <mxGeometry x="10" y="430" width="535" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="hw-eero" value="&lt;b&gt;eero Pro 6 (Bridge Mode)&lt;/b&gt;&lt;br&gt;10.0.20.100 | WiFi 6 tri-band&lt;br&gt;SSID 1: &quot;HUGE Tracts of LAN&quot; → VLAN 20 (Personal)&lt;br&gt;SSID 2: &quot;Guest&quot; → VLAN 70&lt;br&gt;⚠ 2 SSID limit — TV + Nintendo Switch remain on VLAN 20&lt;br&gt;UniFi AP upgrade planned (post-June) for true IoT isolation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#424242;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="hw0">
+          <mxGeometry x="10" y="520" width="535" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="hw-idle" value="&lt;b&gt;Undeployed / Reserve Hardware&lt;/b&gt;&lt;br&gt;Raspberry Pi 2 — idle&lt;br&gt;Raspberry Pi 3 — candidate: Pi-hole or Home Assistant&lt;br&gt;Arduino Uno (2–3×) — IoT sensor/automation nodes&lt;br&gt;Helm HPS10 — idle (needs reflash)&lt;br&gt;Reserve eero Pro 6 — mesh expansion or spare" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#999999;fontSize=11;align=left;spacingLeft=8;strokeDash=4;" vertex="1" parent="hw0">
+          <mxGeometry x="10" y="645" width="535" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="hw-avail" value="&lt;b&gt;Available VMIDs:&lt;/b&gt; 103, 109, 111–119, 123–199, 201+&lt;br&gt;&lt;b&gt;Available IPs:&lt;/b&gt; VLAN 50 → 10.0.50.19+  |  VLAN 60 → 10.0.60.12+" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f9a825;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="hw0">
+          <mxGeometry x="10" y="765" width="535" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- EXTERNAL / CLOUD                                             -->
+        <!-- ============================================================ -->
+        <mxCell id="ext0" value="EXTERNAL" style="swimlane;startSize=30;fillColor=#e8eaf6;strokeColor=#283593;fontColor=#1a237e;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="20" y="1840" width="1760" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="ext-sirhexx" value="&lt;b&gt;sirhexx.com&lt;/b&gt;&lt;br&gt;→ WAN IP (DDNS)&lt;br&gt;→ Ariadne 10.0.60.10 (NPM)&lt;br&gt;ntfy · Umami · 8 media subdomains" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c5cae9;strokeColor=#283593;fontSize=10;" vertex="1" parent="ext0">
+          <mxGeometry x="10" y="40" width="225" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="ext-uptime" value="&lt;b&gt;Uptime Kuma&lt;/b&gt; [PLANNED]&lt;br&gt;External VPS (provider TBD)&lt;br&gt;Outside-in DMZ service monitoring" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8eaf6;strokeColor=#283593;fontSize=10;strokeDash=4;" vertex="1" parent="ext0">
+          <mxGeometry x="245" y="40" width="210" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="ext-hexxusweb" value="&lt;b&gt;hexxusweb.com&lt;/b&gt;&lt;br&gt;Professional / portfolio&lt;br&gt;(reserved — not homelab-hosted)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c5cae9;strokeColor=#283593;fontSize=10;" vertex="1" parent="ext0">
+          <mxGeometry x="465" y="40" width="200" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="ext-ddns" value="DDNS / DNS&lt;br&gt;External DNS for sirhexx.com → WAN IP&lt;br&gt;Internal DNS: pfSense DNS Resolver (static mappings)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c5cae9;strokeColor=#283593;fontSize=10;" vertex="1" parent="ext0">
+          <mxGeometry x="675" y="40" width="320" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- CONNECTIONS                                                   -->
+        <!-- ============================================================ -->
+
+        <!-- Internet → T150 (WAN) -->
+        <mxCell id="e-internet-t150" value="WAN" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6c8ebf;strokeWidth=3;fontStyle=1;" edge="1" source="101" target="102" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- T150 → TP-Link (VLAN trunk) -->
+        <mxCell id="e-t150-switch" value="VLAN trunk" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#333333;strokeWidth=3;fontStyle=1;" edge="1" source="102" target="103" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- TP-Link → pfSense (VLAN distribution) -->
+        <mxCell id="e-switch-pfsense" value="VLANs tagged" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#d6b656;strokeWidth=2;fontStyle=1;" edge="1" source="103" target="200" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Ariadne → Umami (cross-VLAN reverse proxy) -->
+        <mxCell id="e-ariadne-umami" value="proxy :3000" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#b71c1c;strokeWidth=1;dashed=1;endArrow=open;endFill=0;fontSize=9;" edge="1" source="v60-ariadne" target="v50-umami" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Ariadne → TrueNAS VLAN 80 (media reverse proxy) -->
+        <mxCell id="e-ariadne-truenas" value="media proxy" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#b71c1c;strokeWidth=1;dashed=1;endArrow=open;endFill=0;fontSize=9;" edge="1" source="v60-ariadne" target="v80-truenas" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Ariadne → helm-log ntfy -->
+        <mxCell id="e-ariadne-ntfy" value="proxy :2586" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#b71c1c;strokeWidth=1;dashed=1;endArrow=open;endFill=0;fontSize=9;" edge="1" source="v60-ariadne" target="v10-helmlog" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- External → Ariadne (inbound HTTPS) -->
+        <mxCell id="e-ext-ariadne" value="HTTPS inbound" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#283593;strokeWidth=2;dashed=1;fontStyle=1;" edge="1" source="ext-sirhexx" target="v60-ariadne" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
