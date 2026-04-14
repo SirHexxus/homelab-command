@@ -6,14 +6,19 @@ default_context: personal
 ollama_base_url: "http://10.0.50.10:11434"
 
 gemini_api_key: "{{ gemini_api_key | default('') }}"
+claude_model: sonnet
+
+model_routing:
+  classify:   local
+  wiki_read:  local
+  wiki_write: gemini
+  synthesis:  gemini
+  judgment:   claude
+  report:     gemini
+  embed:      nomic
+  transcribe: whisper
+  default:    local
 
 mnemosyne:
-  postgres_host: 10.0.50.14
-  postgres_port: 5432
-  postgres_db: mnemosyne
-  postgres_user: hermes
-  postgres_password: "{{ mnemosyne_db_password }}"
-
-routing:
-  ollama_max_complexity: 3.0
-  gemini_max_complexity: 7.0
+  wiki_path: /opt/hermes/wiki
+  wiki_remote: "git@github.com:SirHexxus/wiki.git"

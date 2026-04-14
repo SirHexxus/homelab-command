@@ -45,18 +45,17 @@
 # Clone as root so /opt/hermes is created cleanly, then fix ownership.
 # =============================================================================
 
-- name: Check if repo already cloned
-  stat:
-    path: "{{ hermes_install_dir }}/.git"
-  register: hermes_git_dir
+- name: Mark install dir as git safe directory
+  command: git config --system --add safe.directory {{ hermes_install_dir }}
+  changed_when: false
 
-- name: Clone homelab-command repository
+- name: Clone or update homelab-command repository
   git:
     repo: "{{ hermes_repo }}"
     dest: "{{ hermes_install_dir }}"
     version: main
+    update: yes
     force: no
-  when: not hermes_git_dir.stat.exists
 
 - name: Set ownership of install directory
   file:
