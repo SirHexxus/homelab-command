@@ -1,14 +1,14 @@
 # Homelab Command Project — Project Roadmap
-**Version:** 1.6
-**Last Updated:** 2026-04-03
-**North Star:** Kaiser Permanente CRDC Consultant III (SOC Analyst) — application target June 2, 2026
+**Version:** 1.7
+**Last Updated:** 2026-04-13
+**Philosophy:** See `docs/homelab-philosophy-v1.0.md` for the values and goals behind this homelab.
 
 ---
 
 ## Project Structure
 
 ### Homelab Command Project
-All homelab infrastructure, security, CRDC certification prep, and portfolio work.
+All homelab infrastructure, security work, certification prep, and portfolio documentation.
 References Coding Project style guides for any scripting/development work.
 
 ### Coding Project (Separate)
@@ -28,7 +28,8 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 |----------|---------|--------|
 | Hardware Catalog | v1.2 | ✅ Complete |
 | Network & Services Architecture | v1.6 | ✅ Complete |
-| Project Roadmap | v1.4 | ✅ This document |
+| Homelab Philosophy | v1.0 | ✅ Complete |
+| Project Roadmap | v1.7 | ✅ This document |
 | Mnemosyne Design Doc | v1.2 | ✅ Complete |
 | IaC Runbook | v1.2 | ✅ Complete |
 | Argus Design Doc | v1.2 | ✅ Complete |
@@ -46,9 +47,13 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 
 ---
 
-## North Star & Timeline
+## Current pursuits & timeline
 
-**Target:** CRDC Consultant III (SOC Analyst) application — June 2, 2026
+The phases below are structured around a current pursuit: the Kaiser Permanente CRDC Consultant III
+(SOC Analyst) application, targeting June 2, 2026. This is a short-term goal, not the permanent
+purpose of the homelab. See `docs/homelab-philosophy-v1.0.md` for the full list of current pursuits
+and the goals that outlast any of them.
+
 **Timeline:** 16 weeks from February 16, 2026
 
 ---
@@ -112,37 +117,40 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 **Duration:** Weeks 5–7 | **Target:** April 5, 2026
 
 ### Hermes (AI Agent)
-- [ ] Hermes Phase 2: Gemini/Claude LLM router + web skill + email skill
-- [ ] Hermes Phase 2: Mnemosyne skill (Postgres + pgvector integration)
-- [ ] Hermes Phase 3: Register Telegram bots (@BotFather) + implement telegram_bot.py
-- [ ] Hermes Phase 5: n8n MCP integration (blocker resolved — n8n at 10.0.50.13)
+- [x] Hermes Phase 2: LLM router (Gemini + Claude clients, task_type routing)
+- [x] Hermes Phase 2: Wiki skill (`lib/skills/wiki.py` — 7 read/write operations)
+- [x] Hermes Phase 2: HTTP endpoint (`/task` + `/health`) for n8n integration
+- [x] Hermes Phase 2: `IngestItem` dataclass (`lib/core/ingest.py`)
+- [ ] Hermes Phase 2: Deploy Hermes LXC (10.0.50.17) — final Phase 2 item
+- [ ] Hermes Phase 3: Register Telegram bots (@BotFather) + implement `telegram_bot.py`
+- [ ] Hermes Phase 5: n8n MCP integration (n8n at 10.0.50.13)
 
 ### Google Cybersecurity Certificate
 - [ ] Complete Courses 5–8
 - [ ] Certificate earned
 - [ ] Resume updated
 
-### Mnemosyne (Rebuild on VLAN 50)
-- [ ] Create REFERENCE, JOURNAL, PURSUIT Notion databases; update IDs in Mnemosyne Design Doc
-- [ ] Rebuild Telegram capture + classification workflow with model routing logic
-- [ ] Add Entity Resolution step for Compound buckets
-- [ ] Rebuild Notion database writes (all 7 buckets)
-- [ ] Add pgvector embedding step to ingestion pipeline
-- [ ] Test end-to-end: Telegram note → Postgres → Notion → confirmation
-- [ ] Build /search and /ask Telegram commands
-- [ ] Build Daily Digest and Serendipity Engine
-- [ ] Build Weekly Summary and Idea Synthesis Report
-- [ ] Add voice memo path (Telegram → Whisper → pipeline)
+### Mnemosyne (Wiki pipeline)
+- [x] Architecture: Design doc updated to git wiki model; `SCHEMA.md` written; `IngestItem` spec documented
+- [x] Foundation: Wiki scaffold created (`~/mneme/wiki/`) — 7 bucket directories, `SCHEMA.md`, `index.md`, `log.md`
+- [ ] Foundation: Create private GitHub remote for wiki repo; configure Obsidian vault + git plugin + Dataview plugin
+- [ ] Foundation: Grant Hermes LXC deploy key write access to wiki repo
+- [ ] Ingest pipeline: n8n Telegram webhook workflow (text + voice + file attachment paths)
+- [ ] Ingest pipeline: End-to-end test — Telegram note → wiki page → Obsidian
+- [ ] Retrieval: `/search` and `/ask` Telegram commands via Hermes ReAct loop
+- [ ] Retrieval: n8n Chat Trigger as secondary capture/query interface
+- [ ] Reports: Daily Digest, Serendipity Engine, Weekly Summary, Idea Synthesis Report
+- [ ] Extended sources: Email ingestion, URL capture, Obsidian Web Clipper inbox processing
 
 ### IaC Tooling / Claude Code Agents
 - [ ] Write project agent: `mnemosyne-pipeline-engineer` — n8n workflow architect for
-  7-bucket system; needs Ollama embed endpoint, n8n webhook URL, workflow JSON sample,
-  Notion DB IDs
+  7-bucket wiki system; needs Ollama embed endpoint, n8n webhook URL, workflow JSON sample,
+  `SCHEMA.md` from wiki repo, `IngestItem` dataclass definition
 - [ ] Write project agent: `hermes-python-architect` — knows agent_loop.py, skill_registry.py,
   context.py, audit.py internals; needs skill registration snippet, context dataclass fields,
   audit.py pattern, `/opt/hermes/` layout post-provisioning
 - [ ] Hermes Layer A: add `<!-- ollama-prompt -->` sections to security-engineer +
-  workflow-optimizer agents (Mistral 7B-sized; store in `mnemosyne.agent_prompts` Postgres table)
+  workflow-optimizer agents (Mistral 7B-sized; store as `.md` files alongside each agent definition)
 
 ### Domain Migration (Namecheap → Porkbun)
 > Earliest eligible: ~April 2, 2026 (60-day ICANN transfer window from February renewal)
@@ -212,7 +220,7 @@ Not duplicated here — referenced by Homelab when scripting work arises.
 - [x] Deploy nginx + certbot (10.0.60.10) — native reverse proxy; no Docker inside LXC
 - [ ] Configure WireGuard (pfSense package)
 - [ ] Configure Squid (pfSense package)
-- [ ] Configure pfSense Dynamic DNS (*.sirhexx.com wildcard → Namecheap)
+- [ ] Configure pfSense Dynamic DNS (*.sirhexx.com wildcard → DNS provider)
 - [ ] Deploy Authelia (10.0.60.11)
 - [x] Deploy Umami (10.0.50.18) — analytics for sirhexx.com / hexxusweb.com
 - [ ] Configure Crowdsec (pfSense package)
@@ -306,6 +314,8 @@ Houses general-purpose development standards referenced when scripting work aris
 
 ## Version History
 
+- v1.8 (2026-04-13): Update Phase 2 to reflect actual current state — Hermes Phase 2 items checked off, Mnemosyne section rewritten for git wiki model (Notion/pgvector architecture retired), IaC Tooling agent specs corrected
+- v1.7 (2026-04-13): Remove "North Star" framing; replace with philosophy doc reference and Current Pursuits framing; add Homelab Philosophy to Document Registry
 - v1.6 (2026-04-03): All Orpheus media services stay on TrueNAS Scale (no VLAN 80 LXC migration); Docker VM renamed Hephaestus; Portainer Server LXC back-burnered
 - v1.5 (2026-03-18): Checked off switch trunk/access port configuration (applied to live switch today)
 - v1.4 (2026-03-11): Added IaC Tooling / Claude Code Agents sections to Phases 1–3 and 5;
