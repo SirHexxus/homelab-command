@@ -58,9 +58,10 @@ Key cross-VLAN allows (non-obvious rules):
 - DMZ (VLAN 60) → all VLAN 80 media service ports — Ariadne proxy for media subdomains
 - Management (VLAN 10) → all VLANs — full admin access
 
-See `docs/network-services-architecture-v1.9.md` §4 for complete firewall rules.
+See `docs/network-services-architecture-v1.6.md` §4 for complete firewall rules.
 
 ## Notes
 
 - `roles_path` for network services is 3-level: `roles:../../../ansible/roles`
 - See root `CLAUDE.md` for full VLAN topology and IaC conventions
+- See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all homelab decisions.

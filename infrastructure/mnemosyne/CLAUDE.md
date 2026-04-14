@@ -9,6 +9,8 @@ For the wiki skills themselves, see `apps/hermes/CLAUDE.md`.
 Read `infrastructure/mnemosyne/ToDo.md` for the current task backlog. Do not build pipeline
 components not in the backlog without checking first.
 
+See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all homelab decisions.
+
 ## Architecture (Current)
 
 Mnemosyne is not a standalone host. It is a pipeline layer across shared infrastructure.

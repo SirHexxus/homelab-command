@@ -9,6 +9,8 @@ Python application code for the Hermes AI agent — a ReAct (Reason + Act) loop 
 tasks in natural language and executes them autonomously. For the LXC provisioning IaC, see
 `infrastructure/hermes/CLAUDE.md`.
 
+See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all homelab decisions.
+
 ## Components
 
 The application runs on a single LXC (VMID 110, 10.0.50.17, VLAN 50).
