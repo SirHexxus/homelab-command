@@ -10,6 +10,7 @@ rich>=13.0,<14             # CLI output formatting
 google-generativeai>=0.8,<1    # Gemini SDK (wiki_write, synthesis, report tasks)
 filelock>=3.13,<4              # Wiki git commit lock (wiki.py)
 flask>=3.0,<4                  # Minimal HTTP interface for n8n integration (/task, /health)
+gunicorn>=21.0,<24             # WSGI server for Flask API
 # Note: Claude tier uses `claude -p` subprocess — no anthropic SDK needed
 
 # ── Phase 3 (uncomment when implementing) ─────────────────────────────────────
