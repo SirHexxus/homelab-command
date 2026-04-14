@@ -92,4 +92,5 @@ Additional escalation triggers:
 
 ## Reference
 
-Design doc: `docs/orpheus-design-doc-v1.1.md`. VLAN topology: see root `CLAUDE.md`
+Design doc: `docs/orpheus-design-doc-v1.1.md`. VLAN topology: see root `CLAUDE.md`.
+See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all homelab decisions.

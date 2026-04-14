@@ -55,4 +55,5 @@ Stop and confirm if the work involves any of the following:
 
 ## Reference
 
-IaC conventions: see root `CLAUDE.md`
+IaC conventions: see root `CLAUDE.md`.
+See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all homelab decisions.

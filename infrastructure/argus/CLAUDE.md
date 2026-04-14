@@ -8,6 +8,8 @@ When Phase 3 begins: read `docs/argus-design-doc-v1.2.md` in full before writing
 Check `.claude/agents/homelab-iac-specialist.md` for current VMID allocations before
 assigning VMIDs to the planned LXCs.
 
+See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all homelab decisions.
+
 ## Definition of Done
 
 - Splunk Free LXC deployed and receiving logs from all sources

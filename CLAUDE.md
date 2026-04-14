@@ -4,6 +4,8 @@ Monorepo for the full homelab infrastructure: Terraform + Ansible for all servic
 IaC (pfSense + switch), application code (Hermes), and design docs. Single Proxmox node
 (puppetmaster) hosts everything via LXC containers and VMs.
 
+**Philosophy:** `docs/homelab-philosophy-v1.0.md` - the values and principles behind every decision in this repo.
+
 ## Focused Sessions
 
 **Start Claude from the service directory, not the repo root**, when working on a specific
@@ -26,7 +28,7 @@ cd infrastructure/platform/postgres && claude   # Postgres-focused
 | **Ariadne** | `infrastructure/ariadne/` | NPM (VMID 120, 10.0.60.10), Authelia (VMID 121, 10.0.60.11), Umami (VMID 122, 10.0.50.18) | 60 / 50 | Deployed |
 | **Hermes** | `infrastructure/hermes/` | LXC VMID 110, 10.0.50.17 | 50 | IaC written — pending deploy |
 | **Iris** | `infrastructure/iris/` | Bare metal: 10.0.10.25 (Helm HPS20) | 10 | ntfy deployed; logging Phase 3 |
-| **Mnemosyne** | `infrastructure/mnemosyne/` | No dedicated host — uses shared Postgres | 50 | Designed — Phase 2 |
+| **Mnemosyne** | `infrastructure/mnemosyne/` | No dedicated host — wiki at `~/mneme/wiki/`, served by Hermes | 50 | Phase 2 — pipeline pending |
 | **Orpheus** | `infrastructure/orpheus/` | TrueNAS R710 eno4: 10.0.80.5 (13+ TrueNAS Scale apps) | 80 | Apps running; *Arr reconfiguration pending |
 | **Hephaestus** | `infrastructure/hephaestus/` *(planned)* | VM 10.0.50.30 — Docker Compose host | 50 | Planned — post-June |
 | **Postgres** | `infrastructure/platform/postgres/` | LXC VMID 105, 10.0.50.14 | 50 | Deployed |
@@ -47,6 +49,16 @@ cd infrastructure/platform/postgres && claude   # Postgres-focused
 ## IaC Conventions
 
 These apply to every service in the repo. Service CLAUDE.md files do not repeat them.
+
+### OS / platform
+- Linux-first; Debian and Debian derivatives (Ubuntu, Proxmox VE) are the default
+- Other distros only when they are clearly the right tool
+
+### Deployment model
+- LXC (unprivileged) is always preferred
+- Docker services go on a dedicated Docker host VM (Hephaestus, 10.0.50.30) — not in an LXC
+- Docker Compose on that VM is managed via Ansible; `compose.yaml` lives in IaC as Source of Truth
+- Docker-in-LXC: absolute last resort
 
 ### Terraform
 - Provider: `bpg/proxmox` version `0.96.0` — no exceptions
@@ -109,9 +121,11 @@ These apply to every service in the repo. Service CLAUDE.md files do not repeat 
 
 | Doc | Purpose |
 |-----|---------|
-| `docs/network-services-architecture-v1.9.md` | VLAN topology, firewall rules, full IP schema |
+| `docs/homelab-philosophy-v1.0.md` | Values and principles behind all homelab decisions — read this first |
+| `docs/README.md` | Full document index |
+| `docs/network-services-architecture-v1.6.md` | VLAN topology, firewall rules, full IP schema |
 | `docs/iac-runbook-v1.2.md` | Deployment procedures, secrets management, Ansible patterns |
-| `docs/project-roadmap-v1.4.md` | Phased delivery schedule |
+| `docs/project-roadmap-v1.4.md` | Phased delivery schedule and current pursuits |
 | `docs/argus-design-doc-v1.2.md` | Argus SIEM architecture |
 | `docs/ariadne-design-doc-v1.0.md` | DMZ and perimeter design |
 | `docs/hermes-design-doc-v1.0.md` | Hermes AI agent architecture |

@@ -16,7 +16,7 @@ was provisioned manually).
 
 | Database | Owner service | Purpose |
 |----------|--------------|---------|
-| `mnemosyne` | Mnemosyne | Knowledge base — pgvector embeddings, 7 bucket tables |
+| `mnemosyne` | Mnemosyne | Legacy DB — pgvector design retired; wiki moved to git repo; DB exists but unused |
 | `argus_logs` | Argus | Security event log store — TimescaleDB hypertables |
 | `n8n` | n8n | Workflow state and execution history |
 | `umami` | Umami | Web analytics for Ariadne-proxied services |
@@ -68,4 +68,5 @@ These are PM-scope decisions.
 
 ## Reference
 
-IaC conventions: see root `CLAUDE.md`
+IaC conventions: see root `CLAUDE.md`.
+See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all homelab decisions.
