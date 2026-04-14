@@ -7,20 +7,22 @@
 
 ## 1. Purpose & Philosophy
 
+See `docs/homelab-philosophy-v1.0.md` for the broader goals this service supports. Orpheus is the most direct expression of the family services and cost-saving goals: it gives family members real, accessible alternatives to paid streaming and cloud services, owned and operated locally.
+
 The Orpheus provides a self-hosted, family-accessible media platform covering video, photos, audiobooks, ebooks, music, podcasts, comics/manga, and ROMs. It replaces cloud services (Google Photos, Audible, streaming) with owned infrastructure wherever practical.
 
 **Design principles:**
-- Files live on TrueNAS (ZFS — data integrity, RAID protection). Services run as TrueNAS Scale apps, co-located with storage for direct ZFS dataset access.
+- Files live on TrueNAS (ZFS - data integrity, RAID protection). Services run as TrueNAS Scale apps, co-located with storage for direct ZFS dataset access.
 - Every content type has exactly one authoritative service. No duplication of function.
-- File organization is standardized and enforced by automation — not manual effort.
+- File organization is standardized and enforced by automation - not manual effort.
 - Remote access for family is a first-class requirement, not an afterthought.
 - Active content types (video, photos, audiobooks, music, podcasts) are fully built out. Lower-priority types (comics, ROMs) are documented and deployable but not blocking.
 
 **Hosting split:**
-- **TrueNAS Scale apps** — all media delivery and management services: Jellyfin, Audiobookshelf, CalibreWeb, Navidrome, Immich, Jellyseerr, Komga, RomM, Azuracast, *Arr stack, qBittorrent, Calibre, Libation
-- **TrueNAS ZFS** — all media files; apps access datasets directly via bind mounts (no NFS hop)
+- **TrueNAS Scale apps** - all media delivery and management services: Jellyfin, Audiobookshelf, CalibreWeb, Navidrome, Immich, Jellyseerr, Komga, RomM, Azuracast, *Arr stack, qBittorrent, Calibre, Libation
+- **TrueNAS ZFS** - all media files; apps access datasets directly via bind mounts (no NFS hop)
 
-**Note:** Docker-native homelab services (wger, future Nextcloud, Vaultwarden) run on **Hephaestus** (shared Docker VM, 10.0.50.30, VLAN 50) — a separate homelab project with its own IaC. Orpheus has no services running on Hephaestus.
+**Note:** Docker-native homelab services (wger, future Nextcloud, Vaultwarden) run on **Hephaestus** (shared Docker VM, 10.0.50.30, VLAN 50) - a separate homelab project with its own IaC. Orpheus has no services running on Hephaestus.
 
 ---
 
@@ -33,7 +35,7 @@ The Orpheus provides a self-hosted, family-accessible media platform covering vi
 | Kids Movies/Shows | Jellyfin (separate libraries) | TrueNAS Scale app | Radarr / Sonarr | qBittorrent | Active |
 | Anime Shows | Jellyfin (separate library) | TrueNAS Scale app | Sonarr | qBittorrent | Active |
 | Internet Videos | Jellyfin (separate library) | TrueNAS Scale app | Manual / yt-dlp | yt-dlp | Active |
-| Photos | Immich | TrueNAS Scale app | Immich (self-managing) | — | Active |
+| Photos | Immich | TrueNAS Scale app | Immich (self-managing) | - | Active |
 | Audiobooks | Audiobookshelf | TrueNAS Scale app | Libation / Readarr | qBittorrent | Active |
 | Ebooks (Fiction) | CalibreWeb | TrueNAS Scale app | Calibre / Readarr | qBittorrent | Active |
 | Ebooks (Non-Fiction) | CalibreWeb | TrueNAS Scale app | Calibre / Readarr | qBittorrent | Active |
@@ -42,13 +44,13 @@ The Orpheus provides a self-hosted, family-accessible media platform covering vi
 | Podcasts | Audiobookshelf | TrueNAS Scale app | ABS (native) | ABS (native) | Active |
 | Comics/Manga | Komga | TrueNAS Scale app | Manual import | Manual | Deferred |
 | ROMs | RomM + EmulatorJS | TrueNAS Scale app | Manual import | Manual | Deferred |
-| Internet Radio | Azuracast | TBD | — | — | Post-June |
+| Internet Radio | Azuracast | TBD | - | - | Post-June |
 
 ---
 
 ## 3. Infrastructure
 
-### 3.1 VLAN 80 — Media (New)
+### 3.1 VLAN 80: Media (New)
 
 VLAN 80 is created specifically for media-serving services. It has its own firewall policy distinct from Lab Services (VLAN 50) and DMZ (VLAN 60), allowing family device access without routing through infrastructure VLANs.
 
@@ -56,13 +58,13 @@ VLAN 80 is created specifically for media-serving services. It has its own firew
 - Allow: access from trusted family devices (personal device VLAN)
 - Allow: outbound internet (metadata fetching, subtitle downloads)
 - Block: access to VLAN 10 (Management), VLAN 50 (Lab), VLAN 60 (DMZ) except via defined rules
-- Remote access via NGINX Proxy Manager (DMZ) only — not direct external access
+- Remote access via NGINX Proxy Manager (DMZ) only - not direct external access
 
 **Note:** VLAN 80 is documented in Network & Services Architecture v1.6.
 
-### 3.2 TrueNAS Scale Apps — Media Delivery (VLAN 80)
+### 3.2 TrueNAS Scale Apps: Media Delivery (VLAN 80)
 
-All media delivery services run as TrueNAS Scale apps on the R710, accessible via eno4 (10.0.80.5). They access media datasets directly via ZFS bind mounts — no NFS hop.
+All media delivery services run as TrueNAS Scale apps on the R710, accessible via eno4 (10.0.80.5). They access media datasets directly via ZFS bind mounts - no NFS hop.
 
 | Service | Port | Notes |
 |---------|------|-------|
@@ -76,11 +78,11 @@ All media delivery services run as TrueNAS Scale apps on the R710, accessible vi
 | RomM | 8998 | ROM library + EmulatorJS (deferred) |
 | Azuracast | TBD | Internet radio (post-June) |
 
-### 3.3 Hephaestus (Docker VM) — VLAN 50 (Lab Services)
+### 3.3 Hephaestus (Docker VM): VLAN 50 (Lab Services)
 
-Hephaestus (10.0.50.30) is the homelab-wide shared Docker VM — a separate project with its own IaC (`infrastructure/hephaestus/`). Orpheus has no services running on Hephaestus. Future Productivity Stack services (Nextcloud, Vaultwarden) will run there but are out of scope for this document. See the Hephaestus Design Doc (planned).
+Hephaestus (10.0.50.30) is the homelab-wide shared Docker VM - a separate project with its own IaC (`infrastructure/hephaestus/`). Orpheus has no services running on Hephaestus. Future Productivity Stack services (Nextcloud, Vaultwarden) will run there but are out of scope for this document. See the Hephaestus Design Doc (planned).
 
-### 3.4 TrueNAS Scale Apps — Download & File Management
+### 3.4 TrueNAS Scale Apps: Download and File Management
 
 | Service | Port | Notes |
 |---------|------|-------|
@@ -91,9 +93,9 @@ Hephaestus (10.0.50.30) is the homelab-wide shared Docker VM — a separate proj
 | Readarr | 8787 | Ebook/audiobook automation |
 | Bazarr | 6767 | Subtitle automation for Jellyfin |
 | qBittorrent | 8080 | Torrent download client |
-| Libation | — | Audible audiobook download (desktop app) |
-| Calibre | — | Ebook management (headless or desktop) |
-| yt-dlp | — | CLI; scripted via n8n or cron for internet video |
+| Libation | - | Audible audiobook download (desktop app) |
+| Calibre | - | Ebook management (headless or desktop) |
+| yt-dlp | - | CLI; scripted via n8n or cron for internet video |
 
 ### 3.5 Hardware
 
@@ -101,7 +103,7 @@ Hephaestus (10.0.50.30) is the homelab-wide shared Docker VM — a separate proj
 |----------|------|
 | Xeon E-2378 (main PVE node) | Hephaestus Docker VM (VLAN 50); no Orpheus services |
 | R710 TrueNAS | All media files (ZFS) + all Orpheus services (TrueNAS Scale apps) |
-| GPU (future) | Jellyfin hardware transcoding — would live in R710 or as PCI passthrough |
+| GPU (future) | Jellyfin hardware transcoding - would live in R710 or as PCI passthrough |
 
 ---
 
@@ -154,7 +156,7 @@ The *Arr stack enforces naming conventions for everything it manages. Manual imp
 
 ### 4.3 Storage Access
 
-All Orpheus services are TrueNAS Scale apps running on the same host as the ZFS pools. Each app is configured with direct bind mounts to the relevant dataset paths — no NFS involved.
+All Orpheus services are TrueNAS Scale apps running on the same host as the ZFS pools. Each app is configured with direct bind mounts to the relevant dataset paths - no NFS involved.
 
 **Read-only principle:** Serving services never write to media directories except where they own the content. Only *Arr apps and download clients write to Arr-managed directories.
 
@@ -205,24 +207,24 @@ Bazarr (fetches subtitles for new content)
 
 **Recyclarr** (deferred): syncs community quality profiles and custom formats into Radarr/Sonarr. Add once the stack is stable.
 
-### 5.3 Lidarr & Music — Special Considerations
+### 5.3 Lidarr & Music - Special Considerations
 
 Lidarr is album-centric by design, which creates friction with a singles/playlists-heavy library. Mitigation:
-- Configure Lidarr to monitor the "singles" album type — creates a virtual `{Artist} - Singles` folder per artist
+- Configure Lidarr to monitor the "singles" album type - creates a virtual `{Artist} - Singles` folder per artist
 - For existing disorganized music: import into Navidrome directly; use Lidarr for new acquisitions only
-- Playlists are managed in Navidrome — Lidarr does not touch them
+- Playlists are managed in Navidrome - Lidarr does not touch them
 
-### 5.4 Readarr & Books — Special Considerations
+### 5.4 Readarr & Books - Special Considerations
 
-Readarr handles acquisition; Calibre manages the library; CalibreWeb serves it. Libation remains preferred for Audible content. Readarr supports all three ebook categories via separate root folder configuration — one root folder per category pointing to the matching Calibre library directory.
+Readarr handles acquisition; Calibre manages the library; CalibreWeb serves it. Libation remains preferred for Audible content. Readarr supports all three ebook categories via separate root folder configuration - one root folder per category pointing to the matching Calibre library directory.
 
 ---
 
-## 6. Photos — Immich
+## 6. Photos - Immich
 
 ### 6.1 Role
 
-Immich is the long-term replacement for Google Photos — automatic mobile backup, facial recognition, shared libraries, familiar timeline UI. Runs as a TrueNAS Scale app alongside the rest of the Orpheus media stack, with direct access to the photos dataset on ZFS.
+Immich is the long-term replacement for Google Photos - automatic mobile backup, facial recognition, shared libraries, familiar timeline UI. Runs as a TrueNAS Scale app alongside the rest of the Orpheus media stack, with direct access to the photos dataset on ZFS.
 
 ### 6.2 Migration Path
 
@@ -242,9 +244,9 @@ Each family member gets their own Immich account. Shared libraries and albums fo
 
 ---
 
-## 7. Podcasts — ABS + Antennapod
+## 7. Podcasts - ABS + Antennapod
 
-Podcasts remain in Audiobookshelf. ABS handles RSS subscriptions, episode downloading, library organization, and progress sync via the gpodder protocol. Antennapod (Android) handles the listening experience — queue management, speed control, skip silence, chapter support — and syncs progress back to ABS.
+Podcasts remain in Audiobookshelf. ABS handles RSS subscriptions, episode downloading, library organization, and progress sync via the gpodder protocol. Antennapod (Android) handles the listening experience - queue management, speed control, skip silence, chapter support - and syncs progress back to ABS.
 
 **Fallback:** If ABS + Antennapod proves insufficient after real-world use, **Pinepods** is the documented next step.
 
@@ -256,8 +258,8 @@ Three domains are owned and assigned by purpose. All external services are subdo
 
 | Domain | Purpose | Notes |
 |--------|---------|-------|
-| sirhexx.com | Personal services — family-facing and homelab external access | Primary domain for all self-hosted service subdomains |
-| hexxusweb.com | Professional services — work and portfolio-facing | Reserved for professional/career use |
+| sirhexx.com | Personal services - family-facing and homelab external access | Primary domain for all self-hosted service subdomains |
+| hexxusweb.com | Professional services - work and portfolio-facing | Reserved for professional/career use |
 | bravelittlesalamander.com | Wife's domain | Held for future use |
 
 **Known sirhexx.com subdomains:**
@@ -269,7 +271,7 @@ Three domains are owned and assigned by purpose. All external services are subdo
 | audible.sirhexx.com | Audiobookshelf | Configured |
 | *(others TBD)* | Jellyseerr, CalibreWeb, Navidrome, Komga, RomM | Assign at deployment |
 
-**Note:** Additional configured subdomains not listed here — inventory at deployment time and update this registry.
+**Note:** Additional configured subdomains not listed here - inventory at deployment time and update this registry.
 
 ---
 
@@ -296,16 +298,16 @@ All remote-accessible services are exposed via NGINX Proxy Manager (DMZ, VLAN 60
 
 ## 10. Existing Library Cleanup
 
-Pre-deployment task — serving services will not scan correctly against unstructured directories.
+Pre-deployment task - serving services will not scan correctly against unstructured directories.
 
 ### 9.1 Priority Order
 
-1. **Movies & TV** — must be clean before Jellyfin + Radarr/Sonarr deployment
-2. **Music** — must be organized before Navidrome migration and Lidarr setup
-3. **Audiobooks** — Libation re-downloads come pre-organized; non-Audible files need `{Author}/{Title}/{Title}.m4b` structure
-4. **Ebooks** — import into Calibre once; Calibre manages structure thereafter
-5. **Comics/Manga** — rename to `{Series}/{Series} #{Issue}.cbz` before Komga import (deferred)
-6. **ROMs** — organize into `{System}/{Game}.{ext}` folders before RomM import (deferred)
+1. **Movies & TV** - must be clean before Jellyfin + Radarr/Sonarr deployment
+2. **Music** - must be organized before Navidrome migration and Lidarr setup
+3. **Audiobooks** - Libation re-downloads come pre-organized; non-Audible files need `{Author}/{Title}/{Title}.m4b` structure
+4. **Ebooks** - import into Calibre once; Calibre manages structure thereafter
+5. **Comics/Manga** - rename to `{Series}/{Series} #{Issue}.cbz` before Komga import (deferred)
+6. **ROMs** - organize into `{System}/{Game}.{ext}` folders before RomM import (deferred)
 
 ### 9.2 Cleanup Tools
 
@@ -323,8 +325,8 @@ Pre-deployment task — serving services will not scan correctly against unstruc
 
 | Service | Status | Notes |
 |---------|--------|-------|
-| Komga | Deferred — post-June | Comics library cleanup required first |
-| RomM + EmulatorJS | Deferred — post-June | ROM library organization required first |
+| Komga | Deferred - post-June | Comics library cleanup required first |
+| RomM + EmulatorJS | Deferred - post-June | ROM library organization required first |
 | Recyclarr | Deferred | Add after *Arr stack is stable |
 | Azuracast | Post-June | Internet radio; pairs with Navidrome music library |
 | Pinepods | Contingency | Only if ABS + Antennapod proves insufficient |
@@ -338,19 +340,19 @@ Pre-deployment task — serving services will not scan correctly against unstruc
 |-------------------|--------|-------|
 | VLAN 80 (Media) | ✅ Done | pfSense + switch config applied |
 | Hephaestus Docker VM (VLAN 50) | Separate project | See Hephaestus Design Doc (planned) |
-| Jellyfin | Keep — configure in place | Already on TrueNAS Scale |
-| Audiobookshelf | Keep — configure in place | Already on TrueNAS Scale |
-| CalibreWeb | Keep — configure in place | Already on TrueNAS Scale |
-| Navidrome | Keep — configure in place | Already on TrueNAS Scale |
-| Immich | Keep — configure in place | Already on TrueNAS Scale |
-| Jellyseerr | Build fresh — TrueNAS Scale | New |
-| Prowlarr | Build fresh — TrueNAS Scale | New |
-| Radarr | Build fresh — TrueNAS Scale | New |
-| Sonarr | Build fresh — TrueNAS Scale | New |
-| Lidarr | Build fresh — TrueNAS Scale | New |
-| Readarr | Build fresh — TrueNAS Scale | New |
-| Bazarr | Build fresh — TrueNAS Scale | New |
-| qBittorrent | Build fresh — TrueNAS Scale | New |
+| Jellyfin | Keep - configure in place | Already on TrueNAS Scale |
+| Audiobookshelf | Keep - configure in place | Already on TrueNAS Scale |
+| CalibreWeb | Keep - configure in place | Already on TrueNAS Scale |
+| Navidrome | Keep - configure in place | Already on TrueNAS Scale |
+| Immich | Keep - configure in place | Already on TrueNAS Scale |
+| Jellyseerr | Build fresh - TrueNAS Scale | New |
+| Prowlarr | Build fresh - TrueNAS Scale | New |
+| Radarr | Build fresh - TrueNAS Scale | New |
+| Sonarr | Build fresh - TrueNAS Scale | New |
+| Lidarr | Build fresh - TrueNAS Scale | New |
+| Readarr | Build fresh - TrueNAS Scale | New |
+| Bazarr | Build fresh - TrueNAS Scale | New |
+| qBittorrent | Build fresh - TrueNAS Scale | New |
 | Google Photos → Immich migration | Planned | After Immich configured and stable |
 | Komga | Deferred | Post-June |
 | RomM | Deferred | Post-June |
@@ -362,12 +364,12 @@ Pre-deployment task — serving services will not scan correctly against unstruc
 Requires R710 TrueNAS reconnected (Phase 1 prerequisite).
 
 **Pre-deployment:**
-1. ✅ Reconnect R710 TrueNAS — live at 10.0.10.30
+1. ✅ Reconnect R710 TrueNAS - live at 10.0.10.30
 2. ✅ Create VLAN 80 in pfSense + managed switch; set firewall policy
 3. Clean up Movies + TV library (FileBot) before reconfiguring Radarr/Sonarr
 4. Clean up Music library (MusicBrainz Picard) before reconfiguring Navidrome/Lidarr
 
-**Configure existing media services (TrueNAS Scale — in place):**
+**Configure existing media services (TrueNAS Scale - in place):**
 5. Configure Immich family accounts + mobile backup on all devices
 6. Reconfigure Jellyfin libraries (movies, TV, kids, anime shows, internet video)
 7. Reconfigure Audiobookshelf; set up Antennapod gpodder sync
@@ -402,20 +404,20 @@ Requires R710 TrueNAS reconnected (Phase 1 prerequisite).
 
 ## 14. Infrastructure as Code
 
-All Orpheus services are TrueNAS Scale apps — configured through the TrueNAS UI, not via Terraform or Ansible. There is no `infrastructure/orpheus/` IaC directory.
+All Orpheus services are TrueNAS Scale apps - configured through the TrueNAS UI, not via Terraform or Ansible. There is no `infrastructure/orpheus/` IaC directory.
 
 The only IaC touching Orpheus is:
-- **pfSense Terraform** — VLAN 80 firewall rules (`infrastructure/network/pfsense/`)
-- **Switch Ansible** — VLAN 80 port assignments (`infrastructure/network/switch/`)
-- **Ariadne Ansible** — reverse proxy configs for Orpheus subdomains (`infrastructure/ariadne/`)
+- **pfSense Terraform** - VLAN 80 firewall rules (`infrastructure/network/pfsense/`)
+- **Switch Ansible** - VLAN 80 port assignments (`infrastructure/network/switch/`)
+- **Ariadne Ansible** - reverse proxy configs for Orpheus subdomains (`infrastructure/ariadne/`)
 
 ### 14.1 Recovery
 
-Media files survive on TrueNAS ZFS — only service configurations need rebuilding after a TrueNAS failure.
+Media files survive on TrueNAS ZFS - only service configurations need rebuilding after a TrueNAS failure.
 
 Post-recovery steps:
 1. Redeploy TrueNAS Scale; restore app configurations from TrueNAS backup
-2. *Arr app configurations and Immich database live on TrueNAS — include in TrueNAS backup strategy
+2. *Arr app configurations and Immich database live on TrueNAS - include in TrueNAS backup strategy
 3. Jellyfin metadata cache rebuilds automatically on first scan (slow but automatic)
 4. Re-verify all sirhexx.com subdomains resolve correctly through Ariadne after DNS propagation
 
