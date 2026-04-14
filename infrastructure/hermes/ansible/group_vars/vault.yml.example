@@ -11,9 +11,9 @@
 #   ansible-playbook provision.yml --ask-vault-pass
 #   ansible-playbook provision.yml --vault-password-file ~/.vault-password
 
-gemini_api_key:                  ""
-telegram_token_personal:         ""
-telegram_token_professional:     ""
-purelymail_personal_password:    ""
+gemini_api_key:                   ""
+hermes_api_token:                 ""
+telegram_token_personal:          ""
+telegram_token_professional:      ""
+purelymail_personal_password:     ""
 purelymail_professional_password: ""
-mnemosyne_db_password:           ""
