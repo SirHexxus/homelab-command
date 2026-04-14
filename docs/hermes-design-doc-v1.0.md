@@ -1,7 +1,7 @@
 # Hermes Design Doc v1.0
 
 Local AI agent for homelab automation and personal productivity. Part of the Homelab Command
-ecosystem — alongside Argus, Ariadne, Orpheus, and Mnemosyne.
+ecosystem (alongside Argus, Ariadne, Orpheus, and Mnemosyne).
 
 ---
 
@@ -20,11 +20,15 @@ ecosystem — alongside Argus, Ariadne, Orpheus, and Mnemosyne.
 
 ## Purpose
 
-Hermes acts as the "hands" of the homelab — it receives tasks in natural language and executes
+See `docs/homelab-philosophy-v1.0.md` for the broader goals this service supports. Hermes serves
+the skill-building and automation goals: making the homelab more capable of managing itself while
+building practical experience with agentic AI systems.
+
+Hermes acts as the "hands" of the homelab - it receives tasks in natural language and executes
 them autonomously using a ReAct (Reason + Act) loop. Tasks arrive via:
 
 - **Phase 1**: CLI (`bin/hermes "do something"`)
-- **Phase 3**: Telegram bots (one per context — personal and professional)
+- **Phase 3**: Telegram bots (one per context - personal and professional)
 - **Phase 4**: FastAPI web UI (domain → context routing)
 
 Hermes is context-aware. Each context (`personal`, `professional`) carries its own allowed
@@ -32,7 +36,7 @@ filesystem paths, whitelisted shell commands, LLM model preferences, email crede
 style guide injections. Switching context changes all of these at once.
 
 Long-term information (notes, project state, decisions) is persisted in Mnemosyne
-(Postgres + pgvector) rather than local files. Hermes's local state is intentionally ephemeral.
+(git-backed wiki at `~/mneme/wiki/`) rather than local files. Hermes's local state is intentionally ephemeral.
 
 ---
 
@@ -69,7 +73,7 @@ flowchart TD
 
 | Module | Role |
 |--------|------|
-| `lib/core/agent_loop.py` | ReAct loop — thinks, picks tool, acts, observes, repeats |
+| `lib/core/agent_loop.py` | ReAct loop - thinks, picks tool, acts, observes, repeats |
 | `lib/core/context.py` | `Context` dataclass; loads and validates context YAML |
 | `lib/core/llm.py` | LLM clients + tier router (Ollama → Gemini → Claude) |
 | `lib/core/skill_registry.py` | Registers skills; resolves tool names to callables |
@@ -90,7 +94,7 @@ flowchart TD
 
 | Module | Phase | Description |
 |--------|-------|-------------|
-| `lib/interfaces/cli.py` | — | Future rich interactive UI |
+| `lib/interfaces/cli.py` | - | Future rich interactive UI |
 | `lib/interfaces/telegram_bot.py` | 3 | Telegram bots (personal + professional) |
 | `lib/interfaces/web_app.py` | 4 | FastAPI web UI; the endpoint the systemd unit runs |
 
@@ -98,15 +102,15 @@ flowchart TD
 
 Hermes uses a three-tier LLM waterfall. Each context sets thresholds on a 0–10 complexity scale:
 
-1. **Tier 1 — Ollama** (local, free): tasks below `ollama_max_complexity`
-2. **Tier 2 — Gemini** (API, cheap): tasks between the two thresholds
-3. **Tier 3 — Claude** (API, expensive): tasks above `gemini_max_complexity`, or when forced
+1. **Tier 1 - Ollama** (local, free): tasks below `ollama_max_complexity`
+2. **Tier 2 - Gemini** (API, cheap): tasks between the two thresholds
+3. **Tier 3 - Claude** (API, expensive): tasks above `gemini_max_complexity`, or when forced
 
 The professional context uses lower thresholds (escalates sooner) for higher-quality output.
 
 ### Style guide injection
 
-Each context YAML lists `style_guides` — paths to brand or tone guide files. These are read at
+Each context YAML lists `style_guides` - paths to brand or tone guide files. These are read at
 startup and prepended verbatim to every system prompt. This ensures consistent tone and
 formatting without manual prompting.
 
@@ -118,7 +122,7 @@ formatting without manual prompting.
 |-------|--------|----------|
 | 1 | Complete | CLI, Ollama, filesystem skill, shell skill, audit log |
 | 2 | Planned | Gemini + Claude, LLM router, web skill, email skill, Mnemosyne |
-| 3 | Planned | Telegram bots — register via @BotFather first (see below) |
+| 3 | Planned | Telegram bots - register via @BotFather first (see below) |
 | 4 | Planned | FastAPI web UI, domain → context routing |
 | 5 | Planned | n8n MCP integration (n8n deployed at 10.0.50.13) |
 
@@ -155,7 +159,7 @@ Tokens go into `config/contexts/personal.yml` and `config/contexts/professional.
 | Log path | `/opt/hermes/apps/hermes/logs/` |
 
 The service unit runs uvicorn on port 8765. Until Phase 4 is implemented, the service file
-exists but the endpoint will return 404 — CLI and Telegram interfaces work independently.
+exists but the endpoint will return 404 - CLI and Telegram interfaces work independently.
 
 ---
 
@@ -176,10 +180,10 @@ Hermes sits on VLAN 50 (Lab Services) alongside the other homelab services.
 
 | Dependency | Why |
 |------------|-----|
-| Ollama (10.0.50.10) | Tier 1 LLM inference — must be running before Hermes starts |
-| Mnemosyne Postgres (10.0.50.14) | Skill — gracefully skipped if unreachable (Phase 1) |
-| Gemini API key | Phase 2 — not needed for Phase 1 |
-| Telegram bot tokens | Phase 3 — not needed for Phase 1–2 |
+| Ollama (10.0.50.10) | Tier 1 LLM inference - must be running before Hermes starts |
+| Mnemosyne Postgres (10.0.50.14) | Skill - gracefully skipped if unreachable (Phase 1) |
+| Gemini API key | Phase 2 - not needed for Phase 1 |
+| Telegram bot tokens | Phase 3 - not needed for Phase 1–2 |
 
 ---
 

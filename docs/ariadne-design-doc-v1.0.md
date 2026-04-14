@@ -1,7 +1,7 @@
-# Ariadne Project — DMZ & Perimeter Design Doc
+# Ariadne Project: DMZ and Perimeter Design Doc
 **Version:** 1.0
 **Last Updated:** March 2026
-**Status:** In Progress — nginx and Umami deployed; Authelia and pfSense config pending
+**Status:** In Progress: nginx and Umami deployed; Authelia and pfSense config pending
 
 ---
 
@@ -9,12 +9,12 @@
 1. [Purpose & Philosophy](#1-purpose--philosophy)
 2. [Architecture Overview](#2-architecture-overview)
 3. [VLAN 60 Infrastructure](#3-vlan-60-infrastructure)
-4. [Reverse Proxy Layer — NGINX Proxy Manager](#4-reverse-proxy-layer--nginx-proxy-manager)
-5. [Authentication Layer — Authelia](#5-authentication-layer--authelia)
-6. [VPN Layer — WireGuard](#6-vpn-layer--wireguard)
-7. [Perimeter Defense — Crowdsec & Fail2ban](#7-perimeter-defense--crowdsec--fail2ban)
-8. [Outbound Filtering — Squid](#8-outbound-filtering--squid)
-9. [External Monitoring — Uptime Kuma](#9-external-monitoring--uptime-kuma)
+4. [Reverse Proxy Layer: NGINX (native)](#4-reverse-proxy-layer-nginx-native)
+5. [Authentication Layer: Authelia](#5-authentication-layer-authelia)
+6. [VPN Layer: WireGuard](#6-vpn-layer-wireguard)
+7. [Perimeter Defense: Crowdsec and Fail2ban](#7-perimeter-defense-crowdsec-and-fail2ban)
+8. [Outbound Filtering: Squid](#8-outbound-filtering-squid)
+9. [External Monitoring: Uptime Kuma](#9-external-monitoring-uptime-kuma)
 10. [Firewall Policy](#10-firewall-policy)
 11. [Subdomain & Routing Registry](#11-subdomain--routing-registry)
 12. [IaC Integration](#12-iac-integration)
@@ -25,17 +25,19 @@
 
 ## 1. Purpose & Philosophy
 
-Ariadne is the perimeter layer of the homelab — the thread that determines what crosses between the outside world and the internal network, and where it goes when it does. Named for the Cretan princess who gave Theseus the *clew* (the ball of thread, etymological root of "clue") that made the Minotaur's labyrinth navigable, Ariadne doesn't fight at the gate — she manages the path through the structure.
+Ariadne is the perimeter layer of the homelab - the thread that determines what crosses between the outside world and the internal network, and where it goes when it does. Named for the Cretan princess who gave Theseus the *clew* (the ball of thread, etymological root of "clue") that made the Minotaur's labyrinth navigable, Ariadne doesn't fight at the gate - she manages the path through the structure.
+
+See `docs/homelab-philosophy-v1.0.md` for the broader goals this service supports. Ariadne serves the privacy, security, and family services goals: family members get clean access to hosted services; the network boundary is enforced; nothing internal is directly exposed.
 
 The DMZ (VLAN 60) is the physical expression of that philosophy. No internal service is exposed directly to the internet. All inbound traffic enters through NGINX Proxy Manager, passes through Authelia's authentication layer where required, and is routed to its destination. Everything that crosses pays a toll. Everything that doesn't belong gets stopped.
 
 **Design principles:**
-- No internal service is directly internet-accessible — all external exposure routes through NPM
-- Authentication is enforced at the perimeter, not at the service — SSO via Authelia
-- Defense is layered — NPM, Authelia, Crowdsec, Fail2ban, and pfSense firewall rules each provide independent protection
+- No internal service is directly internet-accessible - all external exposure routes through NPM
+- Authentication is enforced at the perimeter, not at the service - SSO via Authelia
+- Defense is layered - NPM, Authelia, Crowdsec, Fail2ban, and pfSense firewall rules each provide independent protection
 - VPN access (WireGuard) provides a trusted path for administrative and family remote access without exposing management interfaces
-- Outbound traffic is filtered and logged via Squid — the network knows what it's talking to
-- All perimeter activity is visible to Argus — logs flow to Splunk; anomalies surface in Grafana
+- Outbound traffic is filtered and logged via Squid - the network knows what it's talking to
+- All perimeter activity is visible to Argus - logs flow to Splunk; anomalies surface in Grafana
 
 ---
 
@@ -44,16 +46,16 @@ The DMZ (VLAN 60) is the physical expression of that philosophy. No internal ser
 ```
 INTERNET
     |
-    | (WAN — Public IP)
+    | (WAN - Public IP)
     |
-[pfSense CE] — WireGuard VPN termination (pfSense package)
+[pfSense CE] - WireGuard VPN termination (pfSense package)
     |           Crowdsec IPS (pfSense package)
     |           Squid forward proxy (pfSense package)
     |           Suricata IDS (pfSense package)
     |
-    | (Inbound NAT — port 80/443 → NPM)
+    | (Inbound NAT - port 80/443 → NPM)
     |
-[VLAN 60 — DMZ]
+[VLAN 60 - DMZ]
     |
     |-- NGINX Proxy Manager (10.0.60.10)
     |       |-- SSL termination (Let's Encrypt)
@@ -67,7 +69,7 @@ INTERNET
             |-- Session management; MFA enforcement
 ```
 
-**Traffic flow — inbound request (example: images.sirhexx.com → Immich):**
+**Traffic flow - inbound request (example: images.sirhexx.com → Immich):**
 ```
 Browser → DNS resolves sirhexx.com → WAN IP
 → pfSense NAT → NPM (10.0.60.10)
@@ -78,7 +80,7 @@ Browser → DNS resolves sirhexx.com → WAN IP
 → Response returns via same path
 ```
 
-**Traffic flow — VPN (WireGuard):**
+**Traffic flow - VPN (WireGuard):**
 ```
 Remote device → WireGuard UDP → pfSense WG interface
 → assigned tunnel IP → full internal network access (VLAN 10/50 scope)
@@ -101,7 +103,7 @@ Remote device → WireGuard UDP → pfSense WG interface
 | Authelia | 10.0.60.11 | 60 | LXC | Planned |
 | Umami | 10.0.50.18 | 50 | LXC | Active |
 
-> **Umami placement:** Umami lives on VLAN 50 (Lab Services) rather than VLAN 60 to reuse the existing Postgres LXC (10.0.50.14). NPM proxies `analytics.sirhexx.com` to Umami via a pfSense DMZ service-allow rule (port 3000). Umami is logically part of Ariadne — provisioned in the same Terraform config — but does not sit inside the DMZ itself.
+> **Umami placement:** Umami lives on VLAN 50 (Lab Services) rather than VLAN 60 to reuse the existing Postgres LXC (10.0.50.14). NPM proxies `analytics.sirhexx.com` to Umami via a pfSense DMZ service-allow rule (port 3000). Umami is logically part of Ariadne - provisioned in the same Terraform config - but does not sit inside the DMZ itself.
 
 **pfSense packages (no separate VLAN IP):**
 
@@ -112,23 +114,23 @@ Remote device → WireGuard UDP → pfSense WG interface
 | Squid | Outbound forward proxy + filtering |
 | Suricata | Network-layer IDS; alerts → Splunk |
 
-**Firewall policy — VLAN 60:**
+**Firewall policy - VLAN 60:**
 - Pass: DMZ → Internet (NPM needs outbound for Let's Encrypt, upstream proxying)
 - Block: DMZ → All internal VLANs (DMZ services cannot initiate connections inward)
 - Pass: pfSense NAT → NPM on 80/443 (inbound from WAN)
 - Pass: WireGuard tunnel → VLAN 10/50 (VPN clients get trusted internal access)
 - Block: WireGuard tunnel → VLAN 30 (Work VLAN remains isolated even for VPN clients)
 
-> **Key principle:** The DMZ can receive from the internet and forward to internal services, but it cannot initiate connections into the internal network. NPM proxies requests on behalf of external clients — the internal services see traffic from NPM, never directly from the internet.
+> **Key principle:** The DMZ can receive from the internet and forward to internal services, but it cannot initiate connections into the internal network. NPM proxies requests on behalf of external clients - the internal services see traffic from NPM, never directly from the internet.
 
-### 3.1 DDNS — Dynamic DNS
+### 3.1 DDNS: Dynamic DNS
 
 **Provider:** Namecheap
 **Managed by:** pfSense Dynamic DNS client (Services > Dynamic DNS)
 **Hostname:** `*` (wildcard)
 **Domain:** `sirhexx.com`
 
-pfSense updates the Namecheap A record for `*.sirhexx.com` whenever the WAN IP changes. This wildcard covers all subdomains automatically — `watch.sirhexx.com`, `images.sirhexx.com`, `analytics.sirhexx.com`, etc. — without per-subdomain DDNS entries.
+pfSense updates the Namecheap A record for `*.sirhexx.com` whenever the WAN IP changes. This wildcard covers all subdomains automatically - `watch.sirhexx.com`, `images.sirhexx.com`, `analytics.sirhexx.com`, etc. - without per-subdomain DDNS entries.
 
 An explicit `www` CNAME in Namecheap DNS overrides the wildcard for `www.sirhexx.com` where needed.
 
@@ -136,14 +138,14 @@ An explicit `www` CNAME in Namecheap DNS overrides the wildcard for `www.sirhexx
 
 ---
 
-## 4. Reverse Proxy Layer — NGINX (native)
+## 4. Reverse Proxy Layer: NGINX (native)
 
-**Service:** nginx + certbot (native install — no Docker)
+**Service:** nginx + certbot (native install - no Docker)
 **IP:** 10.0.60.10
 **Port exposure:** 80, 443 (inbound NAT from pfSense WAN)
 **Purpose:** SSL termination, subdomain routing, forward auth integration with Authelia
 
-> **Implementation note:** The original design called for NGINX Proxy Manager (NPM). NPM has no official native install and is distributed exclusively as a Docker image. Since the LXC containers in this stack run services natively (no Docker inside LXC), the proxy layer uses nginx + certbot directly — which is what NPM wraps internally. Proxy host configs are managed via Ansible and the `rpadd`/`rprm` scripts; there is no web UI.
+> **Implementation note:** The original design called for NGINX Proxy Manager (NPM). NPM has no official native install and is distributed exclusively as a Docker image. Since the LXC containers in this stack run services natively (no Docker inside LXC), the proxy layer uses nginx + certbot directly - which is what NPM wraps internally. Proxy host configs are managed via Ansible and the `rpadd`/`rprm` scripts; there is no web UI.
 
 nginx is the single point of ingress for all external web traffic. certbot handles Let's Encrypt certificate provisioning and renewal. Authelia authentication is enforced on protected routes via nginx's `auth_request` forward auth directive.
 
@@ -173,21 +175,21 @@ nginx uses the `auth_request` directive to check every protected request against
 
 | Subdomain | Target | Auth Required |
 |-----------|--------|---------------|
-| watch.sirhexx.com | Jellyfin (10.0.80.X) | No — Jellyfin handles its own auth |
-| images.sirhexx.com | Immich (10.0.50.30) | No — Immich handles its own auth |
-| audible.sirhexx.com | Audiobookshelf (10.0.80.X) | No — ABS handles its own auth |
-| auth.sirhexx.com | Authelia (10.0.60.11) | — (this IS the auth service) |
-| request.sirhexx.com | Jellyseerr (10.0.80.X) | Yes — Authelia SSO |
-| books.sirhexx.com | CalibreWeb (10.0.80.X) | Yes — Authelia SSO |
-| music.sirhexx.com | Navidrome (10.0.80.X) | Yes — Authelia SSO |
-| analytics.sirhexx.com | Umami (10.0.50.18) | No — Umami handles its own auth |
-| photos.hexxusweb.com | — | Reserved — portfolio/professional use TBD |
+| watch.sirhexx.com | Jellyfin (10.0.80.X) | No - Jellyfin handles its own auth |
+| images.sirhexx.com | Immich (10.0.50.30) | No - Immich handles its own auth |
+| audible.sirhexx.com | Audiobookshelf (10.0.80.X) | No - ABS handles its own auth |
+| auth.sirhexx.com | Authelia (10.0.60.11) | - (this IS the auth service) |
+| request.sirhexx.com | Jellyseerr (10.0.80.X) | Yes - Authelia SSO |
+| books.sirhexx.com | CalibreWeb (10.0.80.X) | Yes - Authelia SSO |
+| music.sirhexx.com | Navidrome (10.0.80.X) | Yes - Authelia SSO |
+| analytics.sirhexx.com | Umami (10.0.50.18) | No - Umami handles its own auth |
+| photos.hexxusweb.com | - | Reserved - portfolio/professional use TBD |
 
-> **Auth rationale:** Jellyfin, Immich, and Audiobookshelf ship with robust built-in authentication and are designed to be self-hosted publicly. Jellyseerr, CalibreWeb, and Navidrome have weaker native auth — Authelia adds the SSO layer in front of them.
+> **Auth rationale:** Jellyfin, Immich, and Audiobookshelf ship with robust built-in authentication and are designed to be self-hosted publicly. Jellyseerr, CalibreWeb, and Navidrome have weaker native auth - Authelia adds the SSO layer in front of them.
 
 ---
 
-## 5. Authentication Layer — Authelia
+## 5. Authentication Layer: Authelia
 
 **Service:** Authelia
 **IP:** 10.0.60.11
@@ -213,13 +215,13 @@ Authelia sits between NPM and any service marked as requiring authentication. It
 
 ---
 
-## 6. VPN Layer — WireGuard
+## 6. VPN Layer: WireGuard
 
 **Service:** WireGuard
 **Deployment:** pfSense package (no separate IP)
 **Purpose:** Secure remote access to internal network for trusted users
 
-WireGuard provides the trusted remote path for James and family to access internal services without exposing them publicly. VPN clients get full access to VLAN 10 (Management) and VLAN 50 (Lab Services) — equivalent to being physically on the LAN.
+WireGuard provides the trusted remote path for James and family to access internal services without exposing them publicly. VPN clients get full access to VLAN 10 (Management) and VLAN 50 (Lab Services) - equivalent to being physically on the LAN.
 
 **Peer configuration:**
 
@@ -230,13 +232,13 @@ WireGuard provides the trusted remote path for James and family to access intern
 | Wife | HP Pavilion x360 | VLAN 50, 80 |
 | Wife | Samsung Galaxy S23 FE | VLAN 50, 80 |
 
-> **Access scope rationale:** James gets VLAN 10 (Management) access remotely for admin tasks. Wife's devices get VLAN 50/80 (services and media) but not VLAN 10 — no reason for her devices to touch the management plane.
+> **Access scope rationale:** James gets VLAN 10 (Management) access remotely for admin tasks. Wife's devices get VLAN 50/80 (services and media) but not VLAN 10 - no reason for her devices to touch the management plane.
 
-**Port:** UDP — TBD at deployment (non-default port recommended; avoid 51820 as it's widely scanned)
+**Port:** UDP - TBD at deployment (non-default port recommended; avoid 51820 as it's widely scanned)
 
 ---
 
-## 7. Perimeter Defense — Crowdsec & Fail2ban
+## 7. Perimeter Defense: Crowdsec and Fail2ban
 
 ### 7.1 Crowdsec
 
@@ -255,7 +257,7 @@ Crowdsec watches traffic patterns at the pfSense level and cross-references agai
 **Deployment:** Per-host (Ansible role)
 **Purpose:** Log-based brute force protection on SSH-accessible hosts and NPM
 
-Fail2ban runs on every host with SSH exposure and on NPM. It watches auth logs and NPM access logs for repeated failure patterns and issues temporary IP bans. Complements Crowdsec — Crowdsec works at the network/behavioral layer, Fail2ban works at the log/application layer.
+Fail2ban runs on every host with SSH exposure and on NPM. It watches auth logs and NPM access logs for repeated failure patterns and issues temporary IP bans. Complements Crowdsec - Crowdsec works at the network/behavioral layer, Fail2ban works at the log/application layer.
 
 **Monitored jails:**
 - sshd (all LXC/VM hosts)
@@ -264,20 +266,20 @@ Fail2ban runs on every host with SSH exposure and on NPM. It watches auth logs a
 
 ---
 
-## 8. Outbound Filtering — Squid
+## 8. Outbound Filtering: Squid
 
 **Deployment:** pfSense package
 **Purpose:** Outbound forward proxy; traffic visibility; filtering
 
 Squid intercepts outbound HTTP/HTTPS traffic from internal VLANs, providing a log of what the network is talking to. This serves two purposes: security visibility (Argus can see outbound connections) and the ability to block specific destinations if needed.
 
-Initial deployment is transparent/logging-only — no active filtering until there's a reason to block something specific. Logs forwarded to Splunk.
+Initial deployment is transparent/logging-only - no active filtering until there's a reason to block something specific. Logs forwarded to Splunk.
 
-> **Scope note:** Squid is a pfSense package and applies to traffic routed through pfSense. It does not inspect encrypted traffic without SSL bump configured — SSL bump is deferred as it introduces complexity and certificate trust issues on family devices.
+> **Scope note:** Squid is a pfSense package and applies to traffic routed through pfSense. It does not inspect encrypted traffic without SSL bump configured - SSL bump is deferred as it introduces complexity and certificate trust issues on family devices.
 
 ---
 
-## 9. External Monitoring — Uptime Kuma
+## 9. External Monitoring: Uptime Kuma
 
 **Deployment:** External VPS (provider TBD)
 **Purpose:** Outside-in availability monitoring of all DMZ-exposed endpoints
@@ -307,16 +309,16 @@ Full pfSense rule set for VLAN 60 and WAN inbound NAT.
 
 | Port | Protocol | Destination | Notes |
 |------|----------|-------------|-------|
-| 80 | TCP | 10.0.60.10 (NPM) | HTTP — NPM redirects to HTTPS |
-| 443 | TCP | 10.0.60.10 (NPM) | HTTPS — primary inbound |
+| 80 | TCP | 10.0.60.10 (NPM) | HTTP - NPM redirects to HTTPS |
+| 443 | TCP | 10.0.60.10 (NPM) | HTTPS - primary inbound |
 | TBD | UDP | pfSense WG interface | WireGuard VPN |
 
 ### VLAN 60 Outbound Rules
 
 | Rule | Source | Destination | Action |
 |------|--------|-------------|--------|
-| 1 | 10.0.60.0/24 | Internet | Pass — NPM needs outbound |
-| 2 | 10.0.60.0/24 | 10.0.0.0/8 | Block — DMZ cannot initiate inbound connections |
+| 1 | 10.0.60.0/24 | Internet | Pass - NPM needs outbound |
+| 2 | 10.0.60.0/24 | 10.0.0.0/8 | Block - DMZ cannot initiate inbound connections |
 
 ### WireGuard Tunnel Rules
 
@@ -326,7 +328,7 @@ Full pfSense rule set for VLAN 60 and WAN inbound NAT.
 | 2 | WG tunnel | 10.0.50.0/24 | Pass (all peers) |
 | 3 | WG tunnel | 10.0.80.0/24 | Pass (all peers) |
 | 4 | WG tunnel | 10.0.30.0/24 | Block (Work VLAN always isolated) |
-| 5 | WG tunnel | Internet | Pass (split tunnel optional — TBD) |
+| 5 | WG tunnel | Internet | Pass (split tunnel optional - TBD) |
 
 ---
 
@@ -339,7 +341,7 @@ Canonical subdomain list. Cross-reference with Orpheus Design Doc v1.1 §8 for f
 | watch | sirhexx.com | Jellyfin | 10.0.80.X | None | Planned |
 | images | sirhexx.com | Immich | 10.0.50.30 | None | Planned |
 | audible | sirhexx.com | Audiobookshelf | 10.0.80.X | None | Planned |
-| auth | sirhexx.com | Authelia | 10.0.60.11 | — | Planned |
+| auth | sirhexx.com | Authelia | 10.0.60.11 | - | Planned |
 | request | sirhexx.com | Jellyseerr | 10.0.80.X | Authelia | Planned |
 | books | sirhexx.com | CalibreWeb | 10.0.80.X | Authelia | Planned |
 | music | sirhexx.com | Navidrome | 10.0.80.X | Authelia | Planned |
@@ -415,19 +417,19 @@ Prerequisites: VLAN 60 created in pfSense and switch. VLAN 50 stable (NPM needs 
 
 ---
 
-## 14. Portfolio Notes
+## 14. Portfolio documentation
 
-The Ariadne project demonstrates a cluster of competencies directly relevant to the CRDC SOC Analyst role:
+The Ariadne project demonstrates competencies worth documenting for any security-focused role:
 
-**Network segmentation:** VLAN 60 as a true DMZ — not just a label, but a segment with enforced firewall policy that prevents DMZ services from initiating internal connections. This mirrors enterprise DMZ architecture used to protect internal resources from internet-facing systems.
+**Network segmentation:** VLAN 60 as a true DMZ - not just a label, but a segment with enforced firewall policy that prevents DMZ services from initiating internal connections. This mirrors enterprise DMZ architecture used to protect internal resources from internet-facing systems.
 
 **Defense in depth:** Five independent defensive layers (pfSense firewall rules, Crowdsec IPS, Suricata IDS, NPM access control, Authelia authentication, Fail2ban) each catching what the others miss. No single point of failure in the defensive stack.
 
 **Zero Trust principles:** No service is trusted by default. External requests authenticate at the perimeter before reaching internal services. VPN access is peer-specific with scoped permissions. Internal services never see raw internet traffic.
 
-**Identity and access management:** Authelia implements SSO with MFA across all protected services — centralized identity, consistent enforcement, auditable access. Maps directly to enterprise IAM architecture.
+**Identity and access management:** Authelia implements SSO with MFA across all protected services - centralized identity, consistent enforcement, auditable access. Maps directly to enterprise IAM architecture.
 
-**Security visibility:** All perimeter events (NPM access logs, Authelia auth events, Crowdsec bans, Fail2ban bans, Suricata alerts) forward to Splunk for Argus correlation. The perimeter is not just defended — it's watched.
+**Security visibility:** All perimeter events (NPM access logs, Authelia auth events, Crowdsec bans, Fail2ban bans, Suricata alerts) forward to Splunk for Argus correlation. The perimeter is watched.
 
 **Incident response readiness:** Crowdsec + Fail2ban provide automated response to detected threats. Suricata alerts feed the SIEM. WireGuard access is peer-specific and revocable. The architecture supports rapid containment.
 

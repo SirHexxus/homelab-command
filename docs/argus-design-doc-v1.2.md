@@ -7,17 +7,19 @@
 
 ## 1. Purpose & Philosophy
 
-Argus is an AI-augmented security operations platform for the homelab. Named after the Greek giant Panoptes — the all-seeing, ever-watchful guardian with a hundred eyes — Argus combines traditional SIEM tooling with local AI inference to provide continuous monitoring, automated threat analysis, and conversational incident response.
+Argus is an AI-augmented security operations platform for the homelab. Named after the Greek giant Panoptes (the all-seeing, ever-watchful guardian with a hundred eyes), Argus combines traditional SIEM tooling with local AI inference to provide continuous monitoring, automated threat analysis, and conversational incident response.
 
 **Design principles:**
 - Every log source feeds a single coherent picture, not isolated silos
-- AI analysis is local-first — sensitive security data doesn't leave the network
+- AI analysis is local-first. Sensitive security data doesn't leave the network.
 - Raw logs and AI-derived intelligence are stored separately but queryable together
 - Automation reduces MTTR; human judgment handles ambiguous cases
-- The system explains its reasoning — no black-box alerts
+- The system explains its reasoning: no black-box alerts
 - Portfolio-quality documentation at every layer
 
-**Dual purpose:** Argus serves as both a functional homelab security platform and the centerpiece portfolio artifact for the CRDC application. Architecture decisions are made to be defensible and demonstrable in an interview context.
+Argus serves the homelab's security and skill-building goals: providing real visibility into network activity, practicing detection engineering, and building the habit of treating security as observable infrastructure rather than an afterthought. It also generates portfolio documentation that demonstrates these competencies - but functional security comes first.
+
+See `docs/homelab-philosophy-v1.0.md` for the broader goals this service supports.
 
 ---
 
@@ -49,7 +51,7 @@ POSTGRES:argus_logs            GRAFANA
     |                                 |
     v                                 v
 POSTGRES:mnemosyne             NOTIFICATIONS
-(Incidents as resources)       Telegram (Argus Agent — interactive)
+(Incidents as resources)       Telegram (Argus Agent - interactive)
                                ntfy :argus topic (push alerts)
 ```
 
@@ -59,15 +61,15 @@ POSTGRES:mnemosyne             NOTIFICATIONS
 
 | Service | IP | VLAN | Notes |
 |---------|-----|------|-------|
-| Splunk Free | 10.0.50.20 | 50 — Lab Services | Log aggregation + search + dashboards |
-| Wazuh Manager | 10.0.50.21 | 50 — Lab Services | EDR + host-based IDS |
-| Grafana | 10.0.50.22 | 50 — Lab Services | TimescaleDB metric dashboards |
-| Suricata | pfSense package | 10 — Management | Network-layer IDS; alerts → Splunk |
-| Crowdsec | pfSense package | 10 — Management | Application-layer behavioral IPS; community threat intel; integrates with pfSense + NPM |
+| Splunk Free | 10.0.50.20 | 50 - Lab Services | Log aggregation + search + dashboards |
+| Wazuh Manager | 10.0.50.21 | 50 - Lab Services | EDR + host-based IDS |
+| Grafana | 10.0.50.22 | 50 - Lab Services | TimescaleDB metric dashboards |
+| Suricata | pfSense package | 10 - Management | Network-layer IDS; alerts → Splunk |
+| Crowdsec | pfSense package | 10 - Management | Application-layer behavioral IPS; community threat intel; integrates with pfSense + NPM |
 | Fail2ban | Per-host | All | Log-based brute force protection on SSH hosts + NPM |
-| Uptime Kuma | External VPS | — | Outside-in availability monitoring |
-| ntfy | helm-log (10.0.10.25) | 10 — Management | Push notification broker; argus topic for security event alerts |
-| syslog-ng + Vector | helm-log (10.0.10.25) | 10 — Management | Central log receiver + bulk ingestion; Phase 3 |
+| Uptime Kuma | External VPS | - | Outside-in availability monitoring |
+| ntfy | helm-log (10.0.10.25) | 10 - Management | Push notification broker; argus topic for security event alerts |
+| syslog-ng + Vector | helm-log (10.0.10.25) | 10 - Management | Central log receiver + bulk ingestion; Phase 3 |
 
 All VLAN 50 services are IaC-deployed via Terraform + Ansible.
 
@@ -233,11 +235,11 @@ SELECT add_compression_policy('network_flows', INTERVAL '7 days');
 Parallel log destination for interactive search, correlation rules, and portfolio-quality dashboards. Splunk's SPL query language and native dashboards are industry-standard and directly demonstrable in an interview.
 
 **Index structure:**
-- `firewall` — pfSense logs
-- `ids` — Suricata + Crowdsec alerts
-- `endpoint` — Wazuh agent events
-- `system` — Proxmox + switch logs
-- `argus` — AI analysis outputs
+- `firewall` - pfSense logs
+- `ids` - Suricata + Crowdsec alerts
+- `endpoint` - Wazuh agent events
+- `system` - Proxmox + switch logs
+- `argus` - AI analysis outputs
 
 **Key dashboards:**
 - Network traffic by VLAN (top talkers, bytes in/out)
@@ -248,13 +250,13 @@ Parallel log destination for interactive search, correlation rules, and portfoli
 
 ### 5.3 Relationship: TimescaleDB vs. Splunk
 
-These are not redundant — they serve different purposes:
+These are not redundant - they serve different purposes:
 
 | | TimescaleDB | Splunk |
 |-|-------------|--------|
 | Primary use | AI pipeline data source; metric aggregation; long-term storage | Interactive investigation; correlation rules; portfolio dashboards |
 | Query method | SQL (familiar; scriptable) | SPL (industry standard; demonstrable) |
-| AI integration | Direct — n8n queries TimescaleDB | Indirect — Splunk → TimescaleDB or Splunk API |
+| AI integration | Direct - n8n queries TimescaleDB | Indirect - Splunk → TimescaleDB or Splunk API |
 | Retention | 90 days hot + compression | 90 days (Splunk Free limit) |
 | Cost | Free (self-hosted) | Free (500MB/day ingest limit) |
 
@@ -274,12 +276,12 @@ Follows the same tiered routing architecture as Mnemosyne (see Mnemosyne Design 
 
 | Task | Primary | Escalation |
 |------|---------|------------|
-| Severity triage (is this worth analyzing?) | Mistral 7B | — |
+| Severity triage (is this worth analyzing?) | Mistral 7B | - |
 | Incident summarization | Mistral 7B | Gemini Flash |
 | IOC extraction | Mistral 7B | Gemini Flash |
 | MITRE ATT&CK mapping | Gemini Flash | Claude Sonnet |
-| Strategic threat assessment / judgment calls | Claude Sonnet | — |
-| Embeddings | nomic-embed-text | — |
+| Strategic threat assessment / judgment calls | Claude Sonnet | - |
+| Embeddings | nomic-embed-text | - |
 
 ### 6.3 5-Minute Analysis Workflow
 
@@ -365,13 +367,13 @@ During incident analysis:
     Confirmed techniques written to security_incidents.mitre_techniques[]
 ```
 
-This enables both automatic mapping during analysis and semantic search — e.g. `/ask "What ATT&CK techniques have I observed in the last month?"`.
+This enables both automatic mapping during analysis and semantic search - e.g. `/ask "What ATT&CK techniques have I observed in the last month?"`.
 
 ---
 
-## 7. Argus Agent — Conversational Interface
+## 7. Argus Agent - Conversational Interface
 
-Argus has a conversational personality accessible via Telegram. It is not just a notification relay — it is an interactive security assistant that can query data, explain events, and execute authorized response actions.
+Argus has a conversational personality accessible via Telegram. It is not just a notification relay - it is an interactive security assistant that can query data, explain events, and execute authorized response actions.
 
 ### 7.1 Personality
 
@@ -408,7 +410,7 @@ Evidence:
 • {key data points}
 
 MITRE ATT&CK:
-• {Tactic}: {Technique ID} — {Technique Name}
+• {Tactic}: {Technique ID} - {Technique Name}
 
 Assessment: {reasoning}
 
@@ -419,7 +421,7 @@ Recommended Action: {specific action}
 ### 7.4 Daily Security Digest Format
 
 ```
-Argus Daily Digest — {Date}
+Argus Daily Digest - {Date}
 
 Overall Status: {1 sentence}
 
@@ -446,7 +448,7 @@ All systems operational. I remain vigilant.
 
 ## 8. Quarantine Playbook
 
-The quarantine system is an Ansible-powered automated response that moves a device to VLAN 66 (Sandbox) on command — either via Telegram or triggered automatically on confirmed critical threats.
+The quarantine system is an Ansible-powered automated response that moves a device to VLAN 66 (Sandbox) on command - either via Telegram or triggered automatically on confirmed critical threats.
 
 ```
 Trigger: /quarantine {ip} OR automated critical alert
@@ -502,7 +504,7 @@ These overlap with Mnemosyne scheduled reports. Argus contributes the security-s
 
 | Workflow / Component | Status | Notes |
 |---------------------|--------|-------|
-| ntfy on Iris (helm-log) | IaC-deployed | Now — run provisioning playbook |
+| ntfy on Iris (helm-log) | IaC-deployed | Now - run provisioning playbook |
 | Suricata (pfSense pkg) | Build fresh | Phase 3 |
 | Crowdsec (pfSense pkg) | Build fresh | Phase 3 / 5 |
 | Fail2ban (per host) | Build fresh | Phase 3 |
@@ -525,9 +527,9 @@ These overlap with Mnemosyne scheduled reports. Argus contributes the security-s
 
 ---
 
-## 11. Portfolio Value
+## 11. Portfolio documentation
 
-Argus is the primary technical differentiator for the CRDC application. The components map directly to SOC Analyst competencies:
+Building a real SIEM is the best way to understand how one works. The components here map to SOC Analyst competencies that are worth documenting explicitly:
 
 | Argus Component | SOC Competency Demonstrated |
 |----------------|---------------------------|
@@ -549,7 +551,7 @@ Argus is the primary technical differentiator for the CRDC application. The comp
 
 Follows Phase 3 (SIEM Stack) and Phase 5 (Argus AI + DMZ) of the Project Roadmap.
 
-**Phase 3 — SIEM Foundation:**
+**Phase 3 - SIEM Foundation:**
 1. Deploy Splunk Free (10.0.50.20) via IaC
 2. Deploy Wazuh Manager (10.0.50.21) via IaC
 3. Deploy Grafana (10.0.50.22) via IaC
@@ -561,7 +563,7 @@ Follows Phase 3 (SIEM Stack) and Phase 5 (Argus AI + DMZ) of the Project Roadmap
 9. Verify full log flow: source → collection → TimescaleDB + Splunk
 10. Build initial Splunk dashboards (traffic by VLAN, top talkers, firewall blocks)
 
-**Phase 5 — AI + Automation:**
+**Phase 5 - AI + Automation:**
 11. Embed MITRE ATT\&CK framework into mnemosyne pgvector
 12. Build 5-minute AI analysis n8n workflow
 13. Build Argus Agent Telegram bot + command handlers
@@ -571,7 +573,7 @@ Follows Phase 3 (SIEM Stack) and Phase 5 (Argus AI + DMZ) of the Project Roadmap
 17. Provision external VPS; deploy Uptime Kuma
 18. Build scheduled security digests
 
-**Phase 6 — Portfolio:**
+**Phase 6 - Documentation and validation:**
 19. Build MITRE ATT&CK coverage Splunk dashboard
 20. Run attack simulations from VLAN 66 (Sandbox)
 21. Document detection and response for each simulation
@@ -593,7 +595,7 @@ homelab-command/
         └── ansible/
 ```
 
-### 13.2 Terraform — What Gets Provisioned
+### 13.2 Terraform - What Gets Provisioned
 
 | Resource | IP | VMID | Notes |
 |----------|----|------|-------|
@@ -649,9 +651,9 @@ module "grafana" {
 }
 ```
 
-**Note:** Suricata, Crowdsec, and Fail2ban are not Terraform-managed — Suricata and Crowdsec are pfSense packages; Fail2ban is deployed by Ansible directly on existing hosts as part of their respective roles.
+**Note:** Suricata, Crowdsec, and Fail2ban are not Terraform-managed - Suricata and Crowdsec are pfSense packages; Fail2ban is deployed by Ansible directly on existing hosts as part of their respective roles.
 
-### 13.3 Ansible — What Gets Configured
+### 13.3 Ansible - What Gets Configured
 
 | Role | Target | Configures |
 |------|--------|-----------|

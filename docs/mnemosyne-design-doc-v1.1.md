@@ -1,26 +1,28 @@
 # Mnemosyne Design Doc
 **Version:** 1.2
 **Last Updated:** April 2026
-**Status:** Living Document — implementation will surface unknowns not captured here
+**Status:** Living Document - implementation will surface unknowns not captured here
 
 > **Architecture Note (April 2026):** This document reflects the wiki model architecture.
 > The original design (v1.0) used Postgres/pgvector as the primary store with Notion as the
-> UI layer. That design was superseded — see Section 4 for the rationale and a full comparison.
+> UI layer. That design was superseded - see Section 4 for the rationale and a full comparison.
 > All Postgres schema references in prior versions are retired.
 
 ---
 
 ## 1. Purpose & Philosophy
 
+See `docs/homelab-philosophy-v1.0.md` for the broader goals this service supports. Mnemosyne serves the skill-building and personal productivity goals - and directly addresses the ADHD executive function challenges called out in the philosophy doc's documentation section.
+
 Mnemosyne is a personal knowledge management system designed to solve a specific problem: ADHD executive function failures cause valuable thoughts, information, and context to evaporate before they can be acted on. The system's job is to make capture frictionless, storage automatic, and retrieval intelligent.
 
 **Design principles:**
-- Capture must be faster than the thought can escape — minimum friction at point of entry
+- Capture must be faster than the thought can escape - minimum friction at point of entry
 - Classification and organization happen after capture, never during
-- Every ingest operation makes the wiki richer — connections compound over time
-- Retrieval must be semantic, not just keyword-based — the system should find what you mean, not just what you typed
-- The knowledge store must be human-readable without any tooling — it's just markdown files
-- No information is ever deleted — only archived or superseded
+- Every ingest operation makes the wiki richer - connections compound over time
+- Retrieval must be semantic, not just keyword-based - the system should find what you mean, not just what you typed
+- The knowledge store must be human-readable without any tooling - it's just markdown files
+- No information is ever deleted - only archived or superseded
 
 ---
 
@@ -29,7 +31,7 @@ Mnemosyne is a personal knowledge management system designed to solve a specific
 ```
 INGESTION LAYER
 (Telegram, Email, Voice, Web, Bulk Import)
-(Claude Code /mneme skill — direct path)
+(Claude Code /mneme skill - direct path)
          |
          v
   PROCESSING LAYER
@@ -49,10 +51,10 @@ INGESTION LAYER
 
 **Two paths into the wiki:**
 - **Automated path (Hermes + n8n):** Telegram → n8n webhook → Hermes classifies → wiki write
-- **Direct path (Claude Code):** `/mneme` or `/mneme-ask` skill — Claude reads SCHEMA.md,
+- **Direct path (Claude Code):** `/mneme` or `/mneme-ask` skill - Claude reads SCHEMA.md,
   navigates index.md, reads/writes pages directly. No Hermes dependency.
 
-Both paths produce identical output — the wiki format defined in `SCHEMA.md` is the contract.
+Both paths produce identical output - the wiki format defined in `SCHEMA.md` is the contract.
 
 ---
 
@@ -60,23 +62,23 @@ Both paths produce identical output — the wiki format defined in `SCHEMA.md` i
 
 Buckets fall into two structural categories that drive different ingestion and storage behavior.
 
-**Atomic buckets** — each entry is independent. New entries are always new pages. No reconciliation needed.
+**Atomic buckets:** each entry is independent. New entries are always new pages. No reconciliation needed.
 
-**Compound buckets** — many entries may refer to the same real-world entity. New entries must be reconciled against the existing entity page before deciding whether to update or create.
+**Compound buckets:** many entries may refer to the same real-world entity. New entries must be reconciled against the existing entity page before deciding whether to update or create.
 
 | Bucket | Type | Directory | Purpose | Key Distinction |
 |--------|------|-----------|---------|----------------|
-| IDEA | Atomic | `ideas/` | Abstract thoughts, opinions, insights, interpretations, and questions — your take on the world | Your inner world; subjective |
+| IDEA | Atomic | `ideas/` | Abstract thoughts, opinions, insights, interpretations, and questions - your take on the world | Your inner world; subjective |
 | ADMIN | Atomic | `admin/` | Tasks and errands with due dates | Actionable, time-bound |
-| REFERENCE | Atomic | `reference/` | Concrete facts, sources, data, information — verifiable and/or quantifiable | External, objective reality |
+| REFERENCE | Atomic | `reference/` | Concrete facts, sources, data, information - verifiable and/or quantifiable | External, objective reality |
 | JOURNAL | Atomic | `journal/` | Dated personal entries, reflections, daily notes | Time-anchored experience |
-| PERSON | Compound | `people/` | Individuals — contact info, relationship context, interaction history | About *who* |
+| PERSON | Compound | `people/` | Individuals - contact info, relationship context, interaction history | About *who* |
 | PROJECT | Compound | `projects/` | Multi-step work with a defined end state | Has a finish line |
 | PURSUIT | Compound | `pursuits/` | Ongoing endeavors without a terminal end state | No finish line |
 
 **IDEA vs. REFERENCE disambiguation:** This is the highest-risk classification boundary. When
 confidence is below threshold at this specific boundary, the classifier must ask rather than
-guess. If the user declines to clarify, **default to IDEA** — a subjective framing of an
+guess. If the user declines to clarify, **default to IDEA** - a subjective framing of an
 objective fact is a less disorienting misclassification than an objective fact filed as a
 personal insight. See `SCHEMA.md` for worked examples.
 
@@ -84,7 +86,7 @@ personal insight. See `SCHEMA.md` for worked examples.
 
 ## 4. Data Storage Architecture
 
-### 4.1 Wiki Repo — Primary Knowledge Store
+### 4.1 Wiki Repo: Primary Knowledge Store
 
 The primary store is a private git repository of markdown files at `~/mneme/wiki/`.
 
@@ -98,9 +100,9 @@ The primary store is a private git repository of markdown files at `~/mneme/wiki
 | UI | Notion (sync'd from Postgres) | Obsidian (reads git repo directly) |
 | Ingest pipeline | ~15-node n8n workflow | Classify → write markdown → commit |
 | Knowledge growth | Retrieval-time RAG | Ingest-time synthesis (compounding) |
-| Human-readable | Only via Notion UI | Always — it's just markdown |
+| Human-readable | Only via Notion UI | Always - it's just markdown |
 
-The wiki model optimizes for *compounding knowledge* — each new note makes the wiki richer,
+The wiki model optimizes for *compounding knowledge* - each new note makes the wiki richer,
 not just bigger. For an ADHD capture system where the goal is to reduce friction and increase
 discoverability, ingest-time synthesis is a better fit than retrieval-time reconstruction.
 
@@ -108,22 +110,22 @@ discoverability, ingest-time synthesis is a better fit than retrieval-time recon
 Any agent or tool that writes to the wiki must read SCHEMA.md first.
 
 **Key files:**
-- `wiki/SCHEMA.md` — governance, naming conventions, frontmatter schema, wikilink rules
-- `wiki/index.md` — catalog of all pages, organized by bucket (one compact entry per page)
-- `wiki/log.md` — append-only event log (ISO timestamp, operation, bucket, title, source)
+- `wiki/SCHEMA.md` - governance, naming conventions, frontmatter schema, wikilink rules
+- `wiki/index.md` - catalog of all pages, organized by bucket (one compact entry per page)
+- `wiki/log.md` - append-only event log (ISO timestamp, operation, bucket, title, source)
 
-**Symlink:** `infrastructure/mnemosyne/wiki → ~/mneme/wiki` — allows monorepo to reference
+**Symlink:** `infrastructure/mnemosyne/wiki → ~/mneme/wiki` - allows monorepo to reference
 the schema location without tracking personal data.
 
-### 4.2 Redis — Ephemeral and Session Storage
+### 4.2 Redis: Ephemeral and Session Storage
 
-- Multi-turn Telegram conversation session state — key: `session:{chat_id}`, TTL: 600s (10 min)
-- Clarification timeout tracking — when session key expires, automated path defaults to IDEA
-- Deduplication — key: `dedup:{content_hash}`, TTL: 24 hours
-- Query result cache — key: `query:{hash}`, TTL: 1 hour
-- Model routing usage counters — Gemini daily requests, Claude monthly spend
+- Multi-turn Telegram conversation session state - key: `session:{chat_id}`, TTL: 600s (10 min)
+- Clarification timeout tracking - when session key expires, automated path defaults to IDEA
+- Deduplication - key: `dedup:{content_hash}`, TTL: 24 hours
+- Query result cache - key: `query:{hash}`, TTL: 1 hour
+- Model routing usage counters - Gemini daily requests, Claude monthly spend
 
-### 4.3 MinIO — Object Storage
+### 4.3 MinIO: Object Storage
 
 Binary and raw content (voice memos, file attachments). Path structure:
 ```
@@ -133,15 +135,15 @@ Examples: `/voice/2026/02/abc123.ogg`, `/web/2026/02/def456.pdf`
 
 Referenced from wiki pages via `file_ref` frontmatter field. Accessed via presigned URLs.
 
-### 4.4 Obsidian — Human UI
+### 4.4 Obsidian: Human UI
 
 Obsidian reads the wiki repo directly from the local clone. No sync required beyond the
 Obsidian git plugin (auto-pull on interval, auto-commit on change).
 
 Key Obsidian features in use:
-- **Graph view** — powered by `[[wikilinks]]`; requires consistent wikilink syntax from all writers
-- **Dataview plugin** — queries YAML frontmatter; used for ADMIN due dates, PERSON follow-ups,
-  PROJECT status tables. Field names in frontmatter must exactly match SCHEMA.md — inconsistent
+- **Graph view** - powered by `[[wikilinks]]`; requires consistent wikilink syntax from all writers
+- **Dataview plugin** - queries YAML frontmatter; used for ADMIN due dates, PERSON follow-ups,
+  PROJECT status tables. Field names in frontmatter must exactly match SCHEMA.md - inconsistent
   names break Dataview queries silently.
 
 ---
@@ -187,7 +189,7 @@ IngestItem:
 | Telegram URL forward | URL → Jina Reader → n8n | MEDIUM | Phase 5 |
 | Email newsletter | Gmail label → n8n trigger | MEDIUM | Phase 5 |
 | Obsidian Web Clipper | `inbox/` folder → n8n scheduled | MEDIUM | Phase 5 |
-| Claude Code `/mneme` | Direct skill — no Hermes needed | HIGH | Phase 1 (direct path) |
+| Claude Code `/mneme` | Direct skill - no Hermes needed | HIGH | Phase 1 (direct path) |
 | Google Keep archive | Scheduled API poll → n8n | LOW | Phase 6 |
 | Google Drive archive | One-time bulk + delta sync | LOW | Phase 6 |
 
@@ -242,10 +244,10 @@ Update index.md (add/update compact entry under bucket section)
 Append to log.md (ISO timestamp | operation | bucket | title | source)
     |
     v
-git commit: "mneme: ingest {BUCKET} — {title}"
+git commit: "mneme: ingest {BUCKET} - {title}"
     |
     v
-Telegram confirmation: "Saved as {BUCKET} — [[{title}]] ✓"
+Telegram confirmation: "Saved as {BUCKET} - [[{title}]] ✓"
 ```
 
 ### 6.3 Direct Path (Claude Code `/mneme` skill)
@@ -273,7 +275,7 @@ Check index.md for existing entity (Compound buckets)
 Write wiki page, update index.md, append log.md
     |
     v
-git commit: "mneme: ingest {BUCKET} — {title}"
+git commit: "mneme: ingest {BUCKET} - {title}"
     |
     v
 Report to user: bucket assigned, page created/updated, wikilinks added
@@ -348,23 +350,23 @@ Complexity Classification (Ollama self-assesses)
 | Field extraction (frontmatter) | Mistral 7B | Gemini Flash |
 | Entity resolution (dedup check) | Mistral 7B | Gemini Flash |
 | Summarization | Mistral 7B | Gemini Flash |
-| Voice transcription | Whisper | — (local only) |
+| Voice transcription | Whisper | - (local only) |
 | Wiki synthesis / Q&A | Mistral 7B | Gemini Flash → Claude Sonnet |
 | Idea Synthesis Report | Gemini Flash | Claude Sonnet |
 | Serendipity Engine | Gemini Flash | Claude Sonnet |
-| Conflict resolution | Claude Sonnet | — |
+| Conflict resolution | Claude Sonnet | - |
 | Monthly Trend Report | Gemini Flash | Claude Sonnet |
 
 ### 7.3 Models Reference
 
 | Model | Host | Role |
 |-------|------|------|
-| Mistral 7B | Ollama (10.0.50.10) | Default workhorse — simple tasks |
+| Mistral 7B | Ollama (10.0.50.10) | Default workhorse - simple tasks |
 | Whisper | LXC 102 (10.0.50.12) | Voice transcription |
 | Gemini 2.0 Flash | Google API (free tier) | Complex tasks; cost-effective escalation |
 | Claude Sonnet | Anthropic API (paid) | Strategic/judgment tasks; final escalation |
 
-*Note: nomic-embed-text (embedding model) is no longer required — index.md-based navigation
+*Note: nomic-embed-text (embedding model) is no longer required - index.md-based navigation
 replaces vector similarity search at the scale this system will operate at.*
 
 ---
@@ -381,7 +383,7 @@ replaces vector similarity search at the scale this system will operate at.*
 | `/project {name}` | Hermes reads PROJECT entity page → returns status, next action |
 | `/pursuit {name}` | Hermes reads PURSUIT entity page → returns milestone summary |
 | `/remind` | Hermes scans ADMIN pages with `status: Pending` and `due <= today+48h` |
-| `/lint` | Wiki health check — orphans, broken links, stale entities, missing wikilinks |
+| `/lint` | Wiki health check - orphans, broken links, stale entities, missing wikilinks |
 
 ### 8.2 Claude Code Direct Retrieval (`/mneme-ask`)
 
@@ -447,14 +449,14 @@ summaries). Presents candidates to user via Telegram with merge/rename/keep opti
 
 | Service | IP | Role in Mnemosyne |
 |---------|----|-------------------|
-| Hermes | 10.0.50.17 | AI agent — wiki reads/writes (automated path) |
-| n8n | 10.0.50.13 | Workflow engine — Telegram webhook, ingestion orchestration |
+| Hermes | 10.0.50.17 | AI agent - wiki reads/writes (automated path) |
+| n8n | 10.0.50.13 | Workflow engine - Telegram webhook, ingestion orchestration |
 | Redis | 10.0.50.15 | Session state, dedup, query cache, model routing counters |
 | MinIO | 10.0.50.16 | Voice memo + file attachment object storage |
 | Ollama | 10.0.50.10 | Mistral 7B inference |
 | Whisper | 10.0.50.12 | Voice transcription |
 | Postgres | 10.0.50.14 | Not used by Mnemosyne data layer (argus_logs co-located here) |
-| Umami | 10.0.50.18 | Analytics source — weekly snapshots ingested as REFERENCE |
+| Umami | 10.0.50.18 | Analytics source - weekly snapshots ingested as REFERENCE |
 
 All services on VLAN 50 (Lab Services).
 
@@ -465,49 +467,49 @@ Remote: private GitHub repo (`mnemosyne-wiki`). Obsidian reads the local clone d
 
 ## 11. Deployment Order
 
-### Phase 0 — Architecture & Design (no Hermes dependency)
+### Phase 0 - Architecture & Design (no Hermes dependency)
 1. Write `SCHEMA.md` ✅
 2. Create wiki repo (`~/mneme/wiki/`) + scaffold ✅
 3. Update this design doc ✅
 4. Define IngestItem interface spec ✅
 5. Configure Obsidian vault + git plugin + Dataview plugin
 
-### Phase 1 — Foundation (no Hermes dependency)
+### Phase 1 - Foundation (no Hermes dependency)
 6. Create private GitHub remote (`mnemosyne-wiki`) and push initial scaffold
 7. Configure Obsidian vault pointing at local clone
 8. Install Obsidian git plugin (auto-pull 5 min, auto-commit on change)
 9. Install Obsidian Dataview plugin and verify frontmatter query
 10. Grant Hermes LXC deploy key write access to wiki repo
 
-### Phase 2 — Core Ingest Pipeline (requires Hermes wiki skill + LLM router + HTTP endpoint)
+### Phase 2 - Core Ingest Pipeline (requires Hermes wiki skill + LLM router + HTTP endpoint)
 11. Build n8n Telegram webhook trigger workflow
 12. Implement text note ingest flow (n8n → Hermes /task)
 13. Implement voice memo ingest flow (Whisper → MinIO → ingest)
 14. Implement file attachment ingest flow (route by MIME type)
 15. End-to-end test: Telegram note → wiki page → Obsidian
 
-### Phase 3 — Retrieval Commands
+### Phase 3 - Retrieval Commands
 16. Implement `/search` and `/ask`
 17. Implement entity lookup commands (`/find`, `/project`, `/pursuit`)
 18. Implement `/remind` (ADMIN frontmatter scan)
 19. Configure n8n Chat Trigger as secondary interface
 
-### Phase 4 — Scheduled Reports
+### Phase 4 - Scheduled Reports
 20. Build Daily Digest cron
 21. Build Serendipity Engine cron
 22. Build Weekly Summary + Idea Synthesis Report crons
 23. Build Monthly Trend Report cron
 
-### Phase 5 — Extended Sources
+### Phase 5 - Extended Sources
 24. Email ingestion via Gmail label
 25. URL capture via Telegram (Jina Reader)
 26. Obsidian Web Clipper inbox processing
 
-### Phase 6 — Bulk Import
+### Phase 6 - Bulk Import
 27. Google Keep bulk import (supervised mode first)
 28. Google Drive selective import
 
-### Phase 7 — Maintenance
+### Phase 7 - Maintenance
 29. Wiki Lint workflow
 30. Periodic entity consolidation
 
