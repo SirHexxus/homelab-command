@@ -1,13 +1,15 @@
 # IaC Runbook
-**Version:** 1.4
-**Last Updated:** March 2026
+**Version:** 1.5
+**Last Updated:** April 2026
 **Status:** Living Document
 
 ---
 
 ## 1. Purpose & Philosophy
 
-This document defines how Infrastructure as Code is used across the homelab. It is the canonical reference for tooling, conventions, workflow, secrets management, and recovery procedures. It is project-agnostic — individual Design Documents describe *what* a project deploys and how to invoke IaC for that project; this document describes *how* IaC works and *why* it is done this way.
+This document defines how Infrastructure as Code is used across the homelab. It is the canonical reference for tooling, conventions, workflow, secrets management, and recovery procedures. It is project-agnostic - individual Design Documents describe *what* a project deploys and how to invoke IaC for that project; this document describes *how* IaC works and *why* it is done this way.
+
+See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all homelab decisions, including the IaC-first principle this document implements.
 
 **Core principles:**
 
@@ -23,6 +25,8 @@ This document defines how Infrastructure as Code is used across the homelab. It 
 
 **Portfolio value.** IaC doubles as documentation and interview artifact. Code is written to be readable and well-commented, as if a senior engineer is reviewing it.
 
+**Linux-first, Debian-preferred.** This homelab runs Linux. Within Linux, Debian and Debian derivatives (Ubuntu, Proxmox VE) are the default OS choice. Other distros are valid when they are clearly the right tool - Debian is the baseline assumption.
+
 ---
 
 ## 2. Tool Stack
@@ -37,7 +41,7 @@ This document defines how Infrastructure as Code is used across the homelab. It 
 
 **Why bpg/proxmox over telmate/proxmox:** The bpg provider is actively maintained, better documented, and handles LXC containers and VMs more reliably. The telmate provider has known bugs with token authentication and is no longer recommended.
 
-**Docker / Docker Compose note:** Some services may optionally run inside Docker within a VM. When this is the case, the Ansible role handles Docker installation and Compose file deployment. Docker itself is not used as an IaC layer — Terraform and Ansible remain the authoritative provisioning stack.
+**Docker / Docker Compose note:** LXC containers (unprivileged) are always preferred. When a service requires Docker, it goes on a dedicated Docker host VM - not inside an LXC. Docker Compose on that VM is managed via Ansible. The `compose.yaml` (or a complete representative example) lives in this repository as the Source of Truth for the service. Docker itself is not an IaC layer - Terraform and Ansible remain the authoritative provisioning stack. Docker-in-LXC is an absolute last resort.
 
 ---
 
@@ -657,4 +661,4 @@ See `infrastructure/ariadne/ansible/provision.yml` Play 0 as the reference imple
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · Mnemosyne Design Doc v1.1 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. See `docs/README.md` for the full document index. Companion documents: Homelab Philosophy v1.0 · Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.7 · Mnemosyne Design Doc v1.1 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*
