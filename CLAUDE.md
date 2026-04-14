@@ -61,7 +61,9 @@ These apply to every service in the repo. Service CLAUDE.md files do not repeat 
 - Docker-in-LXC: absolute last resort
 
 ### Terraform
-- Provider: `bpg/proxmox` version `0.96.0` — no exceptions
+- Provider: `bpg/proxmox` — migrating from `0.96.0` to `0.98.1`; update each service's
+  `provider.tf` and re-run `terraform init -upgrade` as the opportunity presents. Hermes
+  is already on `0.98.1`. New services should use `0.98.1`.
 - Bridge: `vmbr1` (VLAN-aware trunk)
 - LXC template: `local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst`
 - Storage — root FS: `local-lvm`; data volumes: `general-store` (ZFS, 11.5TB)
