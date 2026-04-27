@@ -74,6 +74,79 @@
     mode: '0755'
 
 # =============================================================================
+# 3b. WIKI REPOSITORY
+# Clone the Mnemosyne wiki repo to /opt/hermes/wiki. The hermes system user
+# has home=/nonexistent, so SSH config lives under /opt/hermes/.ssh/ instead.
+# The deploy key grants write access to the private mnemosyne-wiki GitHub repo.
+# =============================================================================
+
+- name: Create Hermes SSH directory
+  file:
+    path: /opt/hermes/.ssh
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy wiki SSH deploy key
+  copy:
+    content: "{{ vault_wiki_deploy_key | b64decode }}"
+    dest: /opt/hermes/.ssh/wiki_deploy
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: '0600'
+
+- name: Fetch github.com SSH host key
+  command: ssh-keyscan -t ed25519 github.com
+  register: github_keyscan
+  changed_when: false
+  failed_when: github_keyscan.rc != 0 or github_keyscan.stdout == ''
+
+- name: Add github.com to Hermes known_hosts
+  known_hosts:
+    path: /opt/hermes/.ssh/known_hosts
+    name: github.com
+    key: "{{ github_keyscan.stdout }}"
+    state: present
+
+- name: Set known_hosts ownership
+  file:
+    path: /opt/hermes/.ssh/known_hosts
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: '0644'
+
+- name: Clone Mnemosyne wiki repository
+  command: git clone git@github.com:SirHexxus/mnemosyne-wiki.git /opt/hermes/wiki
+  args:
+    creates: /opt/hermes/wiki/.git
+  environment:
+    GIT_SSH_COMMAND: >-
+      ssh -i /opt/hermes/.ssh/wiki_deploy
+      -o UserKnownHostsFile=/opt/hermes/.ssh/known_hosts
+      -o StrictHostKeyChecking=yes
+
+- name: Set ownership of wiki directory
+  file:
+    path: /opt/hermes/wiki
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    recurse: yes
+
+- name: Configure wiki repo to use deploy key for future push/pull
+  ini_file:
+    path: /opt/hermes/wiki/.git/config
+    section: core
+    option: sshCommand
+    value: >-
+      ssh -i /opt/hermes/.ssh/wiki_deploy
+      -o UserKnownHostsFile=/opt/hermes/.ssh/known_hosts
+      -o StrictHostKeyChecking=yes
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+
+# =============================================================================
 # 4. PYTHON VIRTUAL ENVIRONMENT
 # =============================================================================
 
