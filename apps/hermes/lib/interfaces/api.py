@@ -11,6 +11,7 @@ Routes:
 from __future__ import annotations
 
 import os
+import threading
 from functools import wraps
 from typing import Any
 
@@ -138,6 +139,18 @@ def create_app(default_context_name: str = "personal") -> Flask:
                 "status": "error",
                 "message": f"Unknown or misconfigured context: {context_name!r}",
             }), 400
+
+        # Ingest tasks run async — agent loop is too slow for a synchronous response.
+        # Query tasks (wiki_read) remain synchronous since callers need the answer.
+        if route["prompt_template"] == "ingest":
+            def _run() -> None:
+                try:
+                    run_agent(prompt, context, task_type=route["task_type"])
+                except Exception:
+                    pass
+
+            threading.Thread(target=_run, daemon=True).start()
+            return jsonify({"status": "ok", "message": "Accepted for processing."})
 
         result = run_agent(prompt, context, task_type=route["task_type"])
 
