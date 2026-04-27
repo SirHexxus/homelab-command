@@ -288,4 +288,27 @@ call and tool invocation. A few thoughts as usage grows:
 
 ---
 
+## Phase 3 Architecture Direction — Single-Shot Dispatch Over ReAct
+
+*Added 2026-04-27 — from replanning session*
+
+The ReAct loop failure during Phase 2 testing (10-step safety limit hit, Ollama timeouts at 300s) is diagnostic: the multi-step agent loop is over-engineered for most Mnemosyne ingest tasks. Classifying a note, choosing a bucket, and writing a wiki page is a deterministic routing operation, not a reasoning problem.
+
+**Recommended Phase 3 approach:**
+
+Replace the ReAct loop with a single-shot classification prompt for simple tasks:
+- One LLM call: "Classify this note, extract title and summary, return JSON"
+- n8n workflow executes the actual wiki write, git commit, MinIO upload, etc.
+- Hermes becomes a thin router dispatching to n8n workflows rather than running a reasoning loop
+
+Reserve the ReAct loop for genuinely complex judgment tasks: synthesis, conflict resolution, Argus alert triage — cases where multi-step reasoning is actually needed.
+
+This aligns with the file-tree agent architecture principle: the agent's job is instructions + tool dispatch; n8n is the tools layer that handles branching, retries, and integrations. Adding a new capability means building an n8n workflow, not editing Hermes Python.
+
+**Practical implication for the routing table:**
+
+The `classify` task type (already in the routing config as `local`) becomes a single-shot call returning structured JSON. The `wiki_write` task type may not need a full agent loop — n8n can handle the write once classification output is returned.
+
+---
+
 *See `ToDo.md` for actionable task list. This document is context and thinking, not tasks.*

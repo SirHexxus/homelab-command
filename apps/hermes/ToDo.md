@@ -5,16 +5,18 @@ Source of truth: `Mnemosyne-Hand-Off.md` (requirements), `THOUGHTS.md` (design r
 
 ---
 
-## ⚠️ STATUS: BACK-BURNERED — 2026-04-27
+## ⚠️ STATUS: ON HOLD — 2026-04-27
 
-Hermes is not being actively developed. A replanning session is required before resuming.
+Hermes is not being actively developed. A replanning session was held 2026-04-27. Decision: hold, not shutter. Hard expiry: Jan 1 2027.
 
-**Why:** Local models (qwen3:1.7b, qwen3:4b on CPU) are too slow/limited for the multi-step
-ReAct loop. Gemini's free tier has been eliminated. The architecture assumed cloud LLM
-availability that no longer exists without billing. A GPU (e.g. RTX 3090) would unblock
-local inference at the required performance level.
+**Why it's on hold:** Local models (qwen3:1.7b, qwen3:4b on CPU) are too slow/limited for the multi-step ReAct loop. Gemini's free tier has been eliminated. The architecture assumed cloud LLM availability that no longer exists without billing.
 
-**Do not add or execute tasks from this list without first holding a replanning session.**
+**Hold trigger conditions — Hermes resumes when any one of these occurs:**
+- Bug Bounty Validation produces a successful outcome (VDP accepted or paid bounty)
+- Hexxus Web Solutions onboards a new client
+- Jan 1 2027 — if neither above has occurred, Hermes is shuttered
+
+**Do not add or execute tasks from this list until a hold trigger condition is met.**
 
 ---
 
