@@ -27,5 +27,8 @@ hermes_log_dir:     /opt/hermes/apps/hermes/logs
 # Resource settings
 max_open_files: 65535
 
+# Telegram bot tokens (sourced from vault)
+telegram_token_personal: "{{ vault_telegram_token_personal | default('') }}"
+
 # Phase 2: HTTP endpoint live — uvicorn serves lib.interfaces.api
 hermes_deploy_service: true
