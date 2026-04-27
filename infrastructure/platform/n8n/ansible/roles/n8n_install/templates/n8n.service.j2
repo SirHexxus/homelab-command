@@ -14,6 +14,8 @@ RestartSec=10
 Environment=N8N_PORT={{ n8n_port }}
 Environment=N8N_HOST=0.0.0.0
 Environment=N8N_PROTOCOL=http
+Environment=N8N_WEBHOOK_URL={{ n8n_webhook_url }}
+Environment=WEBHOOK_URL={{ n8n_webhook_url }}
 Environment=N8N_USER_FOLDER=/var/lib/n8n
 Environment=DB_TYPE=postgresdb
 Environment=DB_POSTGRESDB_HOST={{ postgres_host }}

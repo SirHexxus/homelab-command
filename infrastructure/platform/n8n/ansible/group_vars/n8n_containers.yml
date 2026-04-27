@@ -4,3 +4,4 @@ n8n_port: 5678
 n8n_version: latest
 postgres_host: 10.0.50.14
 postgres_port: 5432
+n8n_webhook_url: "https://automation.hexxusweb.com"
