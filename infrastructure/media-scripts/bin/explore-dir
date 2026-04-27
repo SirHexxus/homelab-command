@@ -1,0 +1,254 @@
+#!/usr/bin/env python3
+"""Produce a discovery report for a directory.
+
+Walks the target directory and outputs:
+  - Total file count and size
+  - Subdirectory breakdown by size
+  - File-type distribution (by extension)
+  - Largest files
+  - Junk summary (node_modules, .git, __pycache__, etc.) — counted separately
+
+Output is printed to the terminal and saved to reports/.
+
+Examples:
+    ./bin/explore-dir /mnt/seagate/myFiles/masterFileProgramming/
+    ./bin/explore-dir /mnt/seagate/myFiles/masterFileGaming/ --depth 3
+    ./bin/explore-dir /mnt/seagate/chang-files/ --top 30
+    ./bin/explore-dir /mnt/seagate/myFiles/masterFileProgramming/ --exclude node_modules .git
+"""
+
+import argparse
+import os
+import sys
+from collections import defaultdict
+from datetime import datetime
+from pathlib import Path
+
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+REPORTS_DIR = Path(__file__).parent.parent / "reports"
+
+# Directory names treated as junk — their contents are counted separately
+# so they don't skew the file-type and largest-file reports.
+DEFAULT_JUNK = [
+    "node_modules",
+    ".git",
+    "__pycache__",
+    "$RECYCLE.BIN",
+    "System Volume Information",
+    ".Trash-1000",
+]
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def human_size(n: int) -> str:
+    """Return a human-readable size string (e.g. 4.2G)."""
+    for unit in ("B", "K", "M", "G", "T"):
+        if abs(n) < 1024.0:
+            return f"{n:.1f}{unit}"
+        n /= 1024.0
+    return f"{n:.1f}P"
+
+
+def is_junk(path: Path, root: Path, junk_names: list[str]) -> bool:
+    """Return True if any component of path (relative to root) is a junk name."""
+    try:
+        parts = path.relative_to(root).parts
+    except ValueError:
+        return False
+    return any(p in junk_names for p in parts)
+
+
+# ── Core walk ────────────────────────────────────────────────────────────────
+
+
+def walk_dir(
+    root: Path,
+    junk_names: list[str],
+) -> tuple[list[tuple[Path, int]], list[tuple[Path, int]]]:
+    """Walk root and return (normal_files, junk_files) as (path, size) lists.
+
+    I/O errors are silently skipped so corrupted directories don't abort the scan.
+    """
+    normal: list[tuple[Path, int]] = []
+    junk: list[tuple[Path, int]] = []
+
+    def on_error(err: OSError) -> None:
+        pass  # skip unreadable directories silently
+
+    for dirpath, dirnames, filenames in os.walk(root, onerror=on_error):
+        # Skip hidden subdirectories in place so os.walk won't descend into them.
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+
+        for fname in filenames:
+            if fname.startswith("."):
+                continue
+            fpath = Path(dirpath) / fname
+            try:
+                size = fpath.stat().st_size
+            except OSError:
+                continue
+
+            if is_junk(fpath, root, junk_names):
+                junk.append((fpath, size))
+            else:
+                normal.append((fpath, size))
+
+    return normal, junk
+
+
+# ── Report builders ───────────────────────────────────────────────────────────
+
+
+def top_level_subdir_sizes(root: Path, files: list[tuple[Path, int]]) -> list[tuple[str, int]]:
+    """Return (subdir_name, total_bytes) for each immediate child of root, sorted by size."""
+    sizes: dict[str, int] = defaultdict(int)
+
+    for fpath, size in files:
+        try:
+            rel = fpath.relative_to(root)
+        except ValueError:
+            continue
+        top = rel.parts[0] if len(rel.parts) > 1 else "(root)"
+        sizes[top] += size
+
+    return sorted(sizes.items(), key=lambda x: x[1], reverse=True)
+
+
+def extension_breakdown(
+    files: list[tuple[Path, int]], top_n: int
+) -> list[tuple[str, int, int]]:
+    """Return top N extensions by size as (ext, file_count, total_bytes)."""
+    counts: dict[str, int] = defaultdict(int)
+    sizes: dict[str, int] = defaultdict(int)
+
+    for fpath, size in files:
+        ext = fpath.suffix.lower() if fpath.suffix else "(none)"
+        counts[ext] += 1
+        sizes[ext] += size
+
+    top = sorted(sizes.keys(), key=lambda e: sizes[e], reverse=True)[:top_n]
+    return [(e, counts[e], sizes[e]) for e in top]
+
+
+def largest_files(
+    files: list[tuple[Path, int]], root: Path, top_n: int
+) -> list[tuple[str, int]]:
+    """Return the top N largest files as (relative_path_str, size)."""
+    top = sorted(files, key=lambda x: x[1], reverse=True)[:top_n]
+    result = []
+    for fpath, size in top:
+        try:
+            rel = str(fpath.relative_to(root))
+        except ValueError:
+            rel = str(fpath)
+        result.append((rel, size))
+    return result
+
+
+# ── Report assembly ───────────────────────────────────────────────────────────
+
+
+def build_report(
+    root: Path,
+    files: list[tuple[Path, int]],
+    junk: list[tuple[Path, int]],
+    top_n: int,
+) -> list[str]:
+    lines: list[str] = []
+    sep = "─" * 60
+    thick = "═" * 60
+
+    total_size = sum(s for _, s in files)
+    junk_size = sum(s for _, s in junk)
+
+    lines += [
+        thick,
+        f"  EXPLORE: {root}",
+        f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        thick,
+        f"  Files:  {len(files):>8,}   ({human_size(total_size)})",
+    ]
+    if junk:
+        lines.append(
+            f"  Junk:   {len(junk):>8,}   ({human_size(junk_size)}) "
+            f"— excluded from breakdowns below"
+        )
+    lines.append("")
+
+    # ── Subdirectory breakdown ────────────────────────────────────────────────
+    subdirs = top_level_subdir_sizes(root, files)
+    if subdirs:
+        lines.append(f"  {sep[:18]} SUBDIRECTORIES {sep[:25]}")
+        for name, size in subdirs:
+            lines.append(f"  {human_size(size):>8}  {name}/")
+        lines.append("")
+
+    # ── File type breakdown ───────────────────────────────────────────────────
+    exts = extension_breakdown(files, top_n=15)
+    if exts:
+        lines.append(f"  {sep[:18]} FILE TYPES (top 15) {sep[:20]}")
+        lines.append(f"  {'Ext':<16} {'Count':>8}  {'Size':>8}")
+        lines.append(f"  {'─'*16} {'─'*8}  {'─'*8}")
+        for ext, count, size in exts:
+            lines.append(f"  {ext:<16} {count:>8,}  {human_size(size):>8}")
+        lines.append("")
+
+    # ── Largest files ─────────────────────────────────────────────────────────
+    big = largest_files(files, root, top_n=top_n)
+    if big:
+        lines.append(f"  {sep[:18]} LARGEST FILES (top {top_n}) {sep[:13]}")
+        for rel, size in big:
+            lines.append(f"  {human_size(size):>8}  {rel}")
+        lines.append("")
+
+    lines.append(thick)
+    return lines
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("path", type=Path, help="Directory to explore")
+    parser.add_argument(
+        "--top", type=int, default=20,
+        help="Number of largest files to show (default: 20)",
+    )
+    parser.add_argument(
+        "--exclude", nargs="*", default=[], metavar="NAME",
+        help="Additional directory names to treat as junk",
+    )
+    args = parser.parse_args()
+
+    if not args.path.exists():
+        print(f"Error: path does not exist: {args.path}", file=sys.stderr)
+        sys.exit(1)
+
+    junk_names = DEFAULT_JUNK + args.exclude
+
+    print(f"Scanning {args.path} …")
+    files, junk = walk_dir(args.path, junk_names)
+
+    lines = build_report(args.path, files, junk, top_n=args.top)
+
+    REPORTS_DIR.mkdir(exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    label = args.path.name.replace(" ", "_")
+    report_path = REPORTS_DIR / f"explore-{label}-{ts}.txt"
+
+    output = "\n".join(lines)
+    print(output)
+    report_path.write_text(output + "\n")
+    print(f"\n  Report saved → {report_path}")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""Copy music from the Seagate external drive to the NAS songs/ directory.
+
+Preserves the existing Artist/Album folder structure.
+Uses rsync for resumable, idempotent transfers.
+
+Examples:
+    ./bin/sync-music --dry-run
+    ./bin/sync-music
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from lib.rsync_runner import run_rsync
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+DEFAULT_SOURCE = Path("/mnt/seagate/myFiles/masterFilePersonal/Music")
+DEFAULT_DEST = Path("/mnt/truenas-media/songs")
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE,
+                        help="Source music directory (default: %(default)s)")
+    parser.add_argument("--dest", type=Path, default=DEFAULT_DEST,
+                        help="Destination on NAS (default: %(default)s)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Show what would be transferred without copying anything")
+    parser.add_argument("--delete", action="store_true",
+                        help="Remove files in dest absent from source (use with care)")
+    parser.add_argument("--verbose", "-v", action="store_true",
+                        help="Print per-file rsync output")
+    args = parser.parse_args()
+
+    if not args.source.exists():
+        print(f"Error: source does not exist: {args.source}", file=sys.stderr)
+        print("Is the Seagate drive mounted?", file=sys.stderr)
+        sys.exit(1)
+
+    if args.dry_run:
+        print("Dry run — no files will be transferred.\n")
+
+    ok = run_rsync(
+        args.source,
+        args.dest,
+        label="music",
+        dry_run=args.dry_run,
+        delete=args.delete,
+        verbose=args.verbose,
+    )
+    sys.exit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    main()

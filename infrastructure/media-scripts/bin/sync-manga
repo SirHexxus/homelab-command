@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""Convert and copy manga from the Seagate to the NAS manga/ directory.
+
+Processes two source directories:
+
+1. zip/  (282G) — flat archive files named like "07-Ghost v02 c06-11.zip"
+   → series name extracted from filename
+   → grouped into manga/<Series Name>/<file>.cbz
+
+2. comicsAndManga/manga/  (109G) — already organised into series folders
+   → archives inside each folder converted to .cbz
+   → copied to manga/<Series Name>/
+
+Conversion:
+  .zip  →  .cbz  (rename only)
+  .rar  →  .cbz  (extract + repack — requires: sudo apt install unrar)
+
+Examples:
+    ./bin/sync-manga --dry-run
+    ./bin/sync-manga
+    ./bin/sync-manga --source-zip-only --dry-run
+    ./bin/sync-manga --source-folders-only --dry-run
+"""
+
+import argparse
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from lib.cbz_converter import check_unrar, convert_to_cbz, is_comic_archive
+from lib.series_parser import extract_series_name, safe_dirname
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+DEFAULT_SOURCE_ZIP = Path("/mnt/seagate/myFiles/masterFilePersonal/myBooks/zip")
+DEFAULT_SOURCE_FOLDERS = Path(
+    "/mnt/seagate/myFiles/masterFilePersonal/myBooks/comicsAndManga/manga"
+)
+DEFAULT_DEST = Path("/mnt/truenas-media/manga")
+
+
+# ── Functions ─────────────────────────────────────────────────────────────────
+
+
+def process_zip_dir(
+    source: Path,
+    dest: Path,
+    *,
+    dry_run: bool,
+    verbose: bool,
+) -> tuple[int, int]:
+    """Process the flat zip/ directory — group by series, rename to .cbz.
+
+    Returns (success_count, failure_count).
+    """
+    success = 0
+    failure = 0
+
+    # Group files by extracted series name so we can print a per-series summary.
+    series_map: dict[str, list[Path]] = defaultdict(list)
+    for entry in sorted(source.iterdir()):
+        if entry.is_file() and is_comic_archive(entry):
+            series = safe_dirname(extract_series_name(entry.name))
+            series_map[series].append(entry)
+
+    unrecognized = [
+        e for e in source.iterdir()
+        if e.is_file() and not is_comic_archive(e) and not e.name.startswith(".")
+    ]
+    if unrecognized:
+        print(f"  [WARN] {len(unrecognized)} non-archive files in zip/ — skipping:")
+        for f in unrecognized[:5]:
+            print(f"    {f.name}")
+        if len(unrecognized) > 5:
+            print(f"    ... and {len(unrecognized) - 5} more")
+
+    print(f"  zip/: {len(series_map)} series, {sum(len(v) for v in series_map.values())} files")
+
+    for series_name, archives in sorted(series_map.items()):
+        series_dest = dest / series_name
+        if verbose or dry_run:
+            print(f"\n  [{series_name}]  ({len(archives)} files)")
+        for archive in archives:
+            result = convert_to_cbz(archive, series_dest, dry_run=dry_run)
+            if result:
+                success += 1
+                if verbose and not dry_run:
+                    print(f"    ✓ {archive.stem}.cbz")
+            else:
+                failure += 1
+
+    return success, failure
+
+
+def process_folders_dir(
+    source: Path,
+    dest: Path,
+    *,
+    dry_run: bool,
+    verbose: bool,
+) -> tuple[int, int]:
+    """Process the manga/ folder-per-series directory.
+
+    Returns (success_count, failure_count).
+    """
+    success = 0
+    failure = 0
+
+    series_dirs = sorted(d for d in source.iterdir() if d.is_dir() and not d.name.startswith("."))
+    print(f"  manga/: {len(series_dirs)} series folders")
+
+    for series_dir in series_dirs:
+        series_dest = dest / safe_dirname(series_dir.name)
+        archives = sorted(f for f in series_dir.rglob("*") if f.is_file() and is_comic_archive(f))
+        already_cbz = sum(1 for a in archives if a.suffix.lower() == ".cbz")
+        needs_convert = len(archives) - already_cbz
+
+        if verbose or dry_run:
+            print(f"\n  [{series_dir.name}]  ({len(archives)} files, {needs_convert} to convert)")
+
+        for archive in archives:
+            rel = archive.parent.relative_to(series_dir)
+            out_dir = series_dest / rel
+            result = convert_to_cbz(archive, out_dir, dry_run=dry_run)
+            if result:
+                success += 1
+            else:
+                failure += 1
+
+    return success, failure
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--source-zip", type=Path, default=DEFAULT_SOURCE_ZIP,
+                        help="Flat zip/ directory (default: %(default)s)")
+    parser.add_argument("--source-folders", type=Path, default=DEFAULT_SOURCE_FOLDERS,
+                        help="manga/ folders directory (default: %(default)s)")
+    parser.add_argument("--dest", type=Path, default=DEFAULT_DEST,
+                        help="Destination on NAS (default: %(default)s)")
+    parser.add_argument("--source-zip-only", action="store_true",
+                        help="Process only the zip/ flat directory")
+    parser.add_argument("--source-folders-only", action="store_true",
+                        help="Process only the manga/ folders directory")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Show what would be converted without writing anything")
+    parser.add_argument("--verbose", "-v", action="store_true",
+                        help="Print each file as it is processed")
+    args = parser.parse_args()
+
+    if args.dry_run:
+        print("Dry run — no files will be written.\n")
+
+    if not check_unrar():
+        print(
+            "Warning: unrar not found. RAR/CBR files will be skipped.\n"
+            "Install with: sudo apt install unrar\n",
+            file=sys.stderr,
+        )
+
+    run_zip = not args.source_folders_only
+    run_folders = not args.source_zip_only
+
+    total_success = 0
+    total_failure = 0
+
+    if run_zip:
+        if not args.source_zip.exists():
+            print(f"Error: zip source does not exist: {args.source_zip}", file=sys.stderr)
+            sys.exit(1)
+        print(f"{'─' * 60}")
+        print(f"  Source: zip/  →  {args.dest}")
+        s, f = process_zip_dir(args.source_zip, args.dest, dry_run=args.dry_run, verbose=args.verbose)
+        total_success += s
+        total_failure += f
+
+    if run_folders:
+        if not args.source_folders.exists():
+            print(f"Error: folders source does not exist: {args.source_folders}", file=sys.stderr)
+            sys.exit(1)
+        print(f"\n{'─' * 60}")
+        print(f"  Source: manga/  →  {args.dest}")
+        s, f = process_folders_dir(
+            args.source_folders, args.dest, dry_run=args.dry_run, verbose=args.verbose
+        )
+        total_success += s
+        total_failure += f
+
+    print(f"\n{'═' * 60}")
+    print(f"  Manga: {total_success} converted, {total_failure} failed")
+    if total_failure:
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

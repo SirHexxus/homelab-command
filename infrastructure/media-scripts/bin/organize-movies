@@ -1,0 +1,366 @@
+#!/usr/bin/env python3
+"""Deduplicate and organize loose movie files into Radarr-ready subdirectories.
+
+Scans a directory for video files sitting directly in the root (not already in
+a subdirectory). Groups them by identity (exact byte-size match) and by
+normalized title (same movie, different encodes). For each group, picks the
+highest-quality version and moves it into a 'Movie Title (Year)/' subfolder.
+
+Confidence levels:
+  HIGH   — exact file-size match (identical content, different names).
+            Auto-selects the better-named file.
+  MEDIUM — same normalized title, clearly ranked by quality/size.
+            Auto-selects; reported for review.
+  LOW    — same normalized title, ambiguous ranking (similar sizes, mixed
+            formats). Requires --interactive to resolve, or skipped with a
+            warning in non-interactive mode.
+
+Examples:
+    ./bin/organize-movies /mnt/truenas-media/movies --dry-run
+    ./bin/organize-movies /mnt/truenas-media/movies --dry-run --interactive
+    ./bin/organize-movies /mnt/truenas-media/movies --interactive
+"""
+
+import argparse
+import re
+import sys
+from pathlib import Path
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".m2ts", ".mov", ".wmv", ".m4v"}
+
+# Quality tier: higher index = better. Used for ranking when sizes differ.
+QUALITY_RANK = {".m2ts": 4, ".mkv": 3, ".mp4": 2, ".avi": 1, ".mov": 2, ".wmv": 0}
+
+# Patterns that indicate a lower-quality re-encode regardless of extension.
+_LOWER_QUALITY_PATTERNS = re.compile(
+    r"(_x264|_x265|\.HDTV\.|\.SDTV\.|\.WEBRip\.|YIFY|YTS)", re.IGNORECASE
+)
+
+# Tokens to strip when normalizing a title for grouping.
+_STRIP_TOKENS = re.compile(
+    r"""
+    \b(
+        480p|720p|1080p|2160p|4k|
+        bluray|blu[-\s]?ray|bdrip|bremux|
+        webrip|web-dl|webdl|
+        hdtv|sdtv|
+        x264|x265|h264|h265|hevc|avc|av1|
+        yify|yts|
+        extended|theatrical|directors\.cut|remastered|
+        dual[-\s]?audio|multi[-\s]?audio|multi[-\s]?sub|
+        hdrip|dvdrip|dvd|
+        10th|anniversary|edition|cut|
+        eng|english|japanese|
+        hq|hd|sd|uhd
+    )\b
+    | \[.*?\]              # [group tags]
+    | \((?!\d{4}\)).*?\)   # (anything) that isn't a 4-digit year
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def normalize_title(path: Path) -> str:
+    """Return a lowercase, stripped title string for grouping purposes.
+
+    Replaces dots and underscores with spaces first so that tokens like
+    _x264 and .1080p have real word boundaries before the token pattern runs.
+    """
+    stem = re.sub(r"[._]", " ", path.stem)
+    cleaned = _STRIP_TOKENS.sub(" ", stem)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip().lower()
+    return cleaned
+
+
+def quality_score(path: Path) -> tuple[int, int]:
+    """Return (format_rank, size_bytes) for quality comparison.
+
+    Higher is better. Used to rank files within a duplicate group.
+    """
+    ext_rank = QUALITY_RANK.get(path.suffix.lower(), 0)
+    penalty = -1 if _LOWER_QUALITY_PATTERNS.search(path.stem) else 0
+    return (ext_rank + penalty, path.stat().st_size)
+
+
+def best_name_for_group(paths: list[Path]) -> str:
+    """Pick the most Radarr-friendly display name from a group of paths.
+
+    Prefers names that already contain a 4-digit year in parentheses.
+    Falls back to the longest stem (usually the most descriptive).
+    """
+    year_re = re.compile(r"\(\d{4}\)")
+    with_year = [p for p in paths if year_re.search(p.stem)]
+    candidates = with_year if with_year else paths
+    return max(candidates, key=lambda p: len(p.stem)).stem
+
+
+def derive_folder_name(stem: str) -> str:
+    """Convert a file stem into a clean 'Title (Year)' folder name.
+
+    Handles common messy patterns like 'Movie.Title.2002.1080p...' and
+    'Movie Title (2002) Quality Tag'.
+    """
+    # Strip quality/group tokens from end while preserving year
+    year_match = re.search(r"\b((?:19|20)\d{2})\b", stem)
+    year = f" ({year_match.group(1)})" if year_match else ""
+
+    # Remove everything from the year onward (keep just the title part)
+    if year_match:
+        title_part = stem[: year_match.start()]
+    else:
+        title_part = stem
+
+    # Clean up separators
+    title_part = re.sub(r"[._]", " ", title_part)
+    title_part = re.sub(r"\s+", " ", title_part).strip()
+    title_part = re.sub(r"\s*[\(\[\{].*$", "", title_part).strip()
+
+    return f"{title_part}{year}"
+
+
+def is_ambiguous(group: list[Path]) -> bool:
+    """Return True if the group has no clear quality winner.
+
+    Ambiguous = top two files are within 5% of each other in size AND have
+    the same format rank. A human should pick.
+    """
+    if len(group) < 2:
+        return False
+    ranked = sorted(group, key=quality_score, reverse=True)
+    top, second = ranked[0], ranked[1]
+    top_score = quality_score(top)
+    second_score = quality_score(second)
+    if top_score[0] != second_score[0]:
+        return False  # different format tier — clear winner
+    size_diff = abs(top_score[1] - second_score[1])
+    return size_diff / max(top_score[1], 1) < 0.05
+
+
+def prompt_choice(group: list[Path]) -> Path | None:
+    """Interactively ask the user to pick one file from a group.
+
+    Returns None if the user skips.
+    """
+    print("\n  Ambiguous group — please choose a file to keep:")
+    for idx, path in enumerate(group, start=1):
+        size_mb = path.stat().st_size / (1024 ** 2)
+        print(f"    [{idx}] {path.name}  ({size_mb:.0f} MB)")
+    print("    [s] Skip this group")
+    while True:
+        raw = input("  Choice: ").strip().lower()
+        if raw == "s":
+            return None
+        try:
+            choice = int(raw)
+            if 1 <= choice <= len(group):
+                return group[choice - 1]
+        except ValueError:
+            pass
+        print("  Invalid choice. Enter a number or 's'.")
+
+
+# ── Core logic ────────────────────────────────────────────────────────────────
+
+
+def find_loose_files(root: Path) -> list[Path]:
+    """Return video files sitting directly in root (not in a subdirectory)."""
+    return [
+        p for p in root.iterdir()
+        if p.is_file() and p.suffix.lower() in VIDEO_EXTENSIONS
+    ]
+
+
+def group_by_size(files: list[Path]) -> dict[int, list[Path]]:
+    """Group files that share an exact byte size (identical content)."""
+    groups: dict[int, list[Path]] = {}
+    for path in files:
+        size = path.stat().st_size
+        groups.setdefault(size, []).append(path)
+    return {size: paths for size, paths in groups.items() if len(paths) > 1}
+
+
+def group_by_title(files: list[Path]) -> dict[str, list[Path]]:
+    """Group files that share a normalized title (same movie, diff encodes)."""
+    groups: dict[str, list[Path]] = {}
+    for path in files:
+        key = normalize_title(path)
+        groups.setdefault(key, []).append(path)
+    return {key: paths for key, paths in groups.items() if len(paths) > 1}
+
+
+def build_plan(
+    files: list[Path],
+    root: Path,
+    interactive: bool,
+) -> tuple[list[tuple[Path, Path]], list[Path], list[tuple[list[Path], str]]]:
+    """Analyse loose files and produce a move plan.
+
+    Returns:
+        moves:   list of (source_path, destination_path) pairs
+        deletes: list of paths to remove (duplicates not chosen)
+        skipped: list of (group, reason) for groups that need attention
+    """
+    moves: list[tuple[Path, Path]] = []
+    deletes: list[Path] = []
+    skipped: list[tuple[list[Path], str]] = []
+    handled: set[Path] = set()
+
+    size_groups = group_by_size(files)
+    title_groups = group_by_title(files)
+
+    # ── Pass 1: exact-size duplicates (HIGH confidence) ────────────────────
+    for size, group in size_groups.items():
+        # Pick the best-named file; discard the rest
+        keeper = max(group, key=lambda p: (
+            1 if re.search(r"\(\d{4}\)", p.stem) else 0,
+            len(p.stem),
+        ))
+        folder_name = derive_folder_name(keeper.stem)
+        dest = root / folder_name / (folder_name + keeper.suffix)
+        moves.append((keeper, dest))
+        for path in group:
+            if path != keeper:
+                deletes.append(path)
+            handled.add(path)
+
+    # ── Pass 2: title-matched groups (MEDIUM / LOW confidence) ────────────
+    for title, group in title_groups.items():
+        unhandled = [p for p in group if p not in handled]
+        if len(unhandled) < 2:
+            # Only one unhandled file remains — just move it solo
+            if unhandled:
+                path = unhandled[0]
+                folder_name = derive_folder_name(path.stem)
+                dest = root / folder_name / (folder_name + path.suffix)
+                moves.append((path, dest))
+                handled.add(path)
+            continue
+
+        if is_ambiguous(unhandled):
+            if interactive:
+                keeper = prompt_choice(unhandled)
+                if keeper is None:
+                    skipped.append((unhandled, "user skipped"))
+                    for path in unhandled:
+                        handled.add(path)
+                    continue
+            else:
+                skipped.append((unhandled, "ambiguous — rerun with --interactive"))
+                for path in unhandled:
+                    handled.add(path)
+                continue
+        else:
+            keeper = max(unhandled, key=quality_score)
+
+        folder_name = derive_folder_name(keeper.stem)
+        dest = root / folder_name / (folder_name + keeper.suffix)
+        moves.append((keeper, dest))
+        for path in unhandled:
+            if path != keeper:
+                deletes.append(path)
+            handled.add(path)
+
+    # ── Pass 3: remaining unmatched singletons ─────────────────────────────
+    for path in files:
+        if path not in handled:
+            folder_name = derive_folder_name(path.stem)
+            dest = root / folder_name / (folder_name + path.suffix)
+            moves.append((path, dest))
+
+    return moves, deletes, skipped
+
+
+def execute_plan(
+    moves: list[tuple[Path, Path]],
+    deletes: list[Path],
+    dry_run: bool,
+) -> None:
+    """Carry out (or print) the move and delete plan."""
+    print(f"\n{'DRY RUN — ' if dry_run else ''}Move plan:")
+    for src, dest in sorted(moves, key=lambda t: t[0].name):
+        print(f"  MOVE  {src.name}")
+        print(f"     →  {dest}")
+        if not dry_run:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                src.rename(dest)
+            except OSError as exc:
+                print(f"  ERROR moving {src.name}: {exc}", file=sys.stderr)
+
+    if deletes:
+        print(f"\n{'DRY RUN — ' if dry_run else ''}Delete plan (duplicates):")
+        for path in sorted(deletes, key=lambda p: p.name):
+            print(f"  DELETE  {path.name}  ({path.stat().st_size / (1024**2):.0f} MB)")
+            if not dry_run:
+                try:
+                    path.unlink()
+                except OSError as exc:
+                    print(f"  ERROR deleting {path.name}: {exc}", file=sys.stderr)
+
+
+def print_skipped(skipped: list[tuple[list[Path], str]]) -> None:
+    """Print a summary of groups that were skipped."""
+    if not skipped:
+        return
+    print(f"\nSkipped {len(skipped)} ambiguous group(s) — manual review needed:")
+    for group, reason in skipped:
+        print(f"  [{reason}]")
+        for path in group:
+            size_mb = path.stat().st_size / (1024 ** 2)
+            print(f"    {path.name}  ({size_mb:.0f} MB)")
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "directory",
+        type=Path,
+        help="Root directory to scan for loose video files",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print planned changes without moving or deleting anything",
+    )
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Prompt for manual resolution of ambiguous duplicate groups",
+    )
+    args = parser.parse_args()
+
+    root = args.directory.resolve()
+    if not root.is_dir():
+        print(f"Error: not a directory: {root}", file=sys.stderr)
+        sys.exit(1)
+
+    loose = find_loose_files(root)
+    if not loose:
+        print(f"No loose video files found in {root}")
+        sys.exit(0)
+
+    print(f"Found {len(loose)} loose video file(s) in {root}")
+
+    moves, deletes, skipped = build_plan(loose, root, args.interactive)
+
+    execute_plan(moves, deletes, args.dry_run)
+    print_skipped(skipped)
+
+    if args.dry_run:
+        print("\nDry run complete. Re-run without --dry-run to apply changes.")
+    else:
+        print(f"\nDone. {len(moves)} file(s) moved, {len(deletes)} duplicate(s) deleted.")
+        if skipped:
+            print(f"Re-run with --interactive to resolve {len(skipped)} skipped group(s).")
+
+
+if __name__ == "__main__":
+    main()

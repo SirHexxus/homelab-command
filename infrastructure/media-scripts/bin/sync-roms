@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+"""Copy ROM collections from the Seagate external drive to the NAS roms/ directory.
+
+Uses rsync for resumable, idempotent transfers. Designed to run inside a tmux
+session — safe to interrupt and re-run; rsync will pick up where it left off.
+
+Source layout (Seagate):
+    <source>/ROM Repositories/<system-dir>/  →  <dest>/<system>/
+
+Individual game folders directly under <source>/ (not in ROM Repositories/) are
+reported as unrecognized and skipped — handle them manually or add to STANDALONE_MAP.
+
+Examples:
+    # Dry run — see what would be transferred
+    ./bin/sync-roms --dry-run
+
+    # Transfer all systems
+    ./bin/sync-roms
+
+    # Transfer only gba and snes
+    ./bin/sync-roms --systems gba snes
+
+    # Transfer and remove files in dest absent from source
+    ./bin/sync-roms --delete
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+# Allow importing from lib/ when running from project root or bin/
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from lib.rsync_runner import run_rsync
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+DEFAULT_SOURCE = Path("/mnt/seagate/myFiles/masterFilePersonal/myGames/Emulators and Roms/ROMs")
+DEFAULT_DEST = Path("/mnt/truenas-media/roms")
+
+# Maps Seagate ROM Repositories/ subdirectory names → NAS system directory names.
+ROM_REPOSITORIES_MAP: dict[str, str] = {
+    "[ReDump] Sony PlayStation (NTSC-U) (20150524)": "ps1",
+    "[No-Intro] Nintendo - Game Boy Advance (14-03-2018)": "gba",
+    "[No-Intro] Nintendo - Game Boy Color (17-05-2018)": "gbc",
+    "[No-Intro] Nintendo - Game Boy (17-05-2018)": "gb",
+    "[No-Intro] Nintendo Entertainment System (17-05-2018)": "nes",
+    "[No-Intro] Super Nintendo Entertainment System (17-05-2018)": "snes",
+    "[No-Intro] Sega Game Gear (17-05-2018)": "gamegear",
+    "1G1R - MAMEdevs - Neo Geo MVS-AES": "neogeo",
+}
+
+# Individual game folders directly under ROMs/ (not in ROM Repositories/).
+# Add entries here to have them transferred automatically.
+# Format: "Folder Name on Seagate" → "nas-system-dir"
+STANDALONE_MAP: dict[str, str] = {
+    "Breath of Fire": "gba",
+    "Final Fantasy IV Advance": "gba",
+    "Golden Sun": "gba",
+    "Kirby & the Amazing Mirror": "gba",
+    "Link to the Past-Four Swords": "gba",
+    "LOZ Oracle of Ages": "gbc",
+    "LOZ Oracle of Seasons": "gbc",
+    "Megaman Xtreme": "gb",
+    "Megaman Xtreme 2": "gb",
+    "Metal Gear Solid": "gbc",
+    "Pokemon Silver": "gbc",
+    "Pokemon Yellow": "gb",
+}
+
+
+# ── Functions ─────────────────────────────────────────────────────────────────
+
+
+def discover_transfers(
+    source: Path,
+    systems_filter: list[str] | None,
+) -> list[tuple[Path, Path, str]]:
+    """Return a list of (src_dir, dest_dir, label) tuples to transfer.
+
+    Scans ROM Repositories/ for known system dirs and combines with STANDALONE_MAP.
+    Unknown items are reported but not included in the transfer list.
+    """
+    transfers: list[tuple[Path, Path, str]] = []
+    repos_dir = source / "ROM Repositories"
+
+    # ── ROM Repositories ──────────────────────────────────────────────────────
+    if repos_dir.is_dir():
+        for entry in sorted(repos_dir.iterdir()):
+            if not entry.is_dir():
+                continue
+            system = ROM_REPOSITORIES_MAP.get(entry.name)
+            if system is None:
+                print(f"  [WARN] unrecognized repo dir (add to ROM_REPOSITORIES_MAP): {entry.name}")
+                continue
+            if systems_filter and system not in systems_filter:
+                continue
+            transfers.append((entry, DEFAULT_DEST / system, system))
+    else:
+        print(f"  [WARN] ROM Repositories/ not found under {source}", file=sys.stderr)
+
+    # ── Standalone game folders ───────────────────────────────────────────────
+    known_subdirs = {"ROM Repositories"}
+    for entry in sorted(source.iterdir()):
+        if not entry.is_dir() or entry.name in known_subdirs:
+            continue
+        system = STANDALONE_MAP.get(entry.name)
+        if system is None:
+            print(f"  [WARN] unrecognized standalone folder (add to STANDALONE_MAP): {entry.name}")
+            continue
+        if systems_filter and system not in systems_filter:
+            continue
+        # Standalone games go directly into the system dir alongside repo ROMs.
+        dest = DEFAULT_DEST / system / entry.name
+        transfers.append((entry, dest, f"{system}/{entry.name}"))
+
+    return transfers
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        "--source",
+        type=Path,
+        default=DEFAULT_SOURCE,
+        help="Path to ROMs directory on the Seagate (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--dest",
+        type=Path,
+        default=DEFAULT_DEST,
+        help="Path to roms/ directory on the NAS (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--systems",
+        nargs="+",
+        metavar="SYSTEM",
+        help="Transfer only these system(s), e.g. --systems gba snes ps1",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be transferred without copying anything",
+    )
+    parser.add_argument(
+        "--delete",
+        action="store_true",
+        help="Remove files in dest that are absent from source (use with care)",
+    )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Print per-file rsync output",
+    )
+    args = parser.parse_args()
+
+    if not args.source.exists():
+        print(f"Error: source path does not exist: {args.source}", file=sys.stderr)
+        print("Is the Seagate drive mounted?", file=sys.stderr)
+        sys.exit(1)
+
+    if args.dry_run:
+        print("Dry run — no files will be transferred.\n")
+
+    transfers = discover_transfers(args.source, args.systems)
+
+    if not transfers:
+        print("No transfers to run. Check --systems filter or STANDALONE_MAP.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"\nTransfers queued: {len(transfers)}")
+    for src, dest, label in transfers:
+        print(f"  {label:20s}  {src.name}")
+
+    print()
+
+    failed: list[str] = []
+    for src, dest, label in transfers:
+        ok = run_rsync(
+            src,
+            dest,
+            label=label,
+            dry_run=args.dry_run,
+            delete=args.delete,
+            verbose=args.verbose,
+        )
+        if not ok:
+            failed.append(label)
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    print("═" * 60)
+    total = len(transfers)
+    passed = total - len(failed)
+    print(f"  Complete: {passed}/{total} systems transferred successfully")
+    if failed:
+        print(f"  Failed:   {', '.join(failed)}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

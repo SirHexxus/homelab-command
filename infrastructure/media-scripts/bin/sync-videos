@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""Copy videos from the Seagate external drive to the NAS video directories.
+
+Rsyncs Movies/ and Shows/ to the NAS. Anime split is NOT automatic — run
+--report first to review the classification, then manually move anime titles
+to anime/movies/ and anime/shows/ after the initial transfer.
+
+Source (Seagate):
+    Videos/Movies/  →  NAS movies/
+    Videos/Shows/   →  NAS shows/
+    Videos/Videos/  →  NAS videos/   (misc clips)
+
+--report mode: scans titles and outputs a classification report
+    (anime vs live-action) based on filename heuristics for manual review.
+    Does not transfer any files.
+
+Examples:
+    ./bin/sync-videos --dry-run
+    ./bin/sync-videos
+    ./bin/sync-videos --report
+    ./bin/sync-videos --movies-only
+    ./bin/sync-videos --shows-only
+"""
+
+import argparse
+import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from lib.rsync_runner import run_rsync
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+DEFAULT_SOURCE_VIDEOS = Path("/mnt/seagate/myFiles/masterFilePersonal/Videos")
+DEFAULT_DEST_MOVIES = Path("/mnt/truenas-media/movies")
+DEFAULT_DEST_SHOWS = Path("/mnt/truenas-media/shows")
+DEFAULT_DEST_MISC = Path("/mnt/truenas-media/videos")
+
+# Release group tags common in anime scene releases.
+_ANIME_RELEASE_GROUPS = re.compile(
+    r"\[(AnimeRG|SubsPlease|Erai-raws|HorribleSubs|YTS|YIFY|"
+    r"BluRay|BDRemux|BDMV|NyaaFansubs|Ohys-Raws|judas|"
+    r"UTW|FFF|Commie|GJM|ANK|DameDesuYo)\]",
+    flags=re.IGNORECASE,
+)
+
+# Common anime studio / distributor / genre patterns in folder names.
+_ANIME_KEYWORDS = re.compile(
+    r"\b(anime|OVA|ONA|manga|hentai|fansub|"
+    r"ghibli|funimation|crunchyroll|sentai|viz|"
+    r"shonen|shounen|seinen|shojo|shoujo|isekai|mecha|"
+    r"dragon.?ball|gundam|evangelion|naruto|bleach|one.?piece|"
+    r"sword.art|attack.on.titan|fullmetal|hunter.x.hunter)\b",
+    flags=re.IGNORECASE,
+)
+
+# Known anime titles not caught by pattern matching.
+# Add entries here when the report misclassifies a known title.
+_KNOWN_ANIME_TITLES = re.compile(
+    r"\b("
+    r"ghost.in.the.shell|cowboy.bebop|appleseed|abenobashi|aria\b|"
+    r"batman.beyond|boku.no.hero|my.hero.academia|flame.of.recca|"
+    r"adventure.time|monster\b|sora.o.kakeru|sword.art|"
+    r"teen.titans|last.unicorn|akira|trigun|inuyasha|"
+    r"ranma|sailormoon|sailor.moon|dbz|rurouni.kenshin|samurai.x|"
+    r"neon.genesis|serial.experiments|lain|haruhi|clannad|"
+    r"steins.gate|code.geass|death.note|your.name|spirited.away|"
+    r"princess.mononoke|howls.moving.castle|nausicaa|"
+    r"castle.in.the.sky|kiki|porco.rosso|totoro"
+    r")\b",
+    flags=re.IGNORECASE,
+)
+
+
+# ── Functions ─────────────────────────────────────────────────────────────────
+
+
+def classify_title(name: str) -> str:
+    """Return 'anime', 'likely-anime', or 'live-action' for a folder name."""
+    if _ANIME_RELEASE_GROUPS.search(name):
+        return "anime"
+    if _KNOWN_ANIME_TITLES.search(name):
+        return "anime"
+    if _ANIME_KEYWORDS.search(name):
+        return "likely-anime"
+    return "live-action"
+
+
+def print_report(source: Path) -> None:
+    """Scan Movies/ and Shows/ and print a classification report."""
+    for subdir_name, label in [("Movies", "movies"), ("Shows", "shows")]:
+        subdir = source / subdir_name
+        if not subdir.exists():
+            continue
+
+        titles = sorted(d.name for d in subdir.iterdir() if d.is_dir() and not d.name.startswith("."))
+        anime = [t for t in titles if classify_title(t) == "anime"]
+        likely = [t for t in titles if classify_title(t) == "likely-anime"]
+        live = [t for t in titles if classify_title(t) == "live-action"]
+
+        print(f"\n{'─' * 60}")
+        print(f"  {subdir_name}/  ({len(titles)} titles)")
+        print(f"  anime: {len(anime)}  |  likely-anime: {len(likely)}  |  live-action: {len(live)}")
+
+        if anime:
+            print(f"\n  [ANIME]")
+            for t in anime:
+                print(f"    {t}")
+        if likely:
+            print(f"\n  [LIKELY ANIME — review manually]")
+            for t in likely:
+                print(f"    {t}")
+        if live:
+            print(f"\n  [LIVE-ACTION]")
+            for t in live:
+                print(f"    {t}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE_VIDEOS,
+                        help="Source Videos/ directory on Seagate (default: %(default)s)")
+    parser.add_argument("--dest-movies", type=Path, default=DEFAULT_DEST_MOVIES)
+    parser.add_argument("--dest-shows", type=Path, default=DEFAULT_DEST_SHOWS)
+    parser.add_argument("--dest-misc", type=Path, default=DEFAULT_DEST_MISC)
+    parser.add_argument("--report", action="store_true",
+                        help="Print anime classification report — no files transferred")
+    parser.add_argument("--movies-only", action="store_true",
+                        help="Transfer Movies/ only")
+    parser.add_argument("--shows-only", action="store_true",
+                        help="Transfer Shows/ only")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Show what would be transferred without copying anything")
+    parser.add_argument("--delete", action="store_true",
+                        help="Remove files in dest absent from source (use with care)")
+    parser.add_argument("--verbose", "-v", action="store_true",
+                        help="Print per-file rsync output")
+    args = parser.parse_args()
+
+    if not args.source.exists():
+        print(f"Error: source does not exist: {args.source}", file=sys.stderr)
+        print("Is the Seagate drive mounted?", file=sys.stderr)
+        sys.exit(1)
+
+    if args.report:
+        print("Video classification report (heuristic — review before moving to anime/):\n")
+        print_report(args.source)
+        print(
+            "\nAfter initial transfer, manually move confirmed anime titles:\n"
+            "  mv /mnt/truenas-media/movies/<title> /mnt/truenas-media/anime/movies/\n"
+            "  mv /mnt/truenas-media/shows/<title>  /mnt/truenas-media/anime/shows/"
+        )
+        return
+
+    if args.dry_run:
+        print("Dry run — no files will be transferred.\n")
+
+    transfers = []
+    if not args.shows_only:
+        movies_src = args.source / "Movies"
+        if movies_src.exists():
+            transfers.append((movies_src, args.dest_movies, "movies"))
+    if not args.movies_only:
+        shows_src = args.source / "Shows"
+        if shows_src.exists():
+            transfers.append((shows_src, args.dest_shows, "shows"))
+    misc_src = args.source / "Videos"
+    if misc_src.exists():
+        transfers.append((misc_src, args.dest_misc, "misc-videos"))
+
+    failed = []
+    for src, dest, label in transfers:
+        ok = run_rsync(src, dest, label=label, dry_run=args.dry_run,
+                       delete=args.delete, verbose=args.verbose)
+        if not ok:
+            failed.append(label)
+
+    print(f"\n{'═' * 60}")
+    passed = len(transfers) - len(failed)
+    print(f"  Complete: {passed}/{len(transfers)} transferred successfully")
+    if failed:
+        print(f"  Failed:   {', '.join(failed)}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
