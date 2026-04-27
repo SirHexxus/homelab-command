@@ -143,11 +143,26 @@ def create_app(default_context_name: str = "personal") -> Flask:
         # Ingest tasks run async — agent loop is too slow for a synchronous response.
         # Query tasks (wiki_read) remain synchronous since callers need the answer.
         if route["prompt_template"] == "ingest":
+            chat_id = payload.get("metadata", {}).get("chat_id")
+
             def _run() -> None:
                 try:
-                    run_agent(prompt, context, task_type=route["task_type"])
-                except Exception:
-                    pass
+                    result = run_agent(prompt, context, task_type=route["task_type"])
+                    reply = result.answer or "Ingest complete."
+                except Exception as exc:
+                    reply = f"Ingest failed: {exc}"
+
+                token = getattr(context, "telegram_token", None)
+                if chat_id and token:
+                    try:
+                        import httpx as _httpx
+                        _httpx.post(
+                            f"https://api.telegram.org/bot{token}/sendMessage",
+                            json={"chat_id": chat_id, "text": reply},
+                            timeout=10,
+                        )
+                    except Exception:
+                        pass
 
             threading.Thread(target=_run, daemon=True).start()
             return jsonify({"status": "ok", "message": "Accepted for processing."})
