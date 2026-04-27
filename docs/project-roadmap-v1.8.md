@@ -143,15 +143,29 @@ reflect revised estimates as of 2026-04-16.
 
 *Note: Cert prep items previously in this phase have been moved to Mnemosyne (Career Advancement pursuit).*
 
-### Hermes (AI Agent)
-- [x] Hermes Phase 2: LLM router (Gemini + Claude clients, task_type routing)
-- [x] Hermes Phase 2: Wiki skill (`lib/skills/wiki.py` — 7 read/write operations)
-- [x] Hermes Phase 2: HTTP endpoint (`/task` + `/health`) for n8n integration
-- [x] Hermes Phase 2: `IngestItem` dataclass (`lib/core/ingest.py`)
-- [x] Hermes Phase 2: Deploy Hermes LXC (10.0.50.17) — live as of 2026-04-14
-- [ ] Hermes: Clone wiki repo on LXC at `/opt/hermes/wiki` — blocks end-to-end test
+### Hermes (AI Agent) — ⚠️ BACK-BURNERED as of 2026-04-27
+**Status:** Pipeline wired end-to-end but not reliably functional. Requires replanning before
+resuming. Do not add Hermes tasks or invest further time without a dedicated replanning session.
+
+**Blockers that caused back-burner decision:**
+- Gemini free tier eliminated — cloud fallback no longer viable without billing
+- Local models (qwen3:1.7b, qwen3:4b) too slow/small for multi-step ReAct loops on CPU
+- Root cause: Hermes was designed around cloud LLM availability; local-first inference requires
+  a GPU to be practical. Revisit when a GPU (e.g. RTX 3090) is available.
+
+**What is complete and working:**
+- [x] LLM router (Gemini + Claude clients, task_type routing)
+- [x] Wiki skill (`lib/skills/wiki.py` — 7 read/write operations)
+- [x] HTTP endpoint (`/task` + `/health`) for n8n integration
+- [x] `IngestItem` dataclass (`lib/core/ingest.py`)
+- [x] LXC deployed and live (10.0.50.17) — wiki repo cloned, systemd service running
+- [x] n8n Telegram → Hermes ingest pipeline wired and tested
+- [x] Async ingest with Telegram callback
+
+**Remaining work (deferred):**
 - [ ] Hermes Phase 3: Register Telegram bots (@BotFather) + implement `telegram_bot.py`
 - [ ] Hermes Phase 5: n8n MCP integration (n8n at 10.0.50.13)
+- [ ] Replanning session: reconsider architecture given GPU requirement and no free cloud tier
 
 ### Mnemosyne (Wiki pipeline)
 - [x] Architecture: Design doc updated to git wiki model; `SCHEMA.md` written; `IngestItem` spec documented

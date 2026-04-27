@@ -5,6 +5,19 @@ Source of truth: `Mnemosyne-Hand-Off.md` (requirements), `THOUGHTS.md` (design r
 
 ---
 
+## ⚠️ STATUS: BACK-BURNERED — 2026-04-27
+
+Hermes is not being actively developed. A replanning session is required before resuming.
+
+**Why:** Local models (qwen3:1.7b, qwen3:4b on CPU) are too slow/limited for the multi-step
+ReAct loop. Gemini's free tier has been eliminated. The architecture assumed cloud LLM
+availability that no longer exists without billing. A GPU (e.g. RTX 3090) would unblock
+local inference at the required performance level.
+
+**Do not add or execute tasks from this list without first holding a replanning session.**
+
+---
+
 ## Blocking — Do These First
 
 ### 1. Archive `lib/skills/mneme.py`
