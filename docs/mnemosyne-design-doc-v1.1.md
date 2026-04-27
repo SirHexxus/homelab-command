@@ -127,13 +127,24 @@ the schema location without tracking personal data.
 
 ### 4.3 MinIO: Object Storage
 
-Binary and raw content (voice memos, file attachments). Path structure:
+Binary and raw content (voice memos, file attachments).
+
+**Bucket:** `mnemosyne` (created 2026-04-16)
+
+**Path structure within bucket:**
 ```
 /{source_type}/{year}/{month}/{uuid}.{ext}
 ```
-Examples: `/voice/2026/02/abc123.ogg`, `/web/2026/02/def456.pdf`
+Examples: `/voice/2026/02/abc123.ogg`, `/web/2026/02/def456.pdf`, `/claude_code/2026/04/abc123.pdf`
 
-Referenced from wiki pages via `file_ref` frontmatter field. Accessed via presigned URLs.
+**Source types:**
+- `voice` — Telegram voice memos (OGG)
+- `telegram` — Telegram file attachments
+- `email` — Email attachments
+- `claude_code` — Files processed via Claude Code `/mneme` skill
+- `web` — Web clipper attachments
+
+Referenced from wiki pages via `file_ref` frontmatter field (e.g. `file_ref: mnemosyne/claude_code/2026/04/uuid.pdf`). Accessed via presigned URLs.
 
 ### 4.4 Obsidian: Human UI
 
