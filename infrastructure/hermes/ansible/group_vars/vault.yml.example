@@ -17,3 +17,4 @@ telegram_token_personal:          ""
 telegram_token_professional:      ""
 purelymail_personal_password:     ""
 purelymail_professional_password: ""
+vault_wiki_deploy_key: ""    # base64 of private key: base64 -w0 /path/to/key
