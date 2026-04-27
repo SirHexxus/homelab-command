@@ -1,0 +1,342 @@
+{
+  "name": "Mnemosyne Ingest v1",
+  "nodes": [
+    {
+      "id": "node-telegram-trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [260, 300],
+      "webhookId": "mnemosyne-ingest",
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "id": "node-route",
+      "name": "Route by Message Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [480, 300],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ !!$json.message.voice }}",
+                    "rightValue": "true",
+                    "operator": {"type": "string", "operation": "equals"}
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "voice"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ !!($json.message.document || $json.message.photo) }}",
+                    "rightValue": "true",
+                    "operator": {"type": "string", "operation": "equals"}
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "file"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ !!$json.message.text && $json.message.text.startsWith('/') }}",
+                    "rightValue": "true",
+                    "operator": {"type": "string", "operation": "equals"}
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "command"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ !!$json.message.text }}",
+                    "rightValue": "true",
+                    "operator": {"type": "string", "operation": "equals"}
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "text"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "node-hash",
+      "name": "Build Dedup Hash",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 420],
+      "parameters": {
+        "jsCode": "const msg = $input.item.json;\nconst text = msg.message.text;\nconst chatId = String(msg.message.chat.id);\nconst { createHash } = require('crypto');\nconst hash = createHash('sha256').update(text).digest('hex').substring(0, 16);\nreturn [{ json: { ...msg, _text: text, _chat_id: chatId, _dedup_key: `dedup:${hash}` } }];"
+      }
+    },
+    {
+      "id": "node-redis-get",
+      "name": "Redis: Check Dedup",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [920, 420],
+      "parameters": {
+        "operation": "get",
+        "key": "={{ $json._dedup_key }}"
+      },
+      "credentials": {
+        "redis": {
+          "id": "PLACEHOLDER_REDIS",
+          "name": "Redis"
+        }
+      }
+    },
+    {
+      "id": "node-if-dedup",
+      "name": "Is Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1140, 420],
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+          "conditions": [
+            {
+              "id": "cond-dedup",
+              "leftValue": "={{ $json.value }}",
+              "rightValue": "",
+              "operator": {"type": "string", "operation": "notEmpty"}
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "node-already-saved",
+      "name": "Already Saved Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1360, 320],
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $('Build Dedup Hash').item.json._chat_id }}",
+        "text": "Already saved ↩",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "id": "node-build-ingest",
+      "name": "Build IngestItem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1360, 520],
+      "parameters": {
+        "jsCode": "const prev = $('Build Dedup Hash').item.json;\nreturn [{ json: {\n  workflow: 'mnemosyne',\n  task: 'ingest',\n  payload: {\n    raw_content_type: 'text',\n    source: 'telegram',\n    text: prev._text,\n    file_ref: null,\n    metadata: { chat_id: prev._chat_id },\n    bucket_hint: null\n  },\n  context_name: 'personal',\n  _text: prev._text,\n  _chat_id: prev._chat_id,\n  _dedup_key: prev._dedup_key\n} }];"
+      }
+    },
+    {
+      "id": "node-hermes-post",
+      "name": "POST to Hermes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1580, 520],
+      "parameters": {
+        "method": "POST",
+        "url": "http://10.0.50.17:8765/task",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow: $json.workflow, task: $json.task, payload: $json.payload, context_name: $json.context_name }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "PLACEHOLDER_HERMES_AUTH",
+          "name": "Hermes API Token"
+        }
+      }
+    },
+    {
+      "id": "node-redis-set",
+      "name": "Redis: Mark Seen",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1800, 520],
+      "parameters": {
+        "operation": "set",
+        "key": "={{ $('Build IngestItem').item.json._dedup_key }}",
+        "value": "1",
+        "expire": true,
+        "ttl": 86400
+      },
+      "credentials": {
+        "redis": {
+          "id": "PLACEHOLDER_REDIS",
+          "name": "Redis"
+        }
+      }
+    },
+    {
+      "id": "node-confirm",
+      "name": "Confirm to User",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2020, 520],
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $('Build IngestItem').item.json._chat_id }}",
+        "text": "={{ 'Saved as ' + ($json.data?.bucket || 'IDEA') + ' ✓' }}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "id": "node-voice-stub",
+      "name": "Voice: Not Yet Supported",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [700, 180],
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $json.message.chat.id }}",
+        "text": "Voice capture coming soon (Phase 2b)",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "id": "node-file-stub",
+      "name": "File: Not Yet Supported",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [700, 60],
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $json.message.chat.id }}",
+        "text": "File capture coming soon (Phase 2b)",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "id": "node-command-stub",
+      "name": "Command: Phase 3",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [700, -60],
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $json.message.chat.id }}",
+        "text": "/search, /ask, /find and other retrieval commands are coming in Phase 3.",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM",
+          "name": "Telegram Bot API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [{ "node": "Route by Message Type", "type": "main", "index": 0 }]
+      ]
+    },
+    "Route by Message Type": {
+      "main": [
+        [{ "node": "Voice: Not Yet Supported", "type": "main", "index": 0 }],
+        [{ "node": "File: Not Yet Supported", "type": "main", "index": 0 }],
+        [{ "node": "Command: Phase 3", "type": "main", "index": 0 }],
+        [{ "node": "Build Dedup Hash", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Dedup Hash": {
+      "main": [
+        [{ "node": "Redis: Check Dedup", "type": "main", "index": 0 }]
+      ]
+    },
+    "Redis: Check Dedup": {
+      "main": [
+        [{ "node": "Is Duplicate?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Is Duplicate?": {
+      "main": [
+        [{ "node": "Already Saved Reply", "type": "main", "index": 0 }],
+        [{ "node": "Build IngestItem", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build IngestItem": {
+      "main": [
+        [{ "node": "POST to Hermes", "type": "main", "index": 0 }]
+      ]
+    },
+    "POST to Hermes": {
+      "main": [
+        [{ "node": "Redis: Mark Seen", "type": "main", "index": 0 }]
+      ]
+    },
+    "Redis: Mark Seen": {
+      "main": [
+        [{ "node": "Confirm to User", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
