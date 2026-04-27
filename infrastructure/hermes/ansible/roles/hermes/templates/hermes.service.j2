@@ -8,7 +8,7 @@ User={{ hermes_user }}
 Group={{ hermes_group }}
 WorkingDirectory={{ hermes_app_dir }}
 ExecStart={{ hermes_venv_dir }}/bin/gunicorn "lib.interfaces.api:create_app()" \
-    --bind 0.0.0.0:{{ hermes_port }} --workers 1
+    --bind 0.0.0.0:{{ hermes_port }} --workers 1 --timeout 300
 Environment=HERMES_API_TOKEN={{ hermes_api_token }}
 Environment=PYTHONPATH={{ hermes_app_dir }}
 Restart=on-failure
