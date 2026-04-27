@@ -19,6 +19,9 @@ from flask import Flask, jsonify, request
 from lib.core.agent_loop import run_agent
 from lib.core.context import load_context
 from lib.core.ingest import IngestItem
+import lib.skills.filesystem  # noqa: F401 — registers filesystem skills
+import lib.skills.shell        # noqa: F401 — registers shell skills
+import lib.skills.wiki         # noqa: F401 — registers wiki skills
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
