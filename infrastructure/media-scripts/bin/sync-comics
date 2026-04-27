@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""Convert and copy comics from the Seagate to the NAS comics/ directory.
+
+Source structure (Seagate comicsAndManga/comics/):
+  - Folders (series already grouped): Dog Men/, Hellblazer/, etc.
+  - Loose .rar/.cbr files at the top level (ungrouped single issues)
+
+Output structure (NAS comics/):
+  - All archives converted to .cbz
+  - Loose files grouped into a comics/Ungrouped/ directory for manual sorting
+
+Conversion:
+  .zip  →  .cbz  (rename only — no repacking)
+  .rar  →  .cbz  (extract + repack — requires: sudo apt install unrar)
+
+Uses Python file I/O for conversion; rsync is not used here since we rename
+files during the copy.
+
+Examples:
+    ./bin/sync-comics --dry-run
+    ./bin/sync-comics
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from lib.cbz_converter import check_unrar, convert_to_cbz, is_comic_archive
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+DEFAULT_SOURCE = Path("/mnt/seagate/myFiles/masterFilePersonal/myBooks/comicsAndManga/comics")
+DEFAULT_DEST = Path("/mnt/truenas-media/comics")
+UNGROUPED_DIR = "Ungrouped"
+
+
+# ── Functions ─────────────────────────────────────────────────────────────────
+
+
+def process_comics(source: Path, dest: Path, *, dry_run: bool, verbose: bool) -> tuple[int, int]:
+    """Walk source, convert archives to CBZ, write to dest.
+
+    Returns (success_count, failure_count).
+    """
+    success = 0
+    failure = 0
+
+    for entry in sorted(source.iterdir()):
+        if entry.name.startswith("."):
+            continue
+
+        if entry.is_dir():
+            # Series folder — recurse and preserve folder name
+            series_dest = dest / entry.name
+            if verbose or dry_run:
+                print(f"\n  [{entry.name}]")
+            for archive in sorted(entry.rglob("*")):
+                if not archive.is_file() or not is_comic_archive(archive):
+                    continue
+                # Preserve sub-folder structure within the series dir
+                rel = archive.parent.relative_to(entry)
+                out_dir = series_dest / rel
+                result = convert_to_cbz(archive, out_dir, dry_run=dry_run)
+                if result:
+                    success += 1
+                    if verbose and not dry_run:
+                        print(f"    ✓ {archive.name}")
+                else:
+                    failure += 1
+
+        elif entry.is_file() and is_comic_archive(entry):
+            # Loose file at top level — group into Ungrouped/
+            out_dir = dest / UNGROUPED_DIR
+            if verbose or dry_run:
+                print(f"  [ungrouped] {entry.name}")
+            result = convert_to_cbz(entry, out_dir, dry_run=dry_run)
+            if result:
+                success += 1
+            else:
+                failure += 1
+
+    return success, failure
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE,
+                        help="Source comics directory (default: %(default)s)")
+    parser.add_argument("--dest", type=Path, default=DEFAULT_DEST,
+                        help="Destination on NAS (default: %(default)s)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Show what would be converted without writing anything")
+    parser.add_argument("--verbose", "-v", action="store_true",
+                        help="Print each file as it is processed")
+    args = parser.parse_args()
+
+    if not args.source.exists():
+        print(f"Error: source does not exist: {args.source}", file=sys.stderr)
+        print("Is the Seagate drive mounted?", file=sys.stderr)
+        sys.exit(1)
+
+    if args.dry_run:
+        print("Dry run — no files will be written.\n")
+
+    has_rar = check_unrar()
+    if not has_rar:
+        print(
+            "Warning: unrar not found. RAR/CBR files will be skipped.\n"
+            "Install with: sudo apt install unrar\n",
+            file=sys.stderr,
+        )
+
+    success, failure = process_comics(args.source, args.dest, dry_run=args.dry_run, verbose=args.verbose)
+
+    print(f"\n{'═' * 60}")
+    print(f"  Comics: {success} converted, {failure} failed")
+    if failure:
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

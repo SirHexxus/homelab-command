@@ -1,0 +1,407 @@
+#!/usr/bin/env python3
+"""Interactive browser-based photo sorter.
+
+Walks a staging directory, presents each image one at a time in a local web
+browser, and moves files into keep/, private/, or skip/ subdirectories based
+on keyboard input.
+
+Usage:
+    ./bin/sort-photos <staging-dir>
+    ./bin/sort-photos <staging-dir> --port 8765
+
+Controls (in browser):
+    K  →  keep/     (safe for digital frames, shared albums, etc.)
+    P  →  private/  (personal/sensitive — not for general display)
+    S  →  skip/     (ignore / delete candidate)
+    ←  →  go back one image (re-sort a previous decision)
+"""
+
+# ── Standard library imports ──────────────────────────────────────────────────
+import argparse
+import json
+import mimetypes
+import os
+import shutil
+import sys
+import threading
+import webbrowser
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+from urllib.parse import unquote
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif'}
+BUCKETS = ('keep', 'private', 'skip')
+DEFAULT_PORT = 8765
+
+HTML_PAGE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Photo Sorter</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #111;
+      color: #eee;
+      font-family: system-ui, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #status {
+      position: fixed;
+      top: 1rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.7);
+      padding: 0.4rem 1rem;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      white-space: nowrap;
+    }
+
+    #filename {
+      position: fixed;
+      bottom: 5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.6);
+      padding: 0.3rem 0.8rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      color: #aaa;
+      max-width: 90vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #image-wrap {
+      max-width: 90vw;
+      max-height: 80vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #photo {
+      max-width: 90vw;
+      max-height: 78vh;
+      object-fit: contain;
+      border-radius: 4px;
+    }
+
+    #controls {
+      position: fixed;
+      bottom: 1rem;
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    button {
+      padding: 0.5rem 1.4rem;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      opacity: 0.9;
+      transition: opacity 0.1s, transform 0.1s;
+    }
+    button:hover { opacity: 1; transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+
+    #btn-back    { background: #444; color: #eee; }
+    #btn-keep    { background: #2a7a2a; color: #fff; }
+    #btn-private { background: #8b1a1a; color: #fff; }
+    #btn-skip    { background: #555; color: #eee; }
+
+    #done {
+      font-size: 1.4rem;
+      text-align: center;
+      line-height: 2;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="status">Loading...</div>
+  <div id="image-wrap">
+    <img id="photo" src="" alt="photo">
+    <div id="done">
+      ✅ All photos sorted.<br>
+      <small>You can close this tab.</small>
+    </div>
+  </div>
+  <div id="filename"></div>
+  <div id="controls">
+    <button id="btn-back"    title="Back (←)">← Back</button>
+    <button id="btn-keep"    title="Keep — safe for general use (K)">Keep (K)</button>
+    <button id="btn-private" title="Private — sensitive (P)">Private (P)</button>
+    <button id="btn-skip"    title="Skip — delete candidate (S)">Skip (S)</button>
+  </div>
+
+  <script>
+    let current = null;
+
+    async function load_current() {
+      const res = await fetch('/api/current');
+      const data = await res.json();
+      current = data;
+
+      if (data.done) {
+        document.getElementById('photo').style.display = 'none';
+        document.getElementById('done').style.display = 'block';
+        document.getElementById('filename').textContent = '';
+        document.getElementById('status').textContent = 'Done!';
+        return;
+      }
+
+      document.getElementById('photo').src = '/image/' + encodeURIComponent(data.filename);
+      document.getElementById('filename').textContent = data.relative_path;
+      document.getElementById('status').textContent =
+        `${data.index + 1} / ${data.total}  \u2022  `
+        + `keep: ${data.counts.keep}  \u2022  `
+        + `private: ${data.counts.private}  \u2022  `
+        + `skip: ${data.counts.skip}`;
+    }
+
+    async function sort(action) {
+      if (!current || current.done) return;
+      await fetch('/api/sort', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      load_current();
+    }
+
+    async function go_back() {
+      await fetch('/api/back', { method: 'POST' });
+      load_current();
+    }
+
+    document.getElementById('btn-keep').addEventListener('click', () => sort('keep'));
+    document.getElementById('btn-private').addEventListener('click', () => sort('private'));
+    document.getElementById('btn-skip').addEventListener('click', () => sort('skip'));
+    document.getElementById('btn-back').addEventListener('click', go_back);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'k' || e.key === 'K') sort('keep');
+      if (e.key === 'p' || e.key === 'P') sort('private');
+      if (e.key === 's' || e.key === 'S') sort('skip');
+      if (e.key === 'ArrowLeft')          go_back();
+    });
+
+    load_current();
+  </script>
+</body>
+</html>
+"""
+
+
+# ── State ─────────────────────────────────────────────────────────────────────
+
+class SortState:
+    """Holds mutable sort session state, shared across HTTP requests."""
+
+    def __init__(self, staging_dir: Path) -> None:
+        self.staging_dir = staging_dir
+        self.files: list[Path] = self._collect_files()
+        self.index: int = 0
+        self.counts: dict[str, int] = {b: 0 for b in BUCKETS}
+
+    def _collect_files(self) -> list[Path]:
+        """Return all image files in staging_dir, excluding bucket subdirs."""
+        results = []
+        for path in sorted(self.staging_dir.rglob('*')):
+            if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS:
+                # Skip files already inside a bucket subdir
+                if path.parts[len(self.staging_dir.parts)] not in BUCKETS:
+                    results.append(path)
+        return results
+
+    @property
+    def current(self) -> Path | None:
+        """Return the current image path, or None if done."""
+        if self.index >= len(self.files):
+            return None
+        return self.files[self.index]
+
+    def sort(self, action: str) -> None:
+        """Move current file into the named bucket and advance."""
+        if action not in BUCKETS:
+            raise ValueError(f"Unknown action: {action!r}")
+        path = self.current
+        if path is None:
+            return
+        dest_dir = self.staging_dir / action
+        dest_dir.mkdir(exist_ok=True)
+        dest = dest_dir / path.name
+        # Avoid clobbering if a file with the same name already exists in bucket
+        if dest.exists():
+            stem, suffix = path.stem, path.suffix
+            counter = 1
+            while dest.exists():
+                dest = dest_dir / f"{stem}_{counter}{suffix}"
+                counter += 1
+        shutil.move(str(path), dest)
+        self.counts[action] += 1
+        self.index += 1
+
+    def back(self) -> None:
+        """Step back one image (un-sort is not performed — just rewinds index)."""
+        if self.index > 0:
+            self.index -= 1
+
+
+# ── HTTP handler ──────────────────────────────────────────────────────────────
+
+def make_handler(state: SortState) -> type:
+    """Return a handler class with access to the shared SortState."""
+
+    class Handler(BaseHTTPRequestHandler):
+
+        def log_message(self, fmt: str, *args: object) -> None:  # type: ignore[override]
+            """Suppress default access logs."""
+
+        def send_json(self, data: dict) -> None:
+            body = json.dumps(data).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self) -> None:  # noqa: N802
+            path = unquote(self.path)
+
+            if path == '/':
+                body = HTML_PAGE.encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            elif path == '/api/current':
+                current = state.current
+                if current is None:
+                    self.send_json({'done': True, 'counts': state.counts})
+                else:
+                    rel = current.relative_to(state.staging_dir)
+                    self.send_json({
+                        'done': False,
+                        'filename': current.name,
+                        'relative_path': str(rel),
+                        'index': state.index,
+                        'total': len(state.files),
+                        'counts': state.counts,
+                    })
+
+            elif path.startswith('/image/'):
+                filename = path[len('/image/'):]
+                current = state.current
+                if current is None or current.name != filename:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                mime, _ = mimetypes.guess_type(str(current))
+                try:
+                    data = current.read_bytes()
+                except OSError:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header('Content-Type', mime or 'application/octet-stream')
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def do_POST(self) -> None:  # noqa: N802
+            path = unquote(self.path)
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length)
+
+            if path == '/api/sort':
+                try:
+                    data = json.loads(body)
+                    state.sort(data['action'])
+                    self.send_json({'ok': True, 'counts': state.counts})
+                except (KeyError, ValueError) as exc:
+                    self.send_response(400)
+                    self.end_headers()
+                    print(f"Sort error: {exc}", file=sys.stderr)
+
+            elif path == '/api/back':
+                state.back()
+                self.send_json({'ok': True, 'index': state.index})
+
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+    return Handler
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+def main() -> None:
+    """Parse arguments, build state, start the HTTP server."""
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument('staging_dir', type=Path, help='Directory containing photos to sort')
+    parser.add_argument('--port', type=int, default=DEFAULT_PORT,
+                        help=f'Local port to serve on (default: {DEFAULT_PORT})')
+    args = parser.parse_args()
+
+    staging_dir = args.staging_dir.resolve()
+    if not staging_dir.is_dir():
+        print(f"Error: {staging_dir} is not a directory", file=sys.stderr)
+        sys.exit(1)
+
+    state = SortState(staging_dir)
+
+    if not state.files:
+        print("No image files found in staging directory.")
+        sys.exit(0)
+
+    print(f"Found {len(state.files)} images in {staging_dir}")
+
+    for bucket in BUCKETS:
+        (staging_dir / bucket).mkdir(exist_ok=True)
+
+    handler_class = make_handler(state)
+    server = HTTPServer(('127.0.0.1', args.port), handler_class)
+
+    url = f'http://127.0.0.1:{args.port}'
+    print(f"Sorter running at {url}")
+    print("Controls: K = keep  |  P = private  |  S = skip  |  ← = back")
+    print("Press Ctrl+C to stop.\n")
+
+    threading.Timer(0.5, lambda: webbrowser.open(url)).start()
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print(f"\nDone. Sorted {sum(state.counts.values())} of {len(state.files)} images.")
+        print(f"  keep:    {state.counts['keep']}")
+        print(f"  private: {state.counts['private']}")
+        print(f"  skip:    {state.counts['skip']}")
+
+
+if __name__ == '__main__':
+    main()

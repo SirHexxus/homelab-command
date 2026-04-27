@@ -1,0 +1,392 @@
+#!/usr/bin/env python3
+"""Find and remove duplicate songs from the music library.
+
+Two detection passes:
+  EXACT  — identical file content (SHA256 hash).
+            Keeps the copy with the deepest path (most organised).
+  META   — same Artist + Title + Album from audio tags, different files.
+            Keeps the highest-quality version using quality_score().
+
+Files with missing or partial tags skip the META pass and are listed
+separately — they are never auto-deleted.
+
+Examples:
+    ./bin/dedup-music --dry-run
+    ./bin/dedup-music --dry-run --verbose
+    ./bin/dedup-music --delete
+    ./bin/dedup-music --library /mnt/truenas-media/songs --dry-run
+"""
+
+# ── Standard library imports ───────────────────────────────────────────────────
+import argparse
+import hashlib
+import re
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+# ── Third-party imports ────────────────────────────────────────────────────────
+from mutagen import File as MutagenFile
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+DEFAULT_LIBRARY = Path("/mnt/truenas-media/songs")
+
+AUDIO_EXTENSIONS = {".mp3", ".flac", ".ogg", ".opus", ".m4a", ".aac", ".wav", ".wma", ".alac"}
+
+# Format quality tier — higher number = preferred.
+# Lossless beats lossy regardless of bitrate; within lossy MP3 beats WMA.
+# OGG/OPUS/M4A/AAC are unranked — update if you have a preference.
+FORMAT_RANK: dict[str, int] = {
+    ".flac":  6,
+    ".alac":  5,
+    ".wav":   1,
+    ".opus":  3,
+    ".m4a":   3,
+    ".aac":   3,
+    ".ogg":   2,
+    ".mp3":   2,
+    ".wma":   0,
+}
+
+
+# ── Quality scoring ────────────────────────────────────────────────────────────
+
+
+# Matches filenames that are duplicate copies: "Song (1).mp3", "Song (2).mp3"
+_DUPE_SUFFIX = re.compile(r"\s*\(\d+\)\s*$")
+
+# Matches placeholder names: "Track 3", "Track 15", "14 Track 14"
+_TRACK_PLACEHOLDER = re.compile(r"^(\d+\s+)?track\s+\d+$", re.IGNORECASE)
+
+
+def _name_quality(path: Path) -> int:
+    """Return 0 for well-named files, -1 for placeholder or auto-numbered names.
+
+    Used as a tiebreaker when format and bitrate are equal, so that
+    "Song (2).mp3" never beats "Song.mp3".
+    """
+    stem = path.stem
+    if _DUPE_SUFFIX.search(stem) or _TRACK_PLACEHOLDER.match(stem):
+        return -1
+    return 0
+
+
+def quality_score(path: Path, tags: dict) -> tuple[int, int, int]:
+    """Return a (format_rank, bitrate, name_quality) score tuple.
+
+    Called for every file that has complete tags. The file with the
+    HIGHEST tuple is kept; others are flagged for deletion. Python
+    compares tuples element-by-element:
+      (6, 320, 0) beats (2, 320, 0)   — FLAC beats MP3
+      (2, 320, 0) beats (2, 128, 0)   — higher bitrate wins
+      (2, 128, 0) beats (2, 128, -1)  — proper name beats "Track 3 (2)"
+
+    Args:
+        path: Absolute path to the audio file.
+        tags: Dict with keys 'artist', 'title', 'album', 'bitrate'
+              (int, kbps), 'duration' (float, seconds). Values may
+              be empty strings or 0.
+
+    Returns:
+        A (format_rank, bitrate, name_quality) tuple — highest wins.
+
+    """
+    format_rank = FORMAT_RANK.get(path.suffix.lower(), 0)
+    bitrate = tags.get("bitrate", 0) or 0
+    return (format_rank, bitrate, _name_quality(path))
+
+
+# ── Tag reading ────────────────────────────────────────────────────────────────
+
+
+def _read_tags(path: Path) -> dict | None:
+    """Read normalised audio tags from a file via mutagen.
+
+    Returns None if the file cannot be read or mutagen does not
+    recognise the format.
+    """
+    try:
+        audio = MutagenFile(path, easy=True)
+    except Exception:
+        return None
+
+    if audio is None:
+        return None
+
+    def _get(key: str) -> str:
+        val = audio.get(key)
+        return str(val[0]).strip().lower() if val else ""
+
+    bitrate = 0
+    try:
+        if hasattr(audio, "info") and hasattr(audio.info, "bitrate"):
+            bitrate = int(audio.info.bitrate / 1000)  # bps → kbps
+    except Exception:
+        pass
+
+    duration = 0.0
+    try:
+        if hasattr(audio, "info") and hasattr(audio.info, "length"):
+            duration = float(audio.info.length)
+    except Exception:
+        pass
+
+    return {
+        "artist":   _get("artist"),
+        "title":    _get("title"),
+        "album":    _get("album"),
+        "bitrate":  bitrate,
+        "duration": duration,
+    }
+
+
+def _has_complete_tags(tags: dict) -> bool:
+    """Return True if the tags dict has at least artist and title."""
+    return bool(tags.get("artist") and tags.get("title"))
+
+
+# ── Pass 1: exact duplicates ───────────────────────────────────────────────────
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def find_exact_dupes(files: list[Path], verbose: bool) -> list[tuple[Path, list[Path]]]:
+    """Group files by SHA256 hash.
+
+    Returns:
+        List of (keeper, [dupes_to_remove]) tuples.
+    """
+    if verbose:
+        print("  Hashing files...")
+
+    hash_map: dict[str, list[Path]] = defaultdict(list)
+    for path in files:
+        h = _sha256(path)
+        hash_map[h].append(path)
+
+    results = []
+    for paths in hash_map.values():
+        if len(paths) < 2:
+            continue
+        # Keep the file with the most path parts (deepest = most organised).
+        paths.sort(key=lambda p: (-len(p.parts), -_name_quality(p), str(p)))
+        keeper, *dupes = paths
+        results.append((keeper, dupes))
+    return results
+
+
+# ── Pass 2: metadata duplicates ───────────────────────────────────────────────
+
+
+def find_meta_dupes(
+    files: list[Path], verbose: bool
+) -> tuple[list[tuple[Path, list[Path]]], list[Path]]:
+    """Group files by (artist, title, album) tags.
+
+    Returns:
+        Tuple of:
+          - List of (keeper, [dupes_to_remove]) tuples.
+          - List of files skipped due to missing/partial tags.
+    """
+    if verbose:
+        print("  Reading tags...")
+
+    meta_map: dict[tuple, list[tuple[Path, dict]]] = defaultdict(list)
+    untagged: list[Path] = []
+    unreadable: list[Path] = []
+
+    for path in files:
+        tags = _read_tags(path)
+        if tags is None:
+            unreadable.append(path)
+            continue
+        if not _has_complete_tags(tags):
+            untagged.append(path)
+            continue
+        key = (tags["artist"], tags["title"], tags["album"])
+        meta_map[key].append((path, tags))
+
+    if unreadable and verbose:
+        print(f"  Warning: {len(unreadable)} file(s) could not be read by mutagen")
+
+    results = []
+    for entries in meta_map.values():
+        if len(entries) < 2:
+            continue
+        entries.sort(key=lambda e: quality_score(e[0], e[1]), reverse=True)
+        keeper_path, _ = entries[0]
+        dupes = [p for p, _ in entries[1:]]
+        results.append((keeper_path, dupes))
+
+    return results, untagged
+
+
+# ── Reporting ──────────────────────────────────────────────────────────────────
+
+
+def _rel(path: Path, library: Path) -> str:
+    try:
+        return str(path.relative_to(library))
+    except ValueError:
+        return str(path)
+
+
+def _print_group(label: str, keeper: Path, dupes: list[Path], library: Path) -> None:
+    print(f"  [{label}] keep  → {_rel(keeper, library)}")
+    for dupe in dupes:
+        print(f"           delete → {_rel(dupe, library)}")
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--library", type=Path, default=DEFAULT_LIBRARY,
+        help="Music library root (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Show duplicates without deleting anything",
+    )
+    parser.add_argument(
+        "--delete", action="store_true",
+        help="Delete the lower-quality duplicates",
+    )
+    parser.add_argument(
+        "--yes", "-y", action="store_true",
+        help="Skip confirmation prompt when used with --delete",
+    )
+    parser.add_argument(
+        "--skip-exact", action="store_true",
+        help="Skip the hash-based exact duplicate pass",
+    )
+    parser.add_argument(
+        "--skip-meta", action="store_true",
+        help="Skip the metadata-based duplicate pass",
+    )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="Show per-file progress while scanning",
+    )
+    args = parser.parse_args()
+
+    if not args.dry_run and not args.delete:
+        print("Specify --dry-run to preview, or --delete to remove duplicates.")
+        sys.exit(1)
+
+    if not args.library.exists():
+        print(f"Error: library not found: {args.library}", file=sys.stderr)
+        print("Is the NAS mounted?", file=sys.stderr)
+        sys.exit(1)
+
+    # ── Scan ──────────────────────────────────────────────────────────────────
+
+    divider = "─" * 60
+    mode = "[DRY RUN]" if args.dry_run else "[DELETE]"
+    print(divider)
+    print(f"  dedup-music  {mode}")
+    print(f"  library → {args.library}\n")
+
+    print("  Scanning audio files...")
+    all_files = [
+        p for p in args.library.rglob("*")
+        if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS
+    ]
+    print(f"  Found {len(all_files):,} audio files.\n")
+
+    to_delete: list[Path] = []
+
+    # ── Pass 1: exact duplicates ───────────────────────────────────────────────
+
+    if not args.skip_exact:
+        print("  Pass 1 — Exact duplicates (hash)")
+        print("  " + "─" * 40)
+        exact_groups = find_exact_dupes(all_files, verbose=args.verbose)
+        if not exact_groups:
+            print("  No exact duplicates found.\n")
+        else:
+            for keeper, dupes in exact_groups:
+                _print_group("EXACT", keeper, dupes, args.library)
+                to_delete.extend(dupes)
+            print()
+
+    # ── Pass 2: metadata duplicates ───────────────────────────────────────────
+
+    if not args.skip_meta:
+        print("  Pass 2 — Metadata duplicates (artist + title + album)")
+        print("  " + "─" * 40)
+
+        flagged = set(to_delete)
+        meta_files = [f for f in all_files if f not in flagged]
+
+        meta_groups, untagged = find_meta_dupes(meta_files, verbose=args.verbose)
+
+        if not meta_groups:
+            print("  No metadata duplicates found.\n")
+        else:
+            for keeper, dupes in meta_groups:
+                _print_group("META", keeper, dupes, args.library)
+                to_delete.extend(dupes)
+            print()
+
+        if untagged:
+            count = len(untagged)
+            print(f"  {count} file(s) skipped — missing artist/title tags (manual review):")
+            for path in untagged[:20]:
+                print(f"    {_rel(path, args.library)}")
+            if count > 20:
+                print(f"    ... and {count - 20} more")
+            print()
+
+    # ── Summary + action ──────────────────────────────────────────────────────
+
+    print(divider)
+    total = len(to_delete)
+
+    if total == 0:
+        print("  No duplicates found.")
+        return
+
+    total_bytes = sum(p.stat().st_size for p in to_delete if p.exists())
+    size_mb = total_bytes / (1024 * 1024)
+    print(f"  {total} duplicate file(s) found  ({size_mb:.1f} MB would be freed)\n")
+
+    if args.dry_run:
+        print("  Dry run — nothing deleted.")
+        return
+
+    if not args.yes:
+        answer = input(f"  Delete {total} file(s)? [y/N] ").strip().lower()
+        if answer != "y":
+            print("  Aborted.")
+            return
+
+    deleted = 0
+    errors = 0
+    for path in to_delete:
+        try:
+            path.unlink()
+            deleted += 1
+            if args.verbose:
+                print(f"  deleted: {path}")
+        except OSError as exc:
+            print(f"  [ERROR] could not delete {path}: {exc}", file=sys.stderr)
+            errors += 1
+
+    print(f"\n  Done — {deleted} deleted, {errors} errors.")
+
+
+if __name__ == '__main__':
+    main()

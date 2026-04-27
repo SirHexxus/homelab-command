@@ -1,0 +1,3 @@
+# mutagen — audio tag reader (artist, title, album, bitrate, duration)
+# Install: pip install mutagen
+mutagen>=1.47
