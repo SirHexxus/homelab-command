@@ -11,6 +11,7 @@
 *.retry
 .vault_pass
 vault_pass.txt
+vault.yml
 
 # Secrets & credentials
 *.pem
