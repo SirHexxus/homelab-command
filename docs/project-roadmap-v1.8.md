@@ -1,6 +1,6 @@
 # Homelab Command Project — Project Roadmap
-**Version:** 1.9
-**Last Updated:** 2026-04-16
+**Version:** 2.0
+**Last Updated:** 2026-04-27
 **Philosophy:** See `docs/homelab-philosophy-v1.0.md` for the values and goals behind this homelab.
 
 ---
@@ -162,10 +162,15 @@ resuming. Do not add Hermes tasks or invest further time without a dedicated rep
 - [x] n8n Telegram → Hermes ingest pipeline wired and tested
 - [x] Async ingest with Telegram callback
 
-**Remaining work (deferred):**
+**Remaining work (deferred — pending hold trigger):**
 - [ ] Hermes Phase 3: Register Telegram bots (@BotFather) + implement `telegram_bot.py`
 - [ ] Hermes Phase 5: n8n MCP integration (n8n at 10.0.50.13)
-- [ ] Replanning session: reconsider architecture given GPU requirement and no free cloud tier
+- [x] Replanning session: reconsider architecture — held 2026-04-27; hold triggers defined
+
+**Hold triggers — Hermes resumes when any one occurs (hard expiry Jan 1 2027):**
+- Bug Bounty Validation (tracked in Mnemosyne) produces a successful outcome
+- Hexxus Web Solutions onboards a new client
+- Jan 1 2027 — if neither above has occurred, Hermes is shuttered
 
 ### Mnemosyne (Wiki pipeline)
 - [x] Architecture: Design doc updated to git wiki model; `SCHEMA.md` written; `IngestItem` spec documented
@@ -173,12 +178,21 @@ resuming. Do not add Hermes tasks or invest further time without a dedicated rep
 - [x] Foundation: Create private GitHub remote for wiki repo; push initial scaffold
 - [x] Foundation: Configure Obsidian vault + git plugin
 - [x] Foundation: Install and configure Dataview plugin
+**Interim path (active — Hermes not required):**
+- [ ] n8n: modify Telegram webhook to write raw note to `wiki/inbox/` (text path; no LLM at ingest)
+- [ ] Laptop: `inotifywait` daemon on `~/mneme/wiki/inbox/` — triggers `claude -p` on new files
+- [ ] Laptop: hourly cron `claude -p` inbox sweep; silent if empty, ntfy notification if processed
+  - Sleep window: 01:00–07:00; `!!` prefix in message bypasses sleep window
+- [ ] Laptop: scheduled cron `claude -p` for Daily Digest and Weekly Summary reports
+- [ ] Scripts documented and maintained in `infrastructure/mnemosyne/` in homelab-command repo
+
+**Full pipeline (deferred — pending Hermes hold trigger):**
 - [ ] Foundation: Grant Hermes LXC deploy key write access to wiki repo
-- [ ] Ingest pipeline: n8n Telegram webhook workflow (text + voice + file attachment paths)
-- [ ] Ingest pipeline: End-to-end test — Telegram note → wiki page → Obsidian
+- [ ] Ingest pipeline: n8n Telegram webhook — voice + file attachment paths
+- [ ] Ingest pipeline: End-to-end test — Telegram note → wiki page → Obsidian (full pipeline)
 - [ ] Retrieval: `/search` and `/ask` Telegram commands via Hermes ReAct loop
 - [ ] Retrieval: n8n Chat Trigger as secondary capture/query interface
-- [ ] Reports: Daily Digest, Serendipity Engine, Weekly Summary, Idea Synthesis Report
+- [ ] Reports: Serendipity Engine, Idea Synthesis Report (require agent reasoning)
 - [ ] Extended sources: Email ingestion, URL capture, Obsidian Web Clipper inbox processing
 
 ### Domain Migration (Namecheap → Porkbun)
@@ -295,7 +309,7 @@ log pipelines). The timeline reflects real learning time, not just deployment ti
 - [ ] Resume tailored for CRDC Consultant III
 - [ ] STAR responses prepared for behavioral questions
 - [ ] Mock interviews completed
-- [ ] **CRDC APPLICATION SUBMITTED** *(target: late July / early August 2026 — firm enough for INCUP urgency, flexible enough to be realistic)*
+- [ ] **CRDC APPLICATION SUBMITTED** *(readiness target: late July 2026; actual submission window: mid-August 2026 after return from family trip July 25–Aug 12)*
 
 ---
 
@@ -338,6 +352,7 @@ Career Advancement pursuit in Mnemosyne.
 
 ## Version History
 
+- v2.0 (2026-04-27): Hermes replanning complete — hold triggers documented, replanning item checked off; Mnemosyne Phase 2 restructured into interim cron path (active) vs full pipeline (deferred); Phase 5 CRDC submission window adjusted to mid-August for family trip July 25–Aug 12
 - v1.9 (2026-04-16): Full audit + re-sync — check off all completed work (Hermes LXC live,
   pfSense full firewall IaC, Ariadne media_proxy + ntfy proxy, Mnemosyne wiki scaffold,
   Iris SSH runbook, Ariadne Design Doc); extract cert prep to Mnemosyne Career Advancement
