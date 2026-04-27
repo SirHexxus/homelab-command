@@ -1,4 +1,4 @@
-# Hermes Design Doc v1.0
+# Hermes Design Doc v1.1
 
 Local AI agent for homelab automation and personal productivity. Part of the Homelab Command
 ecosystem (alongside Argus, Ariadne, Orpheus, and Mnemosyne).
@@ -7,14 +7,30 @@ ecosystem (alongside Argus, Ariadne, Orpheus, and Mnemosyne).
 
 ## Table of Contents
 
-1. [Purpose](#purpose)
-2. [Architecture](#architecture)
-3. [Build Phases](#build-phases)
-4. [LXC Specification](#lxc-specification)
-5. [Network and IP Assignment](#network-and-ip-assignment)
-6. [Dependencies](#dependencies)
-7. [Deployment Order](#deployment-order)
-8. [Repository Layout](#repository-layout)
+1. [Current Status](#current-status)
+2. [Purpose](#purpose)
+3. [Architecture](#architecture)
+4. [Build Phases](#build-phases)
+5. [LXC Specification](#lxc-specification)
+6. [Network and IP Assignment](#network-and-ip-assignment)
+7. [Dependencies](#dependencies)
+8. [Deployment Order](#deployment-order)
+9. [Repository Layout](#repository-layout)
+
+---
+
+## Current Status — ⚠️ On Hold
+
+As of 2026-04-27, Hermes is on hold. Phase 2 is complete but not reliably functional — the
+ReAct loop times out on CPU-only Ollama hardware, and the Gemini free tier has been
+eliminated. Active development is paused until a hold trigger condition is met:
+
+- Bug Bounty Validation produces a successful outcome (VDP accepted or paid bounty)
+- Hexxus Web Solutions onboards a new client
+- Jan 1 2027 — hard expiry; Hermes shuttered if neither above has occurred
+
+Phase 3 architecture direction: replace the ReAct loop with single-shot classification +
+n8n workflow dispatch for simple tasks. See `apps/hermes/THOUGHTS.md` for full rationale.
 
 ---
 
@@ -121,10 +137,10 @@ formatting without manual prompting.
 | Phase | Status | Contents |
 |-------|--------|----------|
 | 1 | Complete | CLI, Ollama, filesystem skill, shell skill, audit log |
-| 2 | Planned | Gemini + Claude, LLM router, web skill, email skill, Mnemosyne |
-| 3 | Planned | Telegram bots - register via @BotFather first (see below) |
-| 4 | Planned | FastAPI web UI, domain → context routing |
-| 5 | Planned | n8n MCP integration (n8n deployed at 10.0.50.13) |
+| 2 | Complete | Gemini + Claude, LLM router, wiki skill, HTTP endpoint, async ingest, Telegram callback |
+| 3 | Deferred | Telegram bots — pending hold trigger; architecture direction revised (see THOUGHTS.md) |
+| 4 | Deferred | FastAPI web UI, domain → context routing |
+| 5 | Deferred | n8n MCP integration (n8n deployed at 10.0.50.13) |
 
 ### Phase 3 pre-requisite
 
