@@ -1,0 +1,6 @@
+---
+- name: restart inbox-receiver
+  systemd:
+    name: inbox-receiver
+    state: restarted
+    daemon_reload: yes

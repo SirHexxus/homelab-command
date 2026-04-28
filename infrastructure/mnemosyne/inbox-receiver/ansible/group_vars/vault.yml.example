@@ -1,0 +1,15 @@
+---
+# vault.yml.example — copy to vault.yml and encrypt with ansible-vault
+# ansible-vault encrypt group_vars/vault.yml
+
+vault_inbox_token: "your-secret-token-here"
+
+# Base64-encoded SSH private key for mnemosyne-wiki GitHub deploy key.
+# Generate: ssh-keygen -t ed25519 -C "inbox-receiver@homelab" -f /tmp/wiki_deploy
+# Encode:   base64 -w0 /tmp/wiki_deploy
+# Add the public key (/tmp/wiki_deploy.pub) as a Deploy Key on the GitHub repo.
+vault_wiki_deploy_key: "base64-encoded-private-key-here"
+
+# Git identity for commits from the LXC
+vault_git_user_name: "Mnemosyne Inbox"
+vault_git_user_email: "inbox@homelab.internal"

@@ -1,0 +1,183 @@
+# roles/inbox_receiver/tasks/main.yml
+
+# =============================================================================
+# 1. SYSTEM USER
+# =============================================================================
+
+- name: Create app system group
+  group:
+    name: "{{ app_group }}"
+    system: yes
+    state: present
+
+- name: Create app system user
+  user:
+    name: "{{ app_user }}"
+    group: "{{ app_group }}"
+    system: yes
+    home: /nonexistent
+    create_home: no
+    shell: /usr/sbin/nologin
+    state: present
+
+# =============================================================================
+# 2. APP DIRECTORY AND FILES
+# =============================================================================
+
+- name: Create app directory
+  file:
+    path: "{{ app_dir }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0755'
+
+- name: Deploy inbox_receiver.py
+  copy:
+    src: ../../../../inbox_receiver.py
+    dest: "{{ app_dir }}/inbox_receiver.py"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0644'
+  notify: restart inbox-receiver
+
+- name: Deploy requirements.txt
+  copy:
+    content: "flask>=3.0,<4\ngunicorn>=21,<22\n"
+    dest: "{{ app_dir }}/requirements.txt"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0644'
+  notify: restart inbox-receiver
+
+# =============================================================================
+# 3. PYTHON VENV
+# =============================================================================
+
+- name: Create Python virtual environment
+  command: python3 -m venv {{ venv_dir }}
+  args:
+    creates: "{{ venv_dir }}/bin/activate"
+
+- name: Install Python dependencies
+  pip:
+    requirements: "{{ app_dir }}/requirements.txt"
+    virtualenv: "{{ venv_dir }}"
+
+# =============================================================================
+# 4. WIKI REPO (SSH DEPLOY KEY)
+# =============================================================================
+
+- name: Create SSH directory
+  file:
+    path: "{{ ssh_dir }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0700'
+
+- name: Deploy wiki SSH deploy key
+  copy:
+    content: "{{ vault_wiki_deploy_key | b64decode }}"
+    dest: "{{ ssh_dir }}/wiki_deploy"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0600'
+
+- name: Fetch github.com SSH host key
+  command: ssh-keyscan -t ed25519 github.com
+  register: github_keyscan
+  changed_when: false
+  failed_when: github_keyscan.rc != 0 or github_keyscan.stdout == ''
+
+- name: Add github.com to known_hosts
+  known_hosts:
+    path: "{{ ssh_dir }}/known_hosts"
+    name: github.com
+    key: "{{ github_keyscan.stdout }}"
+    state: present
+
+- name: Set known_hosts ownership
+  file:
+    path: "{{ ssh_dir }}/known_hosts"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0644'
+
+- name: Clone mnemosyne-wiki repository
+  command: git clone {{ wiki_repo }} {{ wiki_dir }}
+  args:
+    creates: "{{ wiki_dir }}/.git"
+  environment:
+    GIT_SSH_COMMAND: >-
+      ssh -i {{ ssh_dir }}/wiki_deploy
+      -o UserKnownHostsFile={{ ssh_dir }}/known_hosts
+      -o StrictHostKeyChecking=yes
+
+- name: Set wiki directory ownership
+  file:
+    path: "{{ wiki_dir }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    recurse: yes
+
+- name: Configure wiki repo to use deploy key
+  ini_file:
+    path: "{{ wiki_dir }}/.git/config"
+    section: core
+    option: sshCommand
+    value: >-
+      ssh -i {{ ssh_dir }}/wiki_deploy
+      -o UserKnownHostsFile={{ ssh_dir }}/known_hosts
+      -o StrictHostKeyChecking=yes
+
+- name: Configure git user name for commits
+  ini_file:
+    path: "{{ wiki_dir }}/.git/config"
+    section: user
+    option: name
+    value: "{{ vault_git_user_name }}"
+
+- name: Configure git user email for commits
+  ini_file:
+    path: "{{ wiki_dir }}/.git/config"
+    section: user
+    option: email
+    value: "{{ vault_git_user_email }}"
+
+# =============================================================================
+# 5. ENV FILE (secrets injected from Vault)
+# =============================================================================
+
+- name: Write env file with INBOX_TOKEN
+  copy:
+    content: "INBOX_TOKEN={{ vault_inbox_token }}\n"
+    dest: "{{ app_dir }}/env"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0600'
+  notify: restart inbox-receiver
+
+# =============================================================================
+# 6. SYSTEMD SERVICE
+# =============================================================================
+
+- name: Deploy systemd service unit
+  template:
+    src: inbox-receiver.service.j2
+    dest: /etc/systemd/system/inbox-receiver.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart inbox-receiver
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+
+- name: Enable and start inbox-receiver service
+  systemd:
+    name: inbox-receiver
+    enabled: yes
+    state: started

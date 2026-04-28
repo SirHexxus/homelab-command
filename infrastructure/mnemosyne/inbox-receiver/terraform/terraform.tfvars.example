@@ -1,0 +1,6 @@
+# terraform.tfvars.example — copy to terraform.tfvars and fill in real values
+
+proxmox_endpoint      = "https://10.0.10.2:8006/"
+proxmox_api_token_id  = "terraform@pve!terraform"
+proxmox_api_token     = "your-token-secret-here"
+proxmox_node          = "puppetmaster"

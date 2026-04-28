@@ -1,0 +1,22 @@
+[Unit]
+Description=Mnemosyne inbox-receiver
+After=network.target
+
+[Service]
+Type=simple
+User={{ app_user }}
+Group={{ app_group }}
+WorkingDirectory={{ app_dir }}
+Environment=WIKI_ROOT={{ wiki_dir }}
+Environment=PORT={{ app_port }}
+EnvironmentFile={{ app_dir }}/env
+ExecStart={{ venv_dir }}/bin/gunicorn \
+    --bind 0.0.0.0:{{ app_port }} \
+    --workers 1 \
+    --timeout 30 \
+    "inbox_receiver:create_app()"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

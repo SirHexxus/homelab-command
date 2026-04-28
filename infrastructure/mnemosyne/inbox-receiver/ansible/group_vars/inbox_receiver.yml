@@ -1,0 +1,12 @@
+---
+# inbox-receiver host configuration
+
+app_user: inbox-receiver
+app_group: inbox-receiver
+app_dir: /opt/inbox-receiver
+wiki_dir: /opt/inbox-receiver/wiki
+venv_dir: /opt/inbox-receiver/venv
+service_name: inbox-receiver
+app_port: 8080
+ssh_dir: /opt/inbox-receiver/.ssh
+wiki_repo: git@github.com:SirHexxus/mnemosyne-wiki.git
