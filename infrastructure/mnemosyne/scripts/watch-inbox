@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+################################################################################
+# Script Name: watch-inbox
+# Description: Watch wiki/inbox/ for new JSON files and process them immediately
+#              via process-inbox. Acts as the real-time complement to the hourly
+#              cron fallback. Requires inotifywait (inotify-tools package).
+#
+# Usage: watch-inbox [--wiki-root DIR]
+#
+# Options:
+#   -h, --help            Show this help message
+#   -w, --wiki-root DIR   Wiki root directory (default: ~/mneme/wiki)
+#
+# Install as a user systemd service or launch from ~/.bashrc / a tmux session.
+################################################################################
+
+set -u
+set -o pipefail
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME="$(basename "$0")"
+readonly PROCESS_INBOX="$SCRIPT_DIR/process-inbox"
+
+wiki_root="$HOME/mneme/wiki"
+
+show_help() {
+	cat <<EOF
+Usage: $SCRIPT_NAME [options]
+
+Watch wiki/inbox/ for new JSON files and call process-inbox immediately.
+
+Options:
+  -h, --help            Show this help message
+  -w, --wiki-root DIR   Wiki root directory (default: $wiki_root)
+
+EOF
+}
+
+log() {
+	echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >&2
+}
+
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		-h|--help)
+			show_help
+			exit 0
+			;;
+		-w|--wiki-root)
+			wiki_root=$2
+			shift 2
+			;;
+		-*)
+			echo "Unknown option: $1" >&2
+			show_help
+			exit 2
+			;;
+		*)
+			shift
+			;;
+	esac
+done
+
+inbox_dir="$wiki_root/inbox"
+
+if [[ ! -d $inbox_dir ]]; then
+	echo "Error: inbox directory not found: $inbox_dir" >&2
+	exit 1
+fi
+
+if ! command -v inotifywait &>/dev/null; then
+	echo "Error: inotifywait not found — install inotify-tools" >&2
+	exit 1
+fi
+
+if [[ ! -x $PROCESS_INBOX ]]; then
+	echo "Error: process-inbox not found or not executable: $PROCESS_INBOX" >&2
+	exit 1
+fi
+
+log "Watching $inbox_dir for new inbox items..."
+
+inotifywait -m -e close_write --format '%f' "$inbox_dir" 2>/dev/null | while IFS= read -r filename; do
+	# Only react to JSON files
+	[[ $filename == *.json ]] || continue
+
+	filepath="$inbox_dir/$filename"
+
+	# Brief pause in case the file is still being written
+	sleep 1
+
+	[[ -f $filepath ]] || continue
+
+	log "New inbox item: $filename — calling process-inbox"
+	"$PROCESS_INBOX" --file "$filepath" --wiki-root "$wiki_root"
+	rc=$?
+
+	if [[ $rc -ne 0 ]]; then
+		log "process-inbox exited $rc for $filename — will retry on next cron run"
+	fi
+done

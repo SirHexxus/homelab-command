@@ -1,0 +1,236 @@
+#!/usr/bin/env bash
+################################################################################
+# Script Name: check-frontmatter-types
+# Description: Validates frontmatter field values against allowed enums
+# Author: James Stacy
+# Version: 1.0.0
+#
+# Usage: check-frontmatter-types
+#
+# Exit Codes:
+#   0 - Success
+#   1 - Configuration error
+#   2 - Invalid arguments
+################################################################################
+
+set -u
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/wiki-common.sh" || exit 1
+
+show_help() {
+	cat << EOF
+Usage: $(basename "$0") [options]
+
+Validates that frontmatter field values match their allowed enums across
+all wiki pages. Writes a report if any violations are found.
+
+Checks:
+  - bucket:          must match the file's directory
+  - source:          claude_code|telegram|email|web_clipper|n8n_chat|manual
+  - ADMIN status:    Pending|Done
+  - ADMIN task_type: user|maintenance
+  - PROJECT status:  Not Started|Active|Blocked|Done
+  - PERSON follow_up_needed: true|false
+  - Date fields:     must be YYYY-MM-DD or null
+
+Options:
+    -h, --help      Show this help message
+
+EOF
+}
+
+readonly VALID_SOURCES=(
+	claude_code telegram email web_clipper n8n_chat manual
+)
+
+readonly DIR_TO_BUCKET=(
+	ideas:IDEA
+	admin:ADMIN
+	reference:REFERENCE
+	journal:JOURNAL
+	people:PERSON
+	projects:PROJECT
+	pursuits:PURSUIT
+)
+
+readonly DATE_PATTERN='^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+
+# Returns 0 if value is in the provided list
+in_list() {
+	local val=$1
+	shift
+	local item
+	for item in "$@"; do
+		[[ $val == "$item" ]] && return 0
+	done
+	return 1
+}
+
+# Returns expected bucket value for a given directory name
+dir_to_bucket() {
+	local dir=$1
+	local mapping
+	for mapping in "${DIR_TO_BUCKET[@]}"; do
+		local d="${mapping%%:*}"
+		local b="${mapping##*:}"
+		[[ $dir == "$d" ]] && printf '%s' "$b" && return
+	done
+}
+
+validate_date_field() {
+	local file=$1
+	local field=$2
+	local val
+	val=$(get_frontmatter_field "$file" "$field")
+	[[ -z $val || $val == 'null' ]] && return 0
+	[[ $val =~ $DATE_PATTERN ]] && return 0
+	printf '%s\n' "  - \`${field}\`: invalid date format \`${val}\`"
+}
+
+main() {
+	local today
+	today=$(date '+%Y-%m-%d')
+
+	local violation_count=0
+	local report_lines=()
+
+	while IFS= read -r -d '' f; do
+		local relative="${f#"$WIKI_DIR/"}"
+		local dir="${relative%%/*}"
+		local file_violations=()
+
+		# bucket must match directory
+		local expected_bucket actual_bucket
+		expected_bucket=$(dir_to_bucket "$dir")
+		actual_bucket=$(get_frontmatter_field "$f" 'bucket')
+		if [[ -n $expected_bucket && \
+			$actual_bucket != "$expected_bucket" ]]; then
+			file_violations+=(
+				"  - \`bucket\`: expected \`${expected_bucket}\`," \
+				" got \`${actual_bucket}\`"
+			)
+		fi
+
+		# source must be a valid enum
+		local source
+		source=$(get_frontmatter_field "$f" 'source')
+		if [[ -n $source ]] && \
+			! in_list "$source" "${VALID_SOURCES[@]}"; then
+			file_violations+=(
+				"  - \`source\`: invalid value \`${source}\`"
+			)
+		fi
+
+		# Bucket-specific checks
+		case $dir in
+			admin)
+				local status task_type
+				status=$(get_frontmatter_field "$f" 'status')
+				task_type=$(get_frontmatter_field "$f" 'task_type')
+
+				if [[ -n $status ]] && \
+					! in_list "$status" 'Pending' 'Done'; then
+					file_violations+=(
+						"  - \`status\`: must be Pending|Done," \
+						" got \`${status}\`"
+					)
+				fi
+				if [[ -n $task_type ]] && \
+					! in_list "$task_type" 'user' 'maintenance'; then
+					file_violations+=(
+						"  - \`task_type\`: must be user|maintenance," \
+						" got \`${task_type}\`"
+					)
+				fi
+				local date_err
+				date_err=$(validate_date_field "$f" 'due')
+				[[ -n $date_err ]] && file_violations+=("$date_err")
+				;;
+			projects)
+				local status
+				status=$(get_frontmatter_field "$f" 'status')
+				if [[ -n $status ]] && \
+					! in_list "$status" \
+						'Not Started' 'Active' 'Blocked' 'Done'; then
+					file_violations+=(
+						"  - \`status\`: invalid value \`${status}\`"
+					)
+				fi
+				local date_err
+				date_err=$(validate_date_field "$f" 'deadline')
+				[[ -n $date_err ]] && file_violations+=("$date_err")
+				;;
+			people)
+				local needed
+				needed=$(get_frontmatter_field "$f" 'follow_up_needed')
+				if [[ -n $needed ]] && \
+					! in_list "$needed" 'true' 'false'; then
+					file_violations+=(
+						"  - \`follow_up_needed\`: must be" \
+						" true|false, got \`${needed}\`"
+					)
+				fi
+				local date_err
+				date_err=$(validate_date_field "$f" 'follow_up_date')
+				[[ -n $date_err ]] && file_violations+=("$date_err")
+				date_err=$(validate_date_field "$f" 'last_contact')
+				[[ -n $date_err ]] && file_violations+=("$date_err")
+				;;
+		esac
+
+		# Universal date fields
+		local date_err
+		date_err=$(validate_date_field "$f" 'created')
+		[[ -n $date_err ]] && file_violations+=("$date_err")
+		date_err=$(validate_date_field "$f" 'updated')
+		[[ -n $date_err ]] && file_violations+=("$date_err")
+
+		if [[ ${#file_violations[@]} -gt 0 ]]; then
+			report_lines+=("### \`${relative}\`")
+			local v
+			for v in "${file_violations[@]}"; do
+				report_lines+=("$v")
+				violation_count=$(( violation_count + 1 ))
+			done
+			report_lines+=('')
+		fi
+	done < <(find_wiki_files)
+
+	if [[ $violation_count -eq 0 ]]; then
+		log_info "Frontmatter types: no violations found"
+		return 0
+	fi
+
+	local body
+	body="# Frontmatter Type Violations — ${today}
+
+**Issues found:** ${violation_count} invalid field values
+
+## Violations
+
+"
+	local line
+	for line in "${report_lines[@]}"; do
+		body+="${line}"$'\n'
+	done
+
+	body+='---
+*Generated by check-frontmatter-types*
+'
+	write_report 'frontmatter-types' "$today" "$body"
+}
+
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		-h|--help) show_help; exit 0 ;;
+		*)
+			log_error "Unknown option: $1"
+			show_help
+			exit 2
+			;;
+	esac
+done
+
+main

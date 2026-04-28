@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+################################################################################
+# Script Name: triage-stale-projects
+# Description: Flags Active projects and pursuits with no recent activity
+# Author: James Stacy
+# Version: 1.0.0
+#
+# Usage: triage-stale-projects [--days N] [--enrich]
+#
+# Options:
+#   -h, --help      Show this help message
+#   --days N        Inactivity threshold in days (default: 30)
+#   --enrich        Use claude haiku to summarize each stale page's state
+#                   (haiku-4-5: summarization of short existing content)
+#
+# Exit Codes:
+#   0 - Success
+#   1 - Configuration error
+#   2 - Invalid arguments
+################################################################################
+
+set -u
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/wiki-common.sh" || exit 1
+
+stale_days=30
+enrich=false
+
+show_help() {
+	cat << EOF
+Usage: $(basename "$0") [options]
+
+Checks PROJECT pages with status Active and PURSUIT pages for inactivity.
+Staleness is measured by the page's updated: frontmatter field. Falls back
+to git commit date if updated: is missing.
+
+Options:
+    -h, --help      Show this help message
+    --days N        Inactivity threshold in days (default: 30)
+    --enrich        Use claude haiku-4-5 to summarize each stale page
+
+EOF
+}
+
+days_since() {
+	local d=$1
+	local epoch ref_epoch
+	epoch=$(date -d "$d" +%s 2>/dev/null) || { echo 0; return; }
+	ref_epoch=$(date +%s)
+	echo $(( (ref_epoch - epoch) / 86400 ))
+}
+
+main() {
+	local today
+	today=$(date '+%Y-%m-%d')
+
+	local stale_count=0
+	local project_lines=()
+	local pursuit_lines=()
+	local enrich_context=''
+
+	# Check Active projects
+	while IFS= read -r -d '' f; do
+		local title="${f##*/}"; title="${title%.md}"
+		local relative="${f#"$WIKI_DIR/"}"
+		local status updated
+		status=$(get_frontmatter_field "$f" 'status')
+		[[ $status == 'Active' ]] || continue
+
+		updated=$(get_frontmatter_field "$f" 'updated')
+		if [[ -z $updated || $updated == 'null' ]]; then
+			updated=$(git -C "$WIKI_DIR" log -1 --format="%as" \
+				-- "$relative" 2>/dev/null)
+		fi
+		[[ -z $updated ]] && continue
+
+		local days_idle
+		days_idle=$(days_since "$updated")
+		(( days_idle >= stale_days )) || continue
+
+		project_lines+=(
+			"### [[${title}]]"
+			"- **Last updated:** ${updated} (${days_idle} days ago)"
+			''
+		)
+		if [[ $enrich == true ]]; then
+			enrich_context+="FILE: ${relative}"$'\n'
+			enrich_context+="$(cat "$f")"$'\n---\n'
+		fi
+		stale_count=$(( stale_count + 1 ))
+	done < <(
+		find "$WIKI_DIR/projects" -maxdepth 1 -name '*.md' -print0 \
+			2>/dev/null
+	)
+
+	# Check pursuits (no status filter — all pursuits are ongoing by nature)
+	while IFS= read -r -d '' f; do
+		local title="${f##*/}"; title="${title%.md}"
+		local relative="${f#"$WIKI_DIR/"}"
+		local last_active updated
+		last_active=$(get_frontmatter_field "$f" 'last_active')
+		updated=$(get_frontmatter_field "$f" 'updated')
+		local ref_date="${last_active:-$updated}"
+
+		if [[ -z $ref_date || $ref_date == 'null' ]]; then
+			ref_date=$(git -C "$WIKI_DIR" log -1 --format="%as" \
+				-- "$relative" 2>/dev/null)
+		fi
+		[[ -z $ref_date ]] && continue
+
+		local days_idle
+		days_idle=$(days_since "$ref_date")
+		(( days_idle >= stale_days )) || continue
+
+		pursuit_lines+=(
+			"### [[${title}]]"
+			"- **Last active:** ${ref_date} (${days_idle} days ago)"
+			''
+		)
+		if [[ $enrich == true ]]; then
+			enrich_context+="FILE: ${relative}"$'\n'
+			enrich_context+="$(cat "$f")"$'\n---\n'
+		fi
+		stale_count=$(( stale_count + 1 ))
+	done < <(
+		find "$WIKI_DIR/pursuits" -maxdepth 1 -name '*.md' -print0 \
+			2>/dev/null
+	)
+
+	if [[ $stale_count -eq 0 ]]; then
+		log_info "Stale projects: none found (threshold: ${stale_days}d)"
+		return 0
+	fi
+
+	local body
+	body="# Stale Projects Report — ${today}
+
+**Issues found:** ${stale_count} pages with no activity in ${stale_days}+ days
+
+"
+	if [[ ${#project_lines[@]} -gt 0 ]]; then
+		body+='## Active Projects — No Recent Updates
+
+'
+		local line
+		for line in "${project_lines[@]}"; do
+			body+="${line}"$'\n'
+		done
+	fi
+
+	if [[ ${#pursuit_lines[@]} -gt 0 ]]; then
+		body+='## Pursuits — No Recent Activity
+
+'
+		local line
+		for line in "${pursuit_lines[@]}"; do
+			body+="${line}"$'\n'
+		done
+	fi
+
+	if [[ $enrich == true && -n $enrich_context ]]; then
+		if ! command -v claude &>/dev/null; then
+			log_error "claude CLI not found; skipping enrichment"
+		else
+			log_info "Running enrichment via claude haiku-4-5..."
+			local prompt
+			prompt="You are triaging stale project and pursuit pages in a wiki.
+For each page, write a 1-2 sentence status summary explaining:
+- What the current state appears to be
+- Whether it looks intentionally parked or accidentally forgotten
+
+${enrich_context}
+
+For each file output:
+FILE: <relative path>
+STATUS: <1-2 sentence summary>"
+
+			local summaries
+			summaries=$(claude --model "$HAIKU_MODEL" \
+				-p "$prompt" 2>/dev/null) \
+				|| summaries='(enrichment failed — check claude CLI)'
+
+			body+=$'\n## Status Summaries\n\n'
+			body+="${summaries}"$'\n'
+		fi
+	fi
+
+	body+='
+---
+*Generated by triage-stale-projects*
+'
+	write_report 'stale-projects' "$today" "$body"
+}
+
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		-h|--help) show_help; exit 0 ;;
+		--enrich) enrich=true; shift ;;
+		--days)
+			[[ -n ${2:-} ]] || {
+				log_error "--days requires a value"
+				exit 2
+			}
+			stale_days=$2
+			shift 2
+			;;
+		*)
+			log_error "Unknown option: $1"
+			show_help
+			exit 2
+			;;
+	esac
+done
+
+main
