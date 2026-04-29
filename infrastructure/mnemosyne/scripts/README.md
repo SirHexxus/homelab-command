@@ -1,15 +1,17 @@
-# Mnemosyne Maintenance Scripts
+# Mnemosyne Scripts
 
-Housekeeping scripts for the Mnemosyne wiki. All scripts are read-only
-(no wiki content is modified). Reports are written to `wiki/reports/` and
-logged to `wiki/log.md`.
+Pipeline and housekeeping scripts for the Mnemosyne wiki.
 
 ## Structure
 
 ```
 scripts/
+├── triage-inbox               # real-time + hourly — classify inbox items, write stubs
+├── enrich-stubs               # every 6h — enrich stubs, merge candidates, flag issues
+├── watch-inbox                # daemon — inotifywait trigger for triage-inbox
+├── daily-digest               # daily 7am — morning briefing via Telegram
 ├── lib/
-│   └── wiki-common.sh       # Shared functions; source, do not execute
+│   └── wiki-common.sh         # Shared bash functions; source, do not execute
 └── maintenance/
     ├── check-ghost-links          # daily   — bash + optional haiku
     ├── check-index-completeness   # daily   — bash only
