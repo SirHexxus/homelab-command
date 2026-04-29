@@ -70,7 +70,7 @@ main() {
 			)
 			stale_count=$(( stale_count + 1 ))
 		fi
-	done < <(find "$inbox_dir" -maxdepth 1 -name '*.md' -print0 \
+	done < <(find "$inbox_dir" -maxdepth 1 -name '*.json' -print0 \
 		2>/dev/null)
 
 	if [[ $total_count -eq 0 ]]; then
