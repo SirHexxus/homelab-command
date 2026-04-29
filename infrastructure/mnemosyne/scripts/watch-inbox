@@ -80,7 +80,7 @@ fi
 
 log "Watching $inbox_dir for new inbox items..."
 
-inotifywait -m -e close_write --format '%f' "$inbox_dir" 2>/dev/null | while IFS= read -r filename; do
+inotifywait -m -e close_write -e moved_to --format '%f' "$inbox_dir" 2>/dev/null | while IFS= read -r filename; do
 	# Only react to JSON files
 	[[ $filename == *.json ]] || continue
 

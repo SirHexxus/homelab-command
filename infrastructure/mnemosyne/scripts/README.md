@@ -77,6 +77,41 @@ are found. A clean run logs to stderr and exits 0 without writing a file.
 0 9 * * 0 /path/to/scripts/maintenance/triage-stale-projects --enrich
 ```
 
+## watch-inbox System Service
+
+`watch-inbox` runs as a systemd user service so it auto-starts on login and restarts on crash.
+The service file lives outside the repo at `~/.config/systemd/user/mnemosyne-watch-inbox.service`.
+
+To recreate it on a fresh machine:
+
+```bash
+cat > ~/.config/systemd/user/mnemosyne-watch-inbox.service <<'EOF'
+[Unit]
+Description=Mnemosyne inbox watcher
+After=network.target
+
+[Service]
+ExecStart=/home/james/projects/homelab-command/infrastructure/mnemosyne/scripts/watch-inbox --wiki-root /home/james/mneme/wiki
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+
+systemctl --user daemon-reload
+systemctl --user enable mnemosyne-watch-inbox.service
+systemctl --user start mnemosyne-watch-inbox.service
+```
+
+Useful commands:
+
+```bash
+systemctl --user status mnemosyne-watch-inbox   # current state
+journalctl --user -u mnemosyne-watch-inbox -f   # live log tail
+systemctl --user restart mnemosyne-watch-inbox  # restart after script changes
+```
+
 ## Dependencies
 
 - `bash` 4.0+ (associative arrays, `${var^}` case expansion)
