@@ -2,39 +2,74 @@
   "name": "Mnemosyne Ingest v1",
   "nodes": [
     {
-      "id": "node-telegram-trigger",
-      "name": "Telegram Trigger",
-      "type": "n8n-nodes-base.telegramTrigger",
-      "typeVersion": 1,
-      "position": [260, 300],
-      "webhookId": "mnemosyne-ingest",
       "parameters": {
-        "updates": ["message"],
+        "updates": [
+          "message"
+        ],
         "additionalFields": {}
       },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        640
+      ],
+      "id": "11eb8a29-7a55-4f5d-97f6-30597d846482",
+      "name": "Telegram Trigger",
+      "webhookId": "e1ae4f59-dffa-4651-8873-2e082415b7cf",
       "credentials": {
         "telegramApi": {
-          "id": "PLACEHOLDER_TELEGRAM",
-          "name": "Telegram Bot API"
+          "id": "jfhTkDLLipHkDAGz",
+          "name": "Telegram account"
         }
       }
     },
     {
-      "id": "node-route",
-      "name": "Route by Message Type",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 2,
-      "position": [480, 300],
+      "parameters": {
+        "chatId": "={{ $('Build Dedup Hash').item.json._chat_id }}",
+        "text": "Already captured ↩",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2384,
+        960
+      ],
+      "id": "019321b0-e18f-44e6-9c1c-53ffc18ef211",
+      "name": "Already Saved",
+      "webhookId": "3a9afc1e-17c7-458a-b618-20263e384b72",
+      "credentials": {
+        "telegramApi": {
+          "id": "jfhTkDLLipHkDAGz",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
       "parameters": {
         "rules": {
           "values": [
             {
               "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
                 "conditions": [
                   {
-                    "leftValue": "={{ !!$json.message.voice }}",
-                    "rightValue": "true",
-                    "operator": {"type": "string", "operation": "equals"}
+                    "leftValue": "={{ $json.message.voice }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "object",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "id": "127eb0b6-cdc6-4b9d-bc6a-7392807822e2"
                   }
                 ],
                 "combinator": "and"
@@ -44,11 +79,22 @@
             },
             {
               "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
                 "conditions": [
                   {
-                    "leftValue": "={{ !!($json.message.document || $json.message.photo) }}",
-                    "rightValue": "true",
-                    "operator": {"type": "string", "operation": "equals"}
+                    "id": "e8d88fb0-371b-471c-94be-b9060b76b90c",
+                    "leftValue": "={{ $json.message.document ?? $json.message.photo?.[0] }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "object",
+                      "operation": "exists",
+                      "singleValue": true
+                    }
                   }
                 ],
                 "combinator": "and"
@@ -58,11 +104,21 @@
             },
             {
               "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
                 "conditions": [
                   {
-                    "leftValue": "={{ !!$json.message.text && $json.message.text.startsWith('/') }}",
-                    "rightValue": "true",
-                    "operator": {"type": "string", "operation": "equals"}
+                    "id": "705deee9-2291-4895-be35-775a82fabd28",
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": "/",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    }
                   }
                 ],
                 "combinator": "and"
@@ -72,11 +128,22 @@
             },
             {
               "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
                 "conditions": [
                   {
-                    "leftValue": "={{ !!$json.message.text }}",
-                    "rightValue": "true",
-                    "operator": {"type": "string", "operation": "equals"}
+                    "id": "9e89785e-df42-40e3-b2b5-5b3a246e7761",
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists",
+                      "singleValue": true
+                    }
                   }
                 ],
                 "combinator": "and"
@@ -87,116 +154,123 @@
           ]
         },
         "options": {}
-      }
-    },
-    {
-      "id": "node-hash",
-      "name": "Build Dedup Hash",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [700, 420],
-      "parameters": {
-        "jsCode": "const msg = $input.item.json;\nconst text = msg.message.text;\nconst chatId = String(msg.message.chat.id);\nconst { createHash } = require('crypto');\nconst hash = createHash('sha256').update(text).digest('hex').substring(0, 16);\nreturn [{ json: { ...msg, _text: text, _chat_id: chatId, _dedup_key: `dedup:${hash}` } }];"
-      }
-    },
-    {
-      "id": "node-redis-get",
-      "name": "Redis: Check Dedup",
-      "type": "n8n-nodes-base.redis",
-      "typeVersion": 1,
-      "position": [920, 420],
-      "parameters": {
-        "operation": "get",
-        "key": "={{ $json._dedup_key }}"
       },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        224,
+        608
+      ],
+      "id": "e1606f04-3d2d-4a8d-93a3-f83c8169773b",
+      "name": "Route by Message Type"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.message.chat.id }}",
+        "text": "/search, /ask, /find coming in Phase 3",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        704,
+        624
+      ],
+      "id": "8cb40311-0e44-4acc-9102-f43488c5aac5",
+      "name": "command stub",
+      "webhookId": "e904bf9a-1c34-4727-acb8-cfa5d0596d23",
       "credentials": {
-        "redis": {
-          "id": "PLACEHOLDER_REDIS",
-          "name": "Redis"
+        "telegramApi": {
+          "id": "jfhTkDLLipHkDAGz",
+          "name": "Telegram account"
         }
       }
     },
     {
-      "id": "node-if-dedup",
-      "name": "Is Duplicate?",
-      "type": "n8n-nodes-base.if",
+      "parameters": {
+        "jsCode": "const msg = $('Telegram Trigger').item.json;\nconst chatId = String(msg.message.chat.id);\nconst isVoice = !!msg.message.voice;\nconst isFile = !!(msg.message.document || msg.message.photo);\nconst inputJson = $input.item.json;\n\nlet text = null;\nlet fileRef = null;\nlet rawContentType;\nlet dedupKey;\n\nif (isVoice) {\n  text = inputJson.text;\n  rawContentType = 'voice';\n} else if (isFile) {\n  if (inputJson.text || inputJson.data) {\n    text = inputJson.text ?? inputJson.data;\n    rawContentType = 'file_text';\n  } else {\n    try {\n      fileRef = $('Build File Key').item.json._file_key;\n    } catch(e) {\n      fileRef = null;\n    }\n    rawContentType = 'file_ref';\n  }\n} else {\n  text = msg.message.text;\n  rawContentType = 'text';\n}\n\nif (text) {\n  let h = 5381;\n  for (let i = 0; i < text.length; i++) {\n    h = (((h << 5) + h) + text.charCodeAt(i)) >>> 0;\n  }\n  dedupKey = `dedup:${h.toString(16).padStart(8, '0')}`;\n} else {\n  const fileId = msg.message.document?.file_id\n    ?? msg.message.photo?.[msg.message.photo.length - 1]?.file_id\n    ?? $execution.id;\n  dedupKey = `dedup:${fileId}`;\n}\n\nreturn [{ json: {\n  ...msg,\n  _text: text,\n  _file_ref: fileRef,\n  _chat_id: chatId,\n  _dedup_key: dedupKey,\n  _raw_content_type: rawContentType\n} }];\n"
+      },
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1140, 420],
+      "position": [
+        1712,
+        1056
+      ],
+      "id": "6f3f0f6b-b421-4554-885d-3aa650d5ff8b",
+      "name": "Build Dedup Hash"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "dedup-key",
+        "key": "={{ $json._dedup_key }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1936,
+        1056
+      ],
+      "id": "ba316517-bc7f-4cbf-960d-456d503cb1d4",
+      "name": "Check Dedup",
+      "credentials": {
+        "redis": {
+          "id": "n6IjS0GfR9L8f7P3",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
       "parameters": {
         "conditions": {
-          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
           "conditions": [
             {
-              "id": "cond-dedup",
-              "leftValue": "={{ $json.value }}",
+              "id": "c9e820f0-d2f0-4cdf-b68a-5cdef468ce49",
+              "leftValue": "={{ $json['dedup-key'] }}",
               "rightValue": "",
-              "operator": {"type": "string", "operation": "notEmpty"}
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
             }
           ],
           "combinator": "and"
-        }
-      }
-    },
-    {
-      "id": "node-already-saved",
-      "name": "Already Saved Reply",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1,
-      "position": [1360, 320],
-      "parameters": {
-        "operation": "sendMessage",
-        "chatId": "={{ $('Build Dedup Hash').item.json._chat_id }}",
-        "text": "Already saved ↩",
-        "additionalFields": {}
+        },
+        "options": {}
       },
-      "credentials": {
-        "telegramApi": {
-          "id": "PLACEHOLDER_TELEGRAM",
-          "name": "Telegram Bot API"
-        }
-      }
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2160,
+        1056
+      ],
+      "id": "8df70cda-199e-4e7f-bdd8-472ab18c348c",
+      "name": "Is Duplicate?"
     },
     {
-      "id": "node-build-ingest",
-      "name": "Build IngestItem",
+      "parameters": {
+        "jsCode": "const prev = $('Build Dedup Hash').item.json;\nreturn [{ json: {\n  workflow: 'mnemosyne',\n  task: 'ingest',\n  payload: {\n    raw_content_type: prev._raw_content_type || 'text',\n    source: 'telegram',\n    text: prev._text,\n    file_ref: prev._file_ref,\n    metadata: { chat_id: prev._chat_id },\n    bucket_hint: null\n  },\n  context_name: 'personal',\n  _text: prev._text,\n  _chat_id: prev._chat_id,\n  _dedup_key: prev._dedup_key\n} }];"
+      },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1360, 520],
-      "parameters": {
-        "jsCode": "const prev = $('Build Dedup Hash').item.json;\nreturn [{ json: {\n  workflow: 'mnemosyne',\n  task: 'ingest',\n  payload: {\n    raw_content_type: 'text',\n    source: 'telegram',\n    text: prev._text,\n    file_ref: null,\n    metadata: { chat_id: prev._chat_id },\n    bucket_hint: null\n  },\n  context_name: 'personal',\n  _text: prev._text,\n  _chat_id: prev._chat_id,\n  _dedup_key: prev._dedup_key\n} }];"
-      }
+      "position": [
+        2384,
+        1152
+      ],
+      "id": "b2fbb17e-7555-4314-b7b8-43279532d7e1",
+      "name": "Build IngestItem"
     },
     {
-      "id": "node-hermes-post",
-      "name": "POST to Hermes",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [1580, 520],
-      "parameters": {
-        "method": "POST",
-        "url": "http://10.0.50.17:8765/task",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ workflow: $json.workflow, task: $json.task, payload: $json.payload, context_name: $json.context_name }) }}",
-        "options": {
-          "timeout": 60000
-        }
-      },
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "PLACEHOLDER_HERMES_AUTH",
-          "name": "Hermes API Token"
-        }
-      }
-    },
-    {
-      "id": "node-redis-set",
-      "name": "Redis: Mark Seen",
-      "type": "n8n-nodes-base.redis",
-      "typeVersion": 1,
-      "position": [1800, 520],
       "parameters": {
         "operation": "set",
         "key": "={{ $('Build IngestItem').item.json._dedup_key }}",
@@ -204,139 +278,608 @@
         "expire": true,
         "ttl": 86400
       },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        2832,
+        1152
+      ],
+      "id": "8b19d8e9-f832-42d6-865d-bba028010ebb",
+      "name": "Mark Seen",
       "credentials": {
         "redis": {
-          "id": "PLACEHOLDER_REDIS",
-          "name": "Redis"
+          "id": "n6IjS0GfR9L8f7P3",
+          "name": "Redis account"
         }
       }
     },
     {
-      "id": "node-confirm",
-      "name": "Confirm to User",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1,
-      "position": [2020, 520],
       "parameters": {
-        "operation": "sendMessage",
         "chatId": "={{ $('Build IngestItem').item.json._chat_id }}",
-        "text": "={{ 'Saved as ' + ($json.data?.bucket || 'IDEA') + ' ✓' }}",
-        "additionalFields": {}
+        "text": "={{ 'Captured ✓' }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
       },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3056,
+        1152
+      ],
+      "id": "5ae863a6-9c08-4fba-80e1-b1a4f898929c",
+      "name": "Confirm to User",
+      "webhookId": "fd3b0f73-0b35-4638-9048-c4a7879e3b02",
       "credentials": {
         "telegramApi": {
-          "id": "PLACEHOLDER_TELEGRAM",
-          "name": "Telegram Bot API"
+          "id": "jfhTkDLLipHkDAGz",
+          "name": "Telegram account"
         }
       }
     },
     {
-      "id": "node-voice-stub",
-      "name": "Voice: Not Yet Supported",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1,
-      "position": [700, 180],
       "parameters": {
-        "operation": "sendMessage",
-        "chatId": "={{ $json.message.chat.id }}",
-        "text": "Voice capture coming soon (Phase 2b)",
-        "additionalFields": {}
+        "method": "POST",
+        "url": "http://10.0.50.17:8765/task",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ workflow: $json.workflow, task: $json.task, payload: $json.payload, context_name: $json.context_name }) }}",
+        "options": {
+          "timeout": 300000
+        }
       },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        0,
+        -256
+      ],
+      "id": "65329344-a3ed-4b6c-a9c0-0f7db8868d88",
+      "name": "POST to Hermes",
       "credentials": {
-        "telegramApi": {
-          "id": "PLACEHOLDER_TELEGRAM",
-          "name": "Telegram Bot API"
+        "httpHeaderAuth": {
+          "id": "1BkVFj9AoFiomyoM",
+          "name": "Hermes API Token"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://10.0.50.19:8080/inbox",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ workflow: $json.workflow, task: $json.task, payload: $json.payload, context_name: $json.context_name }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2608,
+        1152
+      ],
+      "id": "44cc371b-e3df-4d76-b2a2-dfe045221ddf",
+      "name": "POST to inbox-receiver",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hP3jO803t9UNia9b",
+          "name": "Inbox Receiver Token"
         }
       }
     },
     {
-      "id": "node-file-stub",
-      "name": "File: Not Yet Supported",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1,
-      "position": [700, 60],
       "parameters": {
-        "operation": "sendMessage",
-        "chatId": "={{ $json.message.chat.id }}",
-        "text": "File capture coming soon (Phase 2b)",
+        "resource": "file",
+        "fileId": "={{ $('Telegram Trigger').item.json.message.voice.file_id }}",
         "additionalFields": {}
       },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        672,
+        192
+      ],
+      "id": "35208b90-3d38-4cc6-9ecb-dccfed9d03cb",
+      "name": "Get Audio File",
+      "webhookId": "440b2cc6-56a1-42d6-87d4-277fe61e7cc8",
       "credentials": {
         "telegramApi": {
-          "id": "PLACEHOLDER_TELEGRAM",
-          "name": "Telegram Bot API"
+          "id": "jfhTkDLLipHkDAGz",
+          "name": "Telegram account"
         }
       }
     },
     {
-      "id": "node-command-stub",
-      "name": "Command: Phase 3",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1,
-      "position": [700, -60],
       "parameters": {
-        "operation": "sendMessage",
-        "chatId": "={{ $json.message.chat.id }}",
-        "text": "/search, /ask, /find and other retrieval commands are coming in Phase 3.",
+        "method": "POST",
+        "url": "http://10.0.50.12:9000/v1/audio/transcriptions",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "model",
+              "value": "small"
+            },
+            {
+              "name": "response_format",
+              "value": "json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        896,
+        224
+      ],
+      "id": "cec67e4b-1c1e-49b9-a77b-46ddf7ed82d0",
+      "name": "Transcribe"
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.message.document ? $json.message.document.file_id : $json.message.photo[$json.message.photo.length - 1].file_id }}",
         "additionalFields": {}
       },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        528,
+        480
+      ],
+      "id": "f4cf18c4-68c2-40a6-bb5f-4dc9b2a100ce",
+      "name": "Get File Node",
+      "webhookId": "e904bf9a-1c34-4727-acb8-cfa5d0596d23",
       "credentials": {
         "telegramApi": {
-          "id": "PLACEHOLDER_TELEGRAM",
-          "name": "Telegram Bot API"
+          "id": "jfhTkDLLipHkDAGz",
+          "name": "Telegram account"
         }
       }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Telegram Trigger').item.json.message.document?.mime_type ?? 'image' }}",
+                    "rightValue": "audio",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    },
+                    "id": "b20733a3-a530-4729-a997-07a15ef7b8fb"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "audio"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "cc8bea61-1fcf-408c-bcfc-7175ce2b2acd",
+                    "leftValue": "={{ $('Telegram Trigger').item.json.message.document?.mime_type ?? 'image' }}",
+                    "rightValue": "application/pdf",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pdf"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "8c319fb7-65d3-4507-9108-9689d14d3327",
+                    "leftValue": "={{ $('Telegram Trigger').item.json.message.document?.mime_type ?? 'image' }}",
+                    "rightValue": "text",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "text"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        672,
+        384
+      ],
+      "id": "872ac3b7-d3a1-4e40-bd35-b4b610493122",
+      "name": "Switch on MIME Type"
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "mnemosyne",
+        "fileName": "={{ $json._file_key }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [
+        1232,
+        768
+      ],
+      "id": "dfc5dbb9-c21e-4ded-9d29-39aeaf128929",
+      "name": "MinIO Upload Node",
+      "credentials": {
+        "s3": {
+          "id": "uNKf5cc0hEqbOHyM",
+          "name": "MinIO S3 credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        928,
+        416
+      ],
+      "id": "f79f2fa8-5d64-45c8-bd59-62b7f50e3ba4",
+      "name": "Extract from PDF"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const b64 = $input.item.binary.data.data;\nconst text = Buffer.from(b64, 'base64').toString('utf-8');\nreturn [{ json: { text } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        -32
+      ],
+      "id": "1b0dda03-efd1-486b-a8f7-6208d2a719fc",
+      "name": "Extract Text",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        928,
+        608
+      ],
+      "id": "87e395bc-0683-439c-bc8e-e1ebb9264761",
+      "name": "Extract from Text"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a2d3f118-ed31-4327-879c-64556dcb7471",
+              "name": "_file_key",
+              "value": "=files/{{ new Date().getFullYear() }}/{{ String(new Date().getMonth() + 1).padStart(2, '0') }}/{{ $execution.id }}-{{ $('Telegram Trigger').item.json.message.document?.file_name ??   'photo' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1008,
+        768
+      ],
+      "id": "5c06fea7-c5d4-4fa1-a5f0-6407d083b5d1",
+      "name": "Build File Key"
     }
   ],
+  "pinData": {},
   "connections": {
     "Telegram Trigger": {
       "main": [
-        [{ "node": "Route by Message Type", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Route by Message Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Route by Message Type": {
       "main": [
-        [{ "node": "Voice: Not Yet Supported", "type": "main", "index": 0 }],
-        [{ "node": "File: Not Yet Supported", "type": "main", "index": 0 }],
-        [{ "node": "Command: Phase 3", "type": "main", "index": 0 }],
-        [{ "node": "Build Dedup Hash", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Get Audio File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get File Node",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "command stub",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Dedup Hash",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Build Dedup Hash": {
       "main": [
-        [{ "node": "Redis: Check Dedup", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Check Dedup",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Redis: Check Dedup": {
+    "Check Dedup": {
       "main": [
-        [{ "node": "Is Duplicate?", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Is Duplicate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Is Duplicate?": {
       "main": [
-        [{ "node": "Already Saved Reply", "type": "main", "index": 0 }],
-        [{ "node": "Build IngestItem", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Already Saved",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build IngestItem",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Build IngestItem": {
       "main": [
-        [{ "node": "POST to Hermes", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "POST to inbox-receiver",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "POST to Hermes": {
+    "Mark Seen": {
       "main": [
-        [{ "node": "Redis: Mark Seen", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Confirm to User",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Redis: Mark Seen": {
+    "POST to inbox-receiver": {
       "main": [
-        [{ "node": "Confirm to User", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Mark Seen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Audio File": {
+      "main": [
+        [
+          {
+            "node": "Transcribe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe": {
+      "main": [
+        [
+          {
+            "node": "Build Dedup Hash",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get File Node": {
+      "main": [
+        [
+          {
+            "node": "Switch on MIME Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch on MIME Type": {
+      "main": [
+        [
+          {
+            "node": "Transcribe",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract from PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract from Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build File Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MinIO Upload Node": {
+      "main": [
+        [
+          {
+            "node": "Build Dedup Hash",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from PDF": {
+      "main": [
+        [
+          {
+            "node": "Build Dedup Hash",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text": {
+      "main": [
+        []
+      ]
+    },
+    "Extract from Text": {
+      "main": [
+        [
+          {
+            "node": "Build Dedup Hash",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build File Key": {
+      "main": [
+        [
+          {
+            "node": "MinIO Upload Node",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
   },
-  "pinData": {}
+  "versionId": "a4ae0da0-fc52-4020-88fd-5d39706e6ad8",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c9e69cd1bf2e801166c2a3da21d08c97e1b62941466cb59e2b9d5f95dbc43244"
+  },
+  "id": "nfMp2lj9OCDQifsu",
+  "tags": []
 }
