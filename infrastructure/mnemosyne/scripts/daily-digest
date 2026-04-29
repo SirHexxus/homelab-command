@@ -1,0 +1,361 @@
+#!/usr/bin/env python3
+"""Generate and send the Mnemosyne daily digest via Telegram.
+
+Collects today's ADMIN tasks, upcoming reminders, PERSON follow-ups,
+and yesterday's wiki activity, then calls Claude Sonnet to compose a
+warm daily briefing in the style of a personal secretary.
+
+Usage:
+  daily-digest                    # generate, write report, send via Telegram
+  daily-digest --dry-run          # print collected data without calling claude
+  daily-digest --no-send          # generate report, skip Telegram delivery
+  daily-digest --wiki-root DIR    # wiki root directory (default: ~/mneme/wiki)
+  daily-digest --lookahead N      # task radar window in days (default: 2)
+"""
+
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from datetime import date, timedelta
+from pathlib import Path
+
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+SONNET_MODEL = "claude-sonnet-4-6"
+DEFAULT_LOOKAHEAD = 2
+PERSON_LOOKAHEAD_DAYS = 14
+
+DIGEST_PROMPT_TEMPLATE = """\
+You are composing the daily morning digest for James Stacy.
+
+== VOICE AND TONE ==
+Write like a personal secretary from a Robert A. Heinlein novel — think Jubal Harshaw's
+secretaries from Stranger in a Strange Land. Practical, warm, personally caring. Second
+person. Factual first, with personality layered on top — never corporate-formal, never
+obsequious. One warm note lands better than three.
+
+James is more sentimental than his Stoic philosophical underpinnings suggest. Warmth is
+welcome and appropriate. Don't overdo it.
+
+Failure modes to avoid: too short, boring, hard to engage with, inaccurate.
+
+== TODAY ==
+{weekday}, {today}
+
+== TODAY'S DESK ==
+Overdue tasks (past due — needs attention):
+{overdue}
+
+Due today:
+{due_today}
+
+== ON YOUR RADAR (next {lookahead} days) ==
+{upcoming}
+
+== PERSON FOLLOW-UPS ==
+{follow_ups}
+
+== YESTERDAY'S CAPTURES ({yesterday}) ==
+{yesterday_log}
+
+== INSTRUCTIONS ==
+Write the daily digest with these five sections in order. Do not include section headers
+that say "Section 1" etc — use natural, warm prose headings or none at all.
+
+1. OPENING — one or two sentences. Warm, present, sets the tone. Acknowledge the day
+   naturally. Do not be flowery.
+
+2. TODAY'S DESK — overdue and due-today tasks. This is the most important section.
+   Write it as direct, actionable prose or a short readable list. Flag overdue items
+   clearly. If nothing is due, say so in one sentence and move on.
+
+3. ON YOUR RADAR — upcoming tasks and person follow-ups due within the lookahead window.
+   Keep it brief. Upcoming, not urgent. If nothing, say so in one sentence.
+
+4. YESTERDAY'S CAPTURES — a warm, brief look at what James filed in his wiki yesterday.
+   No analysis or synthesis at this stage — just surface what he was thinking about.
+   ("You spent some time on X, filed a note about Y, updated Z.") If there were no
+   captures, acknowledge it naturally in one sentence.
+
+5. CLOSING — a single sentence. Warm, genuine, present tense. Like a secretary who
+   actually cares how the day goes.
+
+Write the full digest now. Plain text only — no Markdown formatting symbols.
+"""
+
+
+# ── Frontmatter parsing ───────────────────────────────────────────────────────
+
+def parse_frontmatter(path: Path) -> dict[str, str]:
+    """Extract YAML frontmatter fields as a flat string dict."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    if not text.startswith("---"):
+        return {}
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return {}
+    fm: dict[str, str] = {}
+    for line in parts[1].splitlines():
+        if ":" not in line:
+            continue
+        key, _, val = line.partition(":")
+        fm[key.strip()] = val.strip()
+    return fm
+
+
+# ── Data collection ───────────────────────────────────────────────────────────
+
+def collect_due_tasks(
+    wiki_root: Path,
+    today: date,
+    lookahead: int,
+) -> dict[str, list[dict[str, str]]]:
+    """Return overdue, due-today, and upcoming ADMIN tasks."""
+    cutoff = today + timedelta(days=lookahead)
+    overdue: list[dict[str, str]] = []
+    due_today: list[dict[str, str]] = []
+    upcoming: list[dict[str, str]] = []
+
+    for md_file in sorted((wiki_root / "admin").glob("*.md")):
+        fm = parse_frontmatter(md_file)
+        if fm.get("status") == "Done":
+            continue
+        raw_due = fm.get("due", "")
+        if not raw_due or raw_due == "null":
+            continue
+        try:
+            due_date = date.fromisoformat(raw_due)
+        except ValueError:
+            continue
+
+        entry = {
+            "title": md_file.stem,
+            "due": raw_due,
+            "task_type": fm.get("task_type", "user"),
+        }
+        if due_date < today:
+            overdue.append(entry)
+        elif due_date == today:
+            due_today.append(entry)
+        elif due_date <= cutoff:
+            upcoming.append(entry)
+
+    return {"overdue": overdue, "due_today": due_today, "upcoming": upcoming}
+
+
+def collect_follow_ups(wiki_root: Path, today: date) -> list[dict[str, str]]:
+    """Return PERSON pages with follow_up_needed=true within the lookahead window."""
+    cutoff = today + timedelta(days=PERSON_LOOKAHEAD_DAYS)
+    follow_ups: list[dict[str, str]] = []
+
+    for md_file in sorted((wiki_root / "people").glob("*.md")):
+        fm = parse_frontmatter(md_file)
+        if fm.get("follow_up_needed", "").lower() != "true":
+            continue
+        raw_date = fm.get("follow_up_date", "")
+        if not raw_date or raw_date == "null":
+            follow_ups.append({"title": md_file.stem, "follow_up_date": "(no date set)"})
+            continue
+        try:
+            fu_date = date.fromisoformat(raw_date)
+        except ValueError:
+            continue
+        if fu_date <= cutoff:
+            follow_ups.append({"title": md_file.stem, "follow_up_date": raw_date})
+
+    return follow_ups
+
+
+def collect_yesterday_log(wiki_root: Path, yesterday: date) -> list[str]:
+    """Return log.md lines from yesterday."""
+    log_path = wiki_root / "log.md"
+    prefix = yesterday.isoformat()
+    try:
+        lines = log_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    return [line for line in lines if line.startswith(prefix)]
+
+
+# ── Prompt building ───────────────────────────────────────────────────────────
+
+def _format_task(task: dict[str, str]) -> str:
+    return f"- {task['title']} (due {task['due']}, {task['task_type']})"
+
+
+def _format_task_list(tasks: list[dict[str, str]], empty_msg: str) -> str:
+    if not tasks:
+        return empty_msg
+    return "\n".join(_format_task(t) for t in tasks)
+
+
+def _format_follow_ups(follow_ups: list[dict[str, str]]) -> str:
+    if not follow_ups:
+        return "None due within the next two weeks."
+    lines = [f"- {fu['title']} (follow-up: {fu['follow_up_date']})" for fu in follow_ups]
+    return "\n".join(lines)
+
+
+def _format_log_lines(lines: list[str]) -> str:
+    if not lines:
+        return "Nothing captured yesterday."
+    return "\n".join(lines)
+
+
+def build_prompt(
+    tasks: dict[str, list[dict[str, str]]],
+    follow_ups: list[dict[str, str]],
+    yesterday_log: list[str],
+    today: date,
+    lookahead: int,
+) -> str:
+    yesterday = today - timedelta(days=1)
+    return DIGEST_PROMPT_TEMPLATE.format(
+        weekday=today.strftime("%A"),
+        today=today.isoformat(),
+        yesterday=yesterday.isoformat(),
+        lookahead=lookahead,
+        overdue=_format_task_list(tasks["overdue"], "Nothing overdue."),
+        due_today=_format_task_list(tasks["due_today"], "Nothing due today."),
+        upcoming=_format_task_list(tasks["upcoming"], "Nothing coming up in this window."),
+        follow_ups=_format_follow_ups(follow_ups),
+        yesterday_log=_format_log_lines(yesterday_log),
+    )
+
+
+# ── Output ────────────────────────────────────────────────────────────────────
+
+def write_report(wiki_root: Path, today: date, digest_text: str) -> Path:
+    """Write the digest to wiki/reports/ and return the path."""
+    reports_dir = wiki_root / "reports"
+    reports_dir.mkdir(exist_ok=True)
+    report_path = reports_dir / f"daily-digest-{today.isoformat()}.md"
+    report_path.write_text(
+        f"# Daily Digest — {today.isoformat()}\n\n{digest_text}\n",
+        encoding="utf-8",
+    )
+    return report_path
+
+
+def append_log(wiki_root: Path, today: date) -> None:
+    """Append a report entry to log.md."""
+    log_path = wiki_root / "log.md"
+    entry = (
+        f"{today.isoformat()}T07:00:00Z | report | — "
+        f"| Daily Digest — {today.isoformat()} | daily-digest\n"
+    )
+    try:
+        with log_path.open("a", encoding="utf-8") as fh:
+            fh.write(entry)
+    except OSError as exc:
+        print(f"Warning: could not append to log.md: {exc}", file=sys.stderr)
+
+
+def send_telegram(digest_text: str) -> bool:
+    """Send the digest via telegram-send. Returns True on success."""
+    result = subprocess.run(
+        ["telegram-send", digest_text],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(
+            f"Warning: telegram-send exited {result.returncode}: {result.stderr.strip()}",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--wiki-root", type=Path, default=DEFAULT_WIKI_ROOT, metavar="DIR",
+        help=f"Wiki root directory (default: {DEFAULT_WIKI_ROOT})",
+    )
+    parser.add_argument(
+        "--lookahead", type=int, default=DEFAULT_LOOKAHEAD, metavar="N",
+        help=f"Task radar window in days (default: {DEFAULT_LOOKAHEAD})",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Print collected data without calling claude or sending",
+    )
+    parser.add_argument(
+        "--no-send", action="store_true",
+        help="Generate the report but skip Telegram delivery",
+    )
+    args = parser.parse_args()
+
+    wiki_root: Path = args.wiki_root
+    if not wiki_root.exists():
+        print(f"Error: wiki root not found: {wiki_root}", file=sys.stderr)
+        sys.exit(1)
+
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    tasks = collect_due_tasks(wiki_root, today, args.lookahead)
+    follow_ups = collect_follow_ups(wiki_root, today)
+    yesterday_log = collect_yesterday_log(wiki_root, yesterday)
+
+    if args.dry_run:
+        print(f"[dry-run] Date: {today} ({today.strftime('%A')})")
+        print(f"[dry-run] Overdue ({len(tasks['overdue'])}): {[t['title'] for t in tasks['overdue']]}")
+        print(f"[dry-run] Due today ({len(tasks['due_today'])}): {[t['title'] for t in tasks['due_today']]}")
+        print(f"[dry-run] Upcoming ({len(tasks['upcoming'])}): {[t['title'] for t in tasks['upcoming']]}")
+        print(f"[dry-run] Follow-ups ({len(follow_ups)}): {[f['title'] for f in follow_ups]}")
+        print(f"[dry-run] Yesterday log lines: {len(yesterday_log)}")
+        for line in yesterday_log:
+            print(f"  {line}")
+        return
+
+    prompt = build_prompt(tasks, follow_ups, yesterday_log, today, args.lookahead)
+
+    print(f"Generating digest for {today}...", file=sys.stderr)
+    result = subprocess.run(
+        ["claude", "--model", SONNET_MODEL, "-p", prompt],
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        print(
+            f"Error: claude exited {result.returncode}: {result.stderr.strip()}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    digest_text = result.stdout.strip()
+    if not digest_text:
+        print("Error: claude returned empty output", file=sys.stderr)
+        sys.exit(1)
+
+    report_path = write_report(wiki_root, today, digest_text)
+    append_log(wiki_root, today)
+    print(f"Report written: {report_path}", file=sys.stderr)
+
+    if args.no_send:
+        print("Skipping Telegram delivery (--no-send).", file=sys.stderr)
+        print(digest_text)
+        return
+
+    print("Sending via Telegram...", file=sys.stderr)
+    if send_telegram(digest_text):
+        print("Sent.", file=sys.stderr)
+    else:
+        print("Telegram delivery failed — report still written.", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
