@@ -67,13 +67,6 @@ def _git(args: list[str]) -> subprocess.CompletedProcess:
     return result
 
 
-def _commit_and_push(filepath: Path, source: str, ts: str) -> None:
-    """Stage the inbox file, commit it, and push to origin."""
-    _git(["add", str(filepath.relative_to(WIKI_ROOT))])
-    _git(["commit", "-m", f"mneme: inbox {source} — {ts}"])
-    _git(["push"])
-
-
 # ── App factory ───────────────────────────────────────────────────────────────
 
 def create_app() -> Flask:
@@ -127,13 +120,22 @@ def create_app() -> Flask:
             log.error("Failed to write inbox file: %s", exc)
             return jsonify({"error": "Failed to write inbox file"}), 500
 
+        rel = str(filepath.relative_to(WIKI_ROOT))
         try:
-            _commit_and_push(filepath, source, ts)
+            _git(["add", rel])
+            _git(["commit", "-m", f"mneme: inbox {source} — {ts}"])
+        except RuntimeError as exc:
+            log.error("Git commit failed: %s", exc)
+            filepath.unlink(missing_ok=True)
+            return jsonify({"error": "Git commit failed — item not persisted"}), 500
+
+        try:
+            _git(["pull", "--rebase"])
+            _git(["push"])
             log.info("Committed and pushed: %s", filename)
         except RuntimeError as exc:
-            log.error("Git operation failed: %s", exc)
-            filepath.unlink(missing_ok=True)
-            return jsonify({"error": "Git push failed — item not persisted"}), 500
+            log.error("Git push failed (item committed locally): %s", exc)
+            return jsonify({"error": "Git push failed — item committed locally but not synced"}), 500
 
         return jsonify({"status": "ok", "file": filename})
 
