@@ -1,0 +1,242 @@
+#!/usr/bin/env python3
+"""Enrich stub wiki pages: merge candidates, expand content, add wikilinks, flag issues.
+
+Finds all [STUB] entries in index.md and processes each with claude sonnet.
+Run on a periodic schedule (every 6 hours via cron).
+
+Usage:
+  enrich-stubs                        # process all [STUB] entries in index.md
+  enrich-stubs --page "Page Title"    # enrich a single stub by title
+  enrich-stubs --dry-run              # list stubs found, do not call claude
+  enrich-stubs --fact-check-age N     # stale REFERENCE threshold in days (default: 730)
+  enrich-stubs --wiki-root DIR        # wiki root directory (default: ~/mneme/wiki)
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+SCHEMA_FILENAME = "SCHEMA.md"
+INDEX_FILENAME = "index.md"
+SONNET_MODEL = "claude-sonnet-4-6"
+DEFAULT_FACT_CHECK_AGE = 730
+
+_STUB_LINE_RE = re.compile(r'^\s*-\s+\[\[([^\]]+)\]\]\s+\|[^|]+\|\s+\[STUB\]')
+
+ENRICH_PROMPT_TEMPLATE = """\
+You are the Mnemosyne Enrichment Agent. Enrich the stub wiki page described below.
+
+== FULL SCHEMA ==
+{schema}
+
+== TODAY'S DATE ==
+{today}
+
+== STUB TO ENRICH ==
+Title: {title}
+Fact-check age threshold: {fact_check_age} days
+
+== INSTRUCTIONS ==
+
+1. Read the stub page for [[{title}]]. Locate it by searching the bucket directories
+   if the path is not immediately obvious from the title.
+
+2. Read index.md. Look for existing pages covering the same topic, entity, or theme
+   where the stub content logically belongs or should be merged.
+   Pay particular attention to IDEA pages — the schema requires new insights on the
+   same theme to extend the existing page rather than create a new one.
+
+3a. IF a merge candidate exists:
+    - Read the candidate page
+    - Merge the stub content into it (extend, never duplicate)
+    - Update the candidate's `updated` frontmatter field to {today}
+    - Update the candidate's index.md summary if stale
+    - Delete the stub page file
+    - Remove the stub's index.md entry entirely
+    - Add to the END of log.md (after all existing entries):
+      {log_timestamp} | update | BUCKET | <candidate title> | triage-enrich
+
+3b. IF no merge candidate:
+    - Enrich the body: expand the raw text into structured Markdown with
+      bucket-appropriate headings and formatting
+    - Add [[wikilinks]] wherever named people, projects, or pursuits are mentioned
+    - Remove 'stub' from the tags list; set `updated` to {today}
+    - Update the stub's index.md entry: replace [STUB] with the correct prefix:
+        - ADMIN stubs: replace [STUB] with [User] (task_type: user) or [Maintenance]
+          (task_type: maintenance), per the schema's ADMIN index convention
+        - All other buckets: remove [STUB] entirely (no replacement prefix)
+      Refresh the summary text if stale.
+    - Add to the END of log.md (after all existing entries):
+      {log_timestamp} | update | BUCKET | {title} | triage-enrich
+
+4. Assess whether any ADMIN task is warranted. Create a task page for each that applies.
+   Apply filename sanitization rules (from the schema) to the task title if needed.
+
+   a. USER CLARIFICATION NEEDED — content intent is unclear, classification may be
+      wrong, or key context only the user can supply is missing:
+      → Create admin/User Clarification - {title}.md
+        frontmatter: bucket: ADMIN, task_type: user, status: Pending, due: null,
+                     created: {today}, updated: {today}, source: triage-enrich, tags: []
+        index.md:    [[User Clarification - {title}]] | ADMIN | [User] Pending — clarification needed for [[{title}]]
+        log.md (END): {log_timestamp} | ingest | ADMIN | User Clarification - {title} | triage-enrich
+
+   b. FACT-CHECK — this is a REFERENCE page AND the `created` date is more than
+      {fact_check_age} days before {today} AND the content is time-sensitive
+      (technology versions, software documentation, AI model specs, statistics,
+      dated factual claims):
+      → Create admin/Fact-Check {title}.md
+        frontmatter: bucket: ADMIN, task_type: maintenance, status: Pending, due: null,
+                     created: {today}, updated: {today}, source: triage-enrich, tags: []
+        index.md:    [[Fact-Check {title}]] | ADMIN | [Maintenance] Pending — fact-check [[{title}]]
+        log.md (END): {log_timestamp} | ingest | ADMIN | Fact-Check {title} | triage-enrich
+
+Do NOT commit, push, or run shell commands.
+Do NOT modify any file other than those explicitly described above.
+"""
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def load_schema(wiki_root: Path) -> str:
+    schema_path = wiki_root / SCHEMA_FILENAME
+    try:
+        return schema_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        print(f"Error: {SCHEMA_FILENAME} not found at {schema_path}", file=sys.stderr)
+        sys.exit(1)
+
+
+def find_stubs(wiki_root: Path) -> list[str]:
+    """Return page titles with [STUB] in index.md, in index order."""
+    index_path = wiki_root / INDEX_FILENAME
+    try:
+        lines = index_path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        print(f"Error: {INDEX_FILENAME} not found at {index_path}", file=sys.stderr)
+        sys.exit(1)
+
+    return [
+        m.group(1)
+        for line in lines
+        if (m := _STUB_LINE_RE.match(line))
+    ]
+
+
+def build_prompt(schema: str, title: str, fact_check_age: int) -> str:
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    log_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return ENRICH_PROMPT_TEMPLATE.format(
+        schema=schema,
+        today=today,
+        title=title,
+        fact_check_age=fact_check_age,
+        log_timestamp=log_timestamp,
+    )
+
+
+def enrich_stub(
+    title: str,
+    wiki_root: Path,
+    schema: str,
+    fact_check_age: int,
+    dry_run: bool,
+) -> bool:
+    """Enrich a single stub. Returns True on success."""
+    if dry_run:
+        print(f"[dry-run] Would enrich: {title}")
+        return True
+
+    prompt = build_prompt(schema, title, fact_check_age)
+
+    print(f"Enriching: {title}", file=sys.stderr)
+    result = subprocess.run(
+        [
+            "claude",
+            "--model", SONNET_MODEL,
+            "-p", prompt,
+            "--allowedTools", "Read,Edit,Write",
+        ],
+        capture_output=False,
+        cwd=str(wiki_root),
+    )
+
+    if result.returncode != 0:
+        print(f"Error: claude exited {result.returncode} for '{title}'", file=sys.stderr)
+        return False
+
+    print(f"Done: {title}", file=sys.stderr)
+    return True
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--page", metavar="TITLE",
+        help="Enrich a single stub by page title",
+    )
+    parser.add_argument(
+        "--wiki-root", type=Path, default=DEFAULT_WIKI_ROOT, metavar="DIR",
+        help=f"Wiki root directory (default: {DEFAULT_WIKI_ROOT})",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="List stubs found without calling claude",
+    )
+    parser.add_argument(
+        "--fact-check-age", type=int, default=DEFAULT_FACT_CHECK_AGE, metavar="N",
+        help=f"Days threshold for stale REFERENCE content (default: {DEFAULT_FACT_CHECK_AGE})",
+    )
+    args = parser.parse_args()
+
+    wiki_root: Path = args.wiki_root
+    if not wiki_root.exists():
+        print(f"Error: wiki root not found: {wiki_root}", file=sys.stderr)
+        sys.exit(1)
+
+    schema = load_schema(wiki_root)
+
+    if args.page:
+        stubs = find_stubs(wiki_root)
+        if args.page not in stubs:
+            print(
+                f"Error: '{args.page}' not found as a [STUB] in index.md",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        ok = enrich_stub(args.page, wiki_root, schema, args.fact_check_age, args.dry_run)
+        sys.exit(0 if ok else 1)
+
+    stubs = find_stubs(wiki_root)
+    if not stubs:
+        print("No stubs found in index.md.", file=sys.stderr)
+        sys.exit(0)
+
+    print(
+        f"Found {len(stubs)} stub(s): {', '.join(stubs)}",
+        file=sys.stderr,
+    )
+
+    failed = 0
+    for title in stubs:
+        ok = enrich_stub(title, wiki_root, schema, args.fact_check_age, args.dry_run)
+        if not ok:
+            failed += 1
+
+    if failed:
+        print(f"{failed} stub(s) failed.", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

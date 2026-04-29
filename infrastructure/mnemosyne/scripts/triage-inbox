@@ -1,0 +1,274 @@
+#!/usr/bin/env python3
+"""Triage new inbox items: classify bucket, write stub page, update index/log.
+
+Uses claude haiku for fast, cheap classification. Called by watch-inbox per
+item (real-time path) or as an hourly cron fallback for any missed items.
+
+Usage:
+  triage-inbox                    # process all inbox/*.json
+  triage-inbox --file PATH        # process a single file (used by watch-inbox)
+  triage-inbox --dry-run          # print prompt without calling claude
+  triage-inbox --wiki-root DIR    # wiki root directory (default: ~/mneme/wiki)
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+INBOX_SUBDIR = "inbox"
+SCHEMA_FILENAME = "SCHEMA.md"
+HAIKU_MODEL = "claude-haiku-4-5-20251001"
+
+_TRIAGE_HEADINGS = frozenset({
+    "## Directory Structure",
+    "## Bucket Definitions",
+    "## AI Agent Decision Protocol",
+    "## Page Naming Conventions",
+    "## YAML Frontmatter",
+    "## index.md Format",
+    "## log.md Format",
+})
+
+_FORBIDDEN_RE = re.compile(r'[\[\]#\^|*"\\/<>?]')
+
+TRIAGE_PROMPT_TEMPLATE = """\
+You are the Mnemosyne Triage Agent. Classify this inbox item and create a stub wiki page.
+
+== TRIAGE SCHEMA ==
+{schema}
+
+== FILENAME RULES ==
+Page titles are filenames. These characters are FORBIDDEN in filenames:
+  [ ] # ^ | * " \\ / : < > ?
+Also: filename must not start with a dot (.)
+
+Sanitize in this order:
+1. Replace ":" with " - " (spaced hyphen)
+2. Replace all remaining forbidden characters with "-"
+3. Collapse runs of hyphens to one; strip leading/trailing hyphens and spaces
+4. If result starts with ".", prefix with "-"
+
+If sanitization changes the natural title, add to YAML frontmatter:
+  title: "original title with special characters"
+Omit the title field if no sanitization was needed.
+
+Example:
+  Natural: "AWS: Security [Checklist]"  →  Filename: "AWS - Security Checklist.md"
+  Frontmatter: title: "AWS: Security [Checklist]"
+
+== INBOX ITEM ==
+Source: {source}
+Content type: {raw_content_type}
+Captured: {capture_ts}
+Bucket hint: {bucket_hint}
+{text_section}
+
+== INSTRUCTIONS ==
+Complete EXACTLY these 5 steps — nothing more:
+
+IMPORTANT: Do NOT read index.md or any existing wiki pages. Do NOT check whether
+similar content already exists. Always create a new stub — duplicate detection and
+merging is handled by a separate enrichment process. Your only job is to file this
+inbox item as a stub.
+
+1. Classify the bucket using the Decision Framework in the schema.
+   Honor bucket_hint if provided and plausible. Default to IDEA when uncertain.
+
+2. Generate a page title following the naming conventions in the schema.
+   Apply filename sanitization rules above.
+
+3. Write <bucket_dir>/<sanitized_title>.md with:
+   - Complete YAML frontmatter (all required fields for this bucket)
+   - tags: [stub]
+   - title: "natural title" ONLY if filename was sanitized; omit if unchanged
+   - One blank line after the closing ---
+   - Body: the inbox text VERBATIM, unchanged
+
+4. Append one entry to index.md under the correct bucket section (most-recent-first):
+   - [[<sanitized_title>]] | BUCKET | [STUB] brief one-line summary (max 120 chars)
+
+   IMPORTANT: Always use [STUB] — even for ADMIN items. Do NOT use [User], [Maintenance],
+   or any other prefix. The schema's ADMIN index conventions ([User]/[Maintenance]) are
+   applied by the enrichment agent after it assesses the task. Your job is only to stage
+   the item as a stub.
+
+5. Add one line to the END of log.md (after all existing entries):
+   {log_timestamp} | ingest | BUCKET | <your chosen sanitized title> | {source}
+
+Do NOT commit, push, delete files, or run shell commands.
+Do NOT read any existing wiki pages or index.md before writing.
+Do NOT modify any file other than the new stub page, index.md, and log.md.
+"""
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def sanitize_title(title: str) -> str:
+    """Apply Obsidian filename sanitization rules (utility; haiku applies these too)."""
+    result = title.replace(":", " - ")
+    result = _FORBIDDEN_RE.sub("-", result)
+    result = re.sub(r"-{2,}", "-", result)
+    result = result.strip("- ")
+    if result.startswith("."):
+        result = "-" + result[1:]
+    return result
+
+
+def load_triage_schema(wiki_root: Path) -> str:
+    """Load SCHEMA.md and return only the sections needed for triage."""
+    schema_path = wiki_root / SCHEMA_FILENAME
+    try:
+        full = schema_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        print(f"Error: {SCHEMA_FILENAME} not found at {schema_path}", file=sys.stderr)
+        sys.exit(1)
+
+    chunks = re.split(r'(?m)^(?=## )', full)
+    kept = [
+        chunk.rstrip()
+        for chunk in chunks
+        if chunk.split('\n', 1)[0].strip() in _TRIAGE_HEADINGS
+    ]
+    return '\n\n---\n\n'.join(kept)
+
+
+def build_prompt(schema: str, item: dict) -> str:
+    """Build the haiku triage prompt for a single inbox item."""
+    text = item.get("text") or ""
+    file_ref = item.get("file_ref")
+    bucket_hint = item.get("bucket_hint") or "none"
+
+    text_parts = []
+    if text:
+        text_parts.append(f"Text:\n{text}")
+    if file_ref:
+        text_parts.append(f"File reference: {file_ref}")
+    text_section = "\n".join(text_parts) if text_parts else "(no text content)"
+
+    log_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    return TRIAGE_PROMPT_TEMPLATE.format(
+        schema=schema,
+        source=item.get("source", "unknown"),
+        raw_content_type=item.get("raw_content_type", "text"),
+        capture_ts=item.get("capture_ts", "unknown"),
+        bucket_hint=bucket_hint,
+        text_section=text_section,
+        log_timestamp=log_timestamp,
+    )
+
+
+def triage_file(
+    inbox_file: Path,
+    wiki_root: Path,
+    schema: str,
+    dry_run: bool,
+) -> bool:
+    """Triage a single inbox JSON file. Returns True on success."""
+    try:
+        item = json.loads(inbox_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"Error reading {inbox_file.name}: {exc}", file=sys.stderr)
+        return False
+
+    prompt = build_prompt(schema, item)
+
+    if dry_run:
+        print(f"[dry-run] Would triage: {inbox_file.name}")
+        print(f"[dry-run] Prompt ({len(prompt)} chars):")
+        print("---")
+        print(prompt[:600] + "..." if len(prompt) > 600 else prompt)
+        print("---")
+        return True
+
+    print(f"Triaging: {inbox_file.name}", file=sys.stderr)
+    result = subprocess.run(
+        [
+            "claude",
+            "--model", HAIKU_MODEL,
+            "-p", prompt,
+            "--allowedTools", "Read,Edit,Write",
+        ],
+        capture_output=False,
+        cwd=str(wiki_root),
+    )
+
+    if result.returncode != 0:
+        print(
+            f"Error: claude exited {result.returncode} for {inbox_file.name}"
+            " — leaving in inbox",
+            file=sys.stderr,
+        )
+        return False
+
+    try:
+        inbox_file.unlink()
+        print(f"Done: {inbox_file.name}", file=sys.stderr)
+    except OSError as exc:
+        print(f"Warning: could not delete {inbox_file.name}: {exc}", file=sys.stderr)
+
+    return True
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--file", type=Path, metavar="PATH",
+        help="Process a single inbox JSON file (used by watch-inbox)",
+    )
+    parser.add_argument(
+        "--wiki-root", type=Path, default=DEFAULT_WIKI_ROOT, metavar="DIR",
+        help=f"Wiki root directory (default: {DEFAULT_WIKI_ROOT})",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Print the prompt without calling claude",
+    )
+    args = parser.parse_args()
+
+    wiki_root: Path = args.wiki_root
+    if not wiki_root.exists():
+        print(f"Error: wiki root not found: {wiki_root}", file=sys.stderr)
+        sys.exit(1)
+
+    schema = load_triage_schema(wiki_root)
+
+    if args.file:
+        if not args.file.exists():
+            print(f"Error: file not found: {args.file}", file=sys.stderr)
+            sys.exit(1)
+        ok = triage_file(args.file, wiki_root, schema, args.dry_run)
+        sys.exit(0 if ok else 1)
+
+    inbox_dir = wiki_root / INBOX_SUBDIR
+    inbox_files = sorted(inbox_dir.glob("*.json"))
+    if not inbox_files:
+        print("Inbox is empty.", file=sys.stderr)
+        sys.exit(0)
+
+    print(f"Found {len(inbox_files)} inbox item(s).", file=sys.stderr)
+    failed = 0
+    for inbox_file in inbox_files:
+        ok = triage_file(inbox_file, wiki_root, schema, args.dry_run)
+        if not ok:
+            failed += 1
+
+    if failed:
+        print(f"{failed} item(s) failed.", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
