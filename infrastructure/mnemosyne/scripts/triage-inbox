@@ -194,7 +194,7 @@ def triage_file(
     print(f"Triaging: {inbox_file.name}", file=sys.stderr)
     result = subprocess.run(
         [
-            "claude",
+            str(Path.home() / ".local" / "bin" / "claude"),
             "--model", HAIKU_MODEL,
             "-p", prompt,
             "--allowedTools", "Read,Edit,Write",
