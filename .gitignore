@@ -40,3 +40,7 @@ infrastructure/hermes/test-results/
 *.swo
 *~
 thoughts.md
+
+# Python
+__pycache__/
+*.pyc
