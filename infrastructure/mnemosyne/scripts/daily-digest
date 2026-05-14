@@ -1,123 +1,101 @@
 #!/usr/bin/env python3
 """Generate and send the Mnemosyne daily digest via Telegram.
 
-Collects today's ADMIN tasks, upcoming reminders, PERSON follow-ups,
-and yesterday's wiki activity, then calls Claude Sonnet to compose a
-warm daily briefing in the style of a personal secretary.
+Implements the 5-category content model defined in
+`reference/Mnemosyne Retrieval Architecture.md`:
+
+  1. Temporal anchors  (birthdays, anniversaries, weather, location)
+  2. Obligations       (ADMIN due/overdue, PERSON follow-ups)
+  3. Forward-prep      (upcoming items, calendar block — calendar TODO)
+  4. Unfinished thoughts  (conditional — omit if empty)
+  5. Stale-but-now-relevant  (conditional — omit if empty; Layer 3 TODO)
+
+Layer separation: this script (Layer 2) collects, filters, and structures
+the inputs. The Layer 4 `claude -p` invocation performs selection,
+prioritization, and voice rendering only — no file discovery, no status
+parsing, no inference about state.
 
 Usage:
   daily-digest                    # generate, write report, send via Telegram
   daily-digest --dry-run          # print collected data without calling claude
   daily-digest --no-send          # generate report, skip Telegram delivery
   daily-digest --wiki-root DIR    # wiki root directory (default: ~/mneme/wiki)
-  daily-digest --lookahead N      # task radar window in days (default: 2)
+  daily-digest --lookahead N      # forward-prep window in days (default: 3)
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from datetime import date, timedelta
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+from weather import fetch_weather  # noqa: E402
 
-# ── Constants ─────────────────────────────────────────────────────────────────
+
+# ── Constants ────────────────────────────────────────────────────────────────
 
 DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
 SONNET_MODEL = "claude-sonnet-4-6"
-DEFAULT_LOOKAHEAD = 2
+DEFAULT_LOOKAHEAD = 3
 PERSON_LOOKAHEAD_DAYS = 14
+BIRTHDAY_LOOKAHEAD_DAYS = 7
 
-DIGEST_PROMPT_TEMPLATE = """\
-You are composing the daily morning digest for James Stacy.
+# Any of these in `status:` means the ADMIN task is closed (hidden).
+CLOSED_STATUSES = {"Done", "Completed", "Closed", "Cancelled", "Skipped"}
 
-== VOICE AND TONE ==
-Write like a personal secretary from a Robert A. Heinlein novel — think Jubal Harshaw's
-secretaries from Stranger in a Strange Land. Practical, warm, personally caring. Second
-person. Factual first, with personality layered on top — never corporate-formal, never
-obsequious. One warm note lands better than three.
+# Unfinished-thought detection thresholds (see Daily Digest Design Spec).
+UNFINISHED_AGE_DAYS = 7
+UNFINISHED_WORD_THRESHOLD = 150
 
-James is more sentimental than his Stoic philosophical underpinnings suggest. Warmth is
-welcome and appropriate. Don't overdo it.
-
-Failure modes to avoid: too short, boring, hard to engage with, inaccurate.
-
-== TODAY ==
-{weekday}, {today}
-
-== TODAY'S DESK ==
-Overdue tasks (past due — needs attention):
-{overdue}
-
-Due today:
-{due_today}
-
-== ON YOUR RADAR (next {lookahead} days) ==
-{upcoming}
-
-== PERSON FOLLOW-UPS ==
-{follow_ups}
-
-== YESTERDAY'S CAPTURES ({yesterday}) ==
-{yesterday_log}
-
-== INSTRUCTIONS ==
-Write the daily digest with these five sections in order. Do not include section headers
-that say "Section 1" etc — use natural, warm prose headings or none at all.
-
-1. OPENING — one or two sentences. Warm, present, sets the tone. Acknowledge the day
-   naturally. Do not be flowery.
-
-2. TODAY'S DESK — overdue and due-today tasks. This is the most important section.
-   Write it as direct, actionable prose or a short readable list. Flag overdue items
-   clearly. If nothing is due, say so in one sentence and move on.
-
-3. ON YOUR RADAR — upcoming tasks and person follow-ups due within the lookahead window.
-   Keep it brief. Upcoming, not urgent. If nothing, say so in one sentence.
-
-4. YESTERDAY'S CAPTURES — a warm, brief look at what James filed in his wiki yesterday.
-   No analysis or synthesis at this stage — just surface what he was thinking about.
-   ("You spent some time on X, filed a note about Y, updated Z.") If there were no
-   captures, acknowledge it naturally in one sentence.
-
-5. CLOSING — a single sentence. Warm, genuine, present tense. Like a secretary who
-   actually cares how the day goes.
-
-Write the full digest now. Plain text only — no Markdown formatting symbols.
-"""
+# Sentinel passed to the LLM prompt for empty sections; explicit instruction
+# in the prompt tells the model to omit the entire section when it sees this.
+OMIT = "OMIT"
 
 
-# ── Frontmatter parsing ───────────────────────────────────────────────────────
+# ── Frontmatter & body parsing ───────────────────────────────────────────────
 
-def parse_frontmatter(path: Path) -> dict[str, str]:
-    """Extract YAML frontmatter fields as a flat string dict."""
+def split_frontmatter(path: Path) -> tuple[dict[str, str], str]:
+    """Return (frontmatter_dict, body_text). Empty dict/string on failure."""
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
-        return {}
+        return {}, ""
     if not text.startswith("---"):
-        return {}
+        return {}, text
     parts = text.split("---", 2)
     if len(parts) < 3:
-        return {}
+        return {}, text
     fm: dict[str, str] = {}
     for line in parts[1].splitlines():
         if ":" not in line:
             continue
         key, _, val = line.partition(":")
         fm[key.strip()] = val.strip()
-    return fm
+    return fm, parts[2]
 
 
-# ── Data collection ───────────────────────────────────────────────────────────
+def parse_frontmatter(path: Path) -> dict[str, str]:
+    """Frontmatter-only convenience wrapper."""
+    return split_frontmatter(path)[0]
+
+
+def word_count(body: str) -> int:
+    """Crude but adequate: whitespace-split count, no markdown stripping."""
+    return len(body.split())
+
+
+# ── Collectors — obligations ─────────────────────────────────────────────────
 
 def collect_due_tasks(
     wiki_root: Path,
     today: date,
     lookahead: int,
 ) -> dict[str, list[dict[str, str]]]:
-    """Return overdue, due-today, and upcoming ADMIN tasks."""
+    """ADMIN tasks split into overdue, due-today, and upcoming buckets."""
     cutoff = today + timedelta(days=lookahead)
     overdue: list[dict[str, str]] = []
     due_today: list[dict[str, str]] = []
@@ -125,7 +103,7 @@ def collect_due_tasks(
 
     for md_file in sorted((wiki_root / "admin").glob("*.md")):
         fm = parse_frontmatter(md_file)
-        if fm.get("status") == "Done":
+        if fm.get("status") in CLOSED_STATUSES:
             continue
         raw_due = fm.get("due", "")
         if not raw_due or raw_due == "null":
@@ -151,7 +129,7 @@ def collect_due_tasks(
 
 
 def collect_follow_ups(wiki_root: Path, today: date) -> list[dict[str, str]]:
-    """Return PERSON pages with follow_up_needed=true within the lookahead window."""
+    """PERSON pages flagged for follow-up within the person-lookahead window."""
     cutoff = today + timedelta(days=PERSON_LOOKAHEAD_DAYS)
     follow_ups: list[dict[str, str]] = []
 
@@ -173,8 +151,68 @@ def collect_follow_ups(wiki_root: Path, today: date) -> list[dict[str, str]]:
     return follow_ups
 
 
+# ── Collectors — temporal anchors ────────────────────────────────────────────
+
+def collect_birthdays(wiki_root: Path, today: date) -> list[dict[str, str]]:
+    """PERSON pages with `birthday:` falling in the lookahead window.
+
+    Birthdays may be stored as YYYY-MM-DD or MM-DD (year-agnostic). Both
+    are handled. Pages without a birthday field are skipped silently —
+    the field is optional in the schema.
+    """
+    matches: list[dict[str, str]] = []
+    horizon = today + timedelta(days=BIRTHDAY_LOOKAHEAD_DAYS)
+
+    for md_file in sorted((wiki_root / "people").glob("*.md")):
+        fm = parse_frontmatter(md_file)
+        raw = fm.get("birthday", "")
+        if not raw or raw == "null":
+            continue
+        try:
+            if len(raw) == 5:  # MM-DD
+                month, day = (int(p) for p in raw.split("-"))
+                bday_this_year = date(today.year, month, day)
+            else:
+                parsed = date.fromisoformat(raw)
+                bday_this_year = date(today.year, parsed.month, parsed.day)
+        except (ValueError, TypeError):
+            continue
+
+        # Check this year and next year (handles year-end wrap).
+        next_year_bday = date(
+            today.year + 1, bday_this_year.month, bday_this_year.day
+        )
+        for occurrence in (bday_this_year, next_year_bday):
+            if today <= occurrence <= horizon:
+                matches.append({
+                    "title": md_file.stem,
+                    "date": occurrence.isoformat(),
+                    "is_today": "true" if occurrence == today else "false",
+                })
+                break
+
+    return matches
+
+
+def fetch_weather_block() -> dict | None:
+    """Read env-var config and call the weather library. None on any gap."""
+    api_key = os.environ.get("OPENWEATHER_API_KEY", "").strip()
+    raw_lat = os.environ.get("WEATHER_LAT", "").strip()
+    raw_lon = os.environ.get("WEATHER_LON", "").strip()
+    if not (api_key and raw_lat and raw_lon):
+        return None
+    try:
+        lat = float(raw_lat)
+        lon = float(raw_lon)
+    except ValueError:
+        return None
+    return fetch_weather(lat, lon, api_key)
+
+
+# ── Collectors — yesterday's captures ────────────────────────────────────────
+
 def collect_yesterday_log(wiki_root: Path, yesterday: date) -> list[str]:
-    """Return log.md lines from yesterday."""
+    """log.md lines beginning with yesterday's ISO date."""
     log_path = wiki_root / "log.md"
     prefix = yesterday.isoformat()
     try:
@@ -184,53 +222,351 @@ def collect_yesterday_log(wiki_root: Path, yesterday: date) -> list[str]:
     return [line for line in lines if line.startswith(prefix)]
 
 
-# ── Prompt building ───────────────────────────────────────────────────────────
+# ── Collectors — unfinished thoughts ─────────────────────────────────────────
+
+def collect_unfinished_thoughts(wiki_root: Path, today: date) -> list[dict[str, str]]:
+    """IDEA pages qualifying as unfinished by any of three criteria.
+
+    Criteria (any one triggers inclusion):
+      - updated > UNFINISHED_AGE_DAYS ago AND body words < threshold
+      - frontmatter `tags:` includes 'unfinished'
+      - frontmatter `status: draft`
+    """
+    cutoff = today - timedelta(days=UNFINISHED_AGE_DAYS)
+    matches: list[dict[str, str]] = []
+
+    for md_file in sorted((wiki_root / "ideas").glob("*.md")):
+        fm, body = split_frontmatter(md_file)
+        if not fm:
+            continue
+
+        reasons: list[str] = []
+
+        if fm.get("status", "").lower() == "draft":
+            reasons.append("status: draft")
+
+        tags_raw = fm.get("tags", "")
+        if "unfinished" in tags_raw.lower():
+            reasons.append("tagged unfinished")
+
+        raw_updated = fm.get("updated", "")
+        wc = word_count(body)
+        if raw_updated and raw_updated != "null":
+            try:
+                updated = date.fromisoformat(raw_updated)
+                if updated <= cutoff and wc < UNFINISHED_WORD_THRESHOLD:
+                    reasons.append(f"stale & thin ({wc} words, updated {raw_updated})")
+            except ValueError:
+                pass
+
+        if reasons:
+            matches.append({
+                "title": md_file.stem,
+                "updated": raw_updated or "(unknown)",
+                "word_count": str(wc),
+                "reason": "; ".join(reasons),
+            })
+
+    return matches
+
+
+# ── Collectors — stubs (deferred to later builds) ────────────────────────────
+
+def collect_stale_relevant() -> None:
+    """Stale-but-now-relevant detection.
+
+    Requires Layer 3 (nomic-embed-text) semantic overlap. Deferred. See ADMIN
+    task `Wire Stale-But-Now-Relevant Detection into Daily Digest`. Returns
+    None so the formatter renders OMIT and the prompt drops the section.
+    """
+    return None
+
+
+def fetch_calendar_block() -> None:
+    """Today's Google Calendar events. Deferred — see ADMIN task
+    `Wire Google Calendar Block into Daily Digest`."""
+    return None
+
+
+# ── Formatters ───────────────────────────────────────────────────────────────
 
 def _format_task(task: dict[str, str]) -> str:
     return f"- {task['title']} (due {task['due']}, {task['task_type']})"
 
 
-def _format_task_list(tasks: list[dict[str, str]], empty_msg: str) -> str:
+def _format_task_list(tasks: list[dict[str, str]]) -> str:
     if not tasks:
-        return empty_msg
+        return ""
     return "\n".join(_format_task(t) for t in tasks)
 
 
-def _format_follow_ups(follow_ups: list[dict[str, str]]) -> str:
-    if not follow_ups:
-        return "None due within the next two weeks."
-    lines = [f"- {fu['title']} (follow-up: {fu['follow_up_date']})" for fu in follow_ups]
+def format_temporal_anchors(
+    today: date,
+    weekday: str,
+    birthdays: list[dict[str, str]],
+    weather: dict | None,
+    calendar: None,
+) -> str:
+    """Section 1 — temporal anchors. Empty → OMIT."""
+    lines: list[str] = [f"Date: {weekday}, {today.isoformat()}"]
+
+    if weather:
+        lines.append(
+            f"Weather (current): {weather['description']}, "
+            f"{weather['temp_f']}°F (feels like {weather['feels_like_f']}°F), "
+            f"high {weather['high_f']}°F / low {weather['low_f']}°F, "
+            f"wind {weather['wind_mph']} mph, visibility {weather['visibility']}. "
+            f"Sunrise {weather['sunrise']}, sunset {weather['sunset']}."
+        )
+
+    if calendar is None:
+        lines.append("Calendar events: (unavailable — calendar integration not yet wired)")
+
+    if birthdays:
+        lines.append("Birthdays in the next week:")
+        for b in birthdays:
+            tag = " (TODAY)" if b["is_today"] == "true" else ""
+            lines.append(f"- {b['title']} — {b['date']}{tag}")
+    else:
+        lines.append("Birthdays in the next week: none.")
+
+    # Section is "always present" by category but the omission rule still wins
+    # if there is truly nothing of substance. Date + weekday alone is content
+    # enough to anchor the day, so this section is never OMIT in practice.
     return "\n".join(lines)
 
 
-def _format_log_lines(lines: list[str]) -> str:
+def format_obligations(
+    overdue: list[dict[str, str]],
+    due_today: list[dict[str, str]],
+    follow_ups: list[dict[str, str]],
+) -> str:
+    """Section 2 — obligations. Empty → OMIT."""
+    if not (overdue or due_today or follow_ups):
+        return OMIT
+    parts: list[str] = []
+    if overdue:
+        parts.append("Overdue ADMIN tasks (past due — needs attention):")
+        parts.append(_format_task_list(overdue))
+    if due_today:
+        parts.append("Due today:")
+        parts.append(_format_task_list(due_today))
+    if follow_ups:
+        parts.append("PERSON follow-ups:")
+        for fu in follow_ups:
+            parts.append(f"- {fu['title']} (follow-up: {fu['follow_up_date']})")
+    return "\n".join(parts)
+
+
+def format_forward_prep(
+    upcoming: list[dict[str, str]],
+    lookahead: int,
+) -> str:
+    """Section 3 — forward-prep. Empty → OMIT."""
+    if not upcoming:
+        return OMIT
+    return f"Upcoming ADMIN tasks (next {lookahead} days):\n" + _format_task_list(upcoming)
+
+
+def format_unfinished(items: list[dict[str, str]]) -> str:
+    """Section 4 — unfinished thoughts. CONDITIONAL — empty → OMIT."""
+    if not items:
+        return OMIT
+    lines: list[str] = []
+    for item in items:
+        lines.append(
+            f"- {item['title']} — {item['reason']}"
+        )
+    return "\n".join(lines)
+
+
+def format_stale_relevant(items: None) -> str:
+    """Section 5 — stale-but-now-relevant. CONDITIONAL — empty → OMIT.
+
+    Currently always OMIT until Layer 3 detection is wired.
+    """
+    return OMIT
+
+
+def format_yesterday_log(lines: list[str]) -> str:
+    """Yesterday's captures — context for the model, not its own section.
+
+    Included in every digest as background colour even though it isn't one of
+    the five canonical sections. The prompt instructs the model to weave this
+    into the closing or fold into an existing section, not to render it as a
+    bullet-dump.
+    """
     if not lines:
-        return "Nothing captured yesterday."
+        return OMIT
     return "\n".join(lines)
+
+
+# ── Prompt template ──────────────────────────────────────────────────────────
+
+DIGEST_PROMPT_TEMPLATE = """\
+You are composing the daily morning digest for James Stacy.
+
+== VOICE AND TONE ==
+
+Write as a personal secretary in the Heinlein mould — specifically Jubal
+Harshaw's secretaries in *Stranger in a Strange Land* (Anne, Miriam, Dorcas).
+They are not subordinates by temperament. They are competent people who chose
+this work and who happen to be deeply loyal to a brilliant, irascible, and
+occasionally absurd principal.
+
+The voice has a specific shape:
+
+- Direct address, no deferential padding. Speak to James, not at him.
+  No "I hope this finds you well" — already know how he is.
+- Factual first, warmth as accent. State what's true. One warm line lands;
+  three would be performance.
+- Educated, fluent, unstiff. Proper diction without formality. Real grammar,
+  no jargon, no slang for its own sake.
+- Dry humour used with precision. Tease only when teasing is more useful than
+  silence. Otherwise don't.
+- Care without performance. Handle wellbeing — food, schedule, health,
+  dignity — without narrating the care.
+- Pushback when warranted, execution when decided. Tell him when he's wrong,
+  then carry out the decision he makes.
+- Economy as respect. Don't waste his attention. Silence is a feature.
+- Affection through long acquaintance. Speak like someone who has watched him
+  work for years.
+
+The voice does NOT: apologise for the message, perform cheerfulness, use
+exclamation points for routine information, soften facts with hedges, fawn,
+over-explain, ritualise greetings, treat the recipient as fragile, or open
+with "Great question!" or any sycophantic equivalent.
+
+== VOICE ANCHORS (worked examples — match this register) ==
+
+"Good morning, Mr. Stacy. Therapy with Geneveve at three — and you mentioned
+wanting a question prepared before you walked in. Now would be the moment."
+
+"The Kaiser Act-a-thon closeout has been sitting at *Pending* for nine days.
+You know what needs to happen. The only question is whether I surface it
+again tomorrow or let you handle it on your own time."
+
+"Yesterday you captured eleven items — three about Mnemosyne retrieval, two
+about Hexxus, the rest scattered. Two of the Mnemosyne captures connect
+directly to the digest calibration thread you flagged Monday; I've linked
+them in case you want to pull on it."
+
+Diagnostic closing line — the signature move: end with something in the
+spirit of "Coffee's your job" or "That's the morning." A corporate digest
+would never close that way. Anne, Miriam, or Dorcas absolutely would.
+
+== STRUCTURE ==
+
+The digest has up to five sections, in this order:
+
+  1. Temporal anchors  (date, weather, calendar, birthdays)
+  2. Obligations       (overdue, due today, follow-ups)
+  3. Forward-prep      (things coming up)
+  4. Unfinished thoughts  (conditional)
+  5. Stale-but-now-relevant  (conditional)
+
+Plus a brief weave of yesterday's captures somewhere natural — typically
+folded into the closing or into one of the other sections; never rendered as
+its own bullet list.
+
+== CRITICAL — OMISSION RULE ==
+
+When the content for a section is the literal token "OMIT" (shown below),
+omit that section ENTIRELY. Do not write a header for it. Do not write
+"Nothing today." Do not write "You have no X." Do not acknowledge its
+absence in any way. A missing section is silently correct; an apologetic
+placeholder erodes trust.
+
+This rule applies to all five sections. If multiple sections are OMIT, the
+digest shrinks accordingly — that is the design.
+
+== TODAY'S INPUTS ==
+
+--- SECTION 1 — TEMPORAL ANCHORS ---
+{temporal_anchors}
+
+--- SECTION 2 — OBLIGATIONS ---
+{obligations}
+
+--- SECTION 3 — FORWARD-PREP ---
+{forward_prep}
+
+--- SECTION 4 — UNFINISHED THOUGHTS (conditional) ---
+{unfinished}
+
+--- SECTION 5 — STALE-BUT-NOW-RELEVANT (conditional) ---
+{stale_relevant}
+
+--- BACKGROUND: YESTERDAY'S CAPTURES ({yesterday}) ---
+{yesterday_log}
+
+== OUTPUT RULES ==
+
+- Plain text only. No Markdown symbols (#, *, _, backticks).
+- Use natural prose headings (or none) — do NOT label sections "Section 1"
+  or "Obligations:" verbatim. The reader doesn't need to see the scaffolding.
+- Open with a warm, polite greeting that addresses James by name.
+  Acceptable forms of address: "James" or "Mr. Stacy". Do NOT use a
+  bare "Morning," — use a fuller greeting. Examples in the right register:
+    "Good morning, Mr. Stacy."
+    "Good morning, James."
+    "Busy morning today, James — let's get to it."
+    "Good morning, Mr. Stacy. Thursday's here."
+  Calling him by name is required; the exact greeting can vary day-to-day.
+  Then proceed to the day in one or two sentences. Avoid "I hope this
+  finds you well" — sycophantic; already know how he is.
+- One closing line in voice.
+- For obligations: flag overdue items clearly but do not pile on.
+- For forward-prep: prep-worthy framing, not just "here's what's coming."
+- For unfinished thoughts (if present): surface without judgement. The fact
+  that something has been sitting is information; it is not a verdict.
+- When you flag, nudge, or recommend, be CONCRETE. James reads the digest
+  on a phone with no way to ask a follow-up question. Vague phrases like
+  "needs next steps attached" or "worth a glance" are useless to him —
+  name the specific gap, the specific concern, or the specific action.
+  Examples of the right level of specificity:
+    Bad:  "Two ADMINs are sitting without next steps attached."
+    Good: "Two new ADMINs (Telegram voice-note path; external-event ingest
+          synthesis) have no due date set — both gate downstream builds, so
+          consider whether they need one."
+    Bad:  "The Kaiser thing has been sitting for a while."
+    Good: "Kaiser Act-a-thon closeout is nine days past due."
+  If you would not be able to act on the line yourself without asking a
+  clarifying question, neither can James — rewrite until you could.
+- Length: long enough to read with morning coffee. Not so long it becomes
+  a wall.
+
+Write the digest now.
+"""
 
 
 def build_prompt(
-    tasks: dict[str, list[dict[str, str]]],
-    follow_ups: list[dict[str, str]],
-    yesterday_log: list[str],
     today: date,
+    weekday: str,
+    weather: dict | None,
+    calendar: None,
+    birthdays: list[dict[str, str]],
+    overdue: list[dict[str, str]],
+    due_today: list[dict[str, str]],
+    follow_ups: list[dict[str, str]],
+    upcoming: list[dict[str, str]],
+    unfinished: list[dict[str, str]],
+    yesterday_log: list[str],
     lookahead: int,
 ) -> str:
     yesterday = today - timedelta(days=1)
     return DIGEST_PROMPT_TEMPLATE.format(
-        weekday=today.strftime("%A"),
-        today=today.isoformat(),
+        temporal_anchors=format_temporal_anchors(today, weekday, birthdays, weather, calendar),
+        obligations=format_obligations(overdue, due_today, follow_ups),
+        forward_prep=format_forward_prep(upcoming, lookahead),
+        unfinished=format_unfinished(unfinished),
+        stale_relevant=format_stale_relevant(None),
+        yesterday_log=format_yesterday_log(yesterday_log),
         yesterday=yesterday.isoformat(),
-        lookahead=lookahead,
-        overdue=_format_task_list(tasks["overdue"], "Nothing overdue."),
-        due_today=_format_task_list(tasks["due_today"], "Nothing due today."),
-        upcoming=_format_task_list(tasks["upcoming"], "Nothing coming up in this window."),
-        follow_ups=_format_follow_ups(follow_ups),
-        yesterday_log=_format_log_lines(yesterday_log),
     )
 
 
-# ── Output ────────────────────────────────────────────────────────────────────
+# ── Output ───────────────────────────────────────────────────────────────────
 
 def write_report(wiki_root: Path, today: date, digest_text: str) -> Path:
     """Write the digest to wiki/reports/ and return the path."""
@@ -261,7 +597,7 @@ def append_log(wiki_root: Path, today: date) -> None:
 def send_telegram(digest_text: str) -> bool:
     """Send the digest via telegram-send. Returns True on success."""
     result = subprocess.run(
-        ["telegram-send", digest_text],
+        [str(Path.home() / ".local" / "bin" / "telegram-send"), digest_text],
         capture_output=True,
         text=True,
     )
@@ -274,7 +610,7 @@ def send_telegram(digest_text: str) -> bool:
     return True
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+# ── Entry point ──────────────────────────────────────────────────────────────
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -284,7 +620,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--lookahead", type=int, default=DEFAULT_LOOKAHEAD, metavar="N",
-        help=f"Task radar window in days (default: {DEFAULT_LOOKAHEAD})",
+        help=f"Forward-prep window in days (default: {DEFAULT_LOOKAHEAD})",
     )
     parser.add_argument(
         "--dry-run", action="store_true",
@@ -303,27 +639,54 @@ def main() -> None:
 
     today = date.today()
     yesterday = today - timedelta(days=1)
+    weekday = today.strftime("%A")
 
     tasks = collect_due_tasks(wiki_root, today, args.lookahead)
     follow_ups = collect_follow_ups(wiki_root, today)
+    birthdays = collect_birthdays(wiki_root, today)
+    unfinished = collect_unfinished_thoughts(wiki_root, today)
+    weather = fetch_weather_block()
+    calendar = fetch_calendar_block()
     yesterday_log = collect_yesterday_log(wiki_root, yesterday)
 
     if args.dry_run:
-        print(f"[dry-run] Date: {today} ({today.strftime('%A')})")
-        print(f"[dry-run] Overdue ({len(tasks['overdue'])}): {[t['title'] for t in tasks['overdue']]}")
-        print(f"[dry-run] Due today ({len(tasks['due_today'])}): {[t['title'] for t in tasks['due_today']]}")
-        print(f"[dry-run] Upcoming ({len(tasks['upcoming'])}): {[t['title'] for t in tasks['upcoming']]}")
+        print(f"[dry-run] Date: {today} ({weekday})")
+        print(f"[dry-run] Weather: {weather if weather else '(none)'}")
+        print(f"[dry-run] Calendar: {calendar if calendar else '(stub — not wired)'}")
+        print(f"[dry-run] Birthdays ({len(birthdays)}): {[b['title'] for b in birthdays]}")
+        overdue_titles = [t["title"] for t in tasks["overdue"]]
+        due_today_titles = [t["title"] for t in tasks["due_today"]]
+        upcoming_titles = [t["title"] for t in tasks["upcoming"]]
+        print(f"[dry-run] Overdue ({len(overdue_titles)}): {overdue_titles}")
+        print(f"[dry-run] Due today ({len(due_today_titles)}): {due_today_titles}")
+        print(f"[dry-run] Upcoming ({len(upcoming_titles)}): {upcoming_titles}")
         print(f"[dry-run] Follow-ups ({len(follow_ups)}): {[f['title'] for f in follow_ups]}")
-        print(f"[dry-run] Yesterday log lines: {len(yesterday_log)}")
+        print(f"[dry-run] Unfinished thoughts ({len(unfinished)}):")
+        for u in unfinished:
+            print(f"  - {u['title']} | {u['reason']}")
+        print(f"[dry-run] Yesterday log lines ({len(yesterday_log)}):")
         for line in yesterday_log:
             print(f"  {line}")
         return
 
-    prompt = build_prompt(tasks, follow_ups, yesterday_log, today, args.lookahead)
+    prompt = build_prompt(
+        today=today,
+        weekday=weekday,
+        weather=weather,
+        calendar=calendar,
+        birthdays=birthdays,
+        overdue=tasks["overdue"],
+        due_today=tasks["due_today"],
+        follow_ups=follow_ups,
+        upcoming=tasks["upcoming"],
+        unfinished=unfinished,
+        yesterday_log=yesterday_log,
+        lookahead=args.lookahead,
+    )
 
     print(f"Generating digest for {today}...", file=sys.stderr)
     result = subprocess.run(
-        ["claude", "--model", SONNET_MODEL, "-p", prompt],
+        [str(Path.home() / ".local" / "bin" / "claude"), "--model", SONNET_MODEL, "-p", prompt],
         capture_output=True,
         text=True,
     )
