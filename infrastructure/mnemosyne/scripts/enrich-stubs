@@ -78,6 +78,27 @@ Fact-check age threshold: {fact_check_age} days
     - Add to the END of log.md (after all existing entries):
       {log_timestamp} | update | BUCKET | {title} | triage-enrich
 
+    - UNFINISHED-FLAGGING (applies to all buckets):
+      After writing the enriched body, count its words. If the body is under 150
+      words OR the content remains substantively incomplete (placeholder text,
+      single-sentence assertions without elaboration, no resolution of the
+      obvious questions the stub raised), then in frontmatter:
+        - set `status: draft`
+        - add `unfinished` to the `tags:` list (if not already present)
+      Otherwise:
+        - if `status: draft` was present, REMOVE it (do not set to null;
+          delete the line)
+        - if `unfinished` was in `tags:`, REMOVE it
+      The 150-word threshold and the substance check apply uniformly across
+      all buckets. The daily-digest currently consumes this signal only for
+      IDEA pages, but other tooling (audits, future digests, future surfaces)
+      will read it from any bucket.
+
+      ADMIN exception: do NOT apply unfinished-flagging to ADMIN pages.
+      ADMIN's `status:` field already has a controlled vocabulary
+      (Pending / Done / Completed / etc.) and must not be overwritten with
+      `draft`. Leave ADMIN status untouched.
+
 4. Assess whether any ADMIN task is warranted. Create a task page for each that applies.
    Apply filename sanitization rules (from the schema) to the task title if needed.
 
@@ -160,7 +181,7 @@ def enrich_stub(
     print(f"Enriching: {title}", file=sys.stderr)
     result = subprocess.run(
         [
-            "claude",
+            str(Path.home() / ".local" / "bin" / "claude"),
             "--model", SONNET_MODEL,
             "-p", prompt,
             "--allowedTools", "Read,Edit,Write",
