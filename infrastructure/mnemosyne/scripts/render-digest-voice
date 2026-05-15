@@ -1,0 +1,129 @@
+#!/home/james/projects/experiments/tts-eval/.venv/bin/python3
+"""Render digest text as a Kokoro voice note and send via Telegram.
+
+Reads plain text from stdin. Renders using the canonical nicole25/heart75
+blend (speed 0.8, pitch +1.5 semitones) and delivers as a Telegram voice
+note. The caption is the first non-empty line of the input, truncated to
+1024 characters.
+
+Usage:
+    echo "Good morning..." | render-digest-voice
+    render-digest-voice --dry-run   # render artifact but skip send
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+import numpy as np
+import soundfile as sf
+
+
+TTS_EVAL_DIR = Path.home() / "projects" / "experiments" / "tts-eval"
+MODEL_PATH = TTS_EVAL_DIR / "models" / "kokoro" / "kokoro-v1.0.onnx"
+VOICES_PATH = TTS_EVAL_DIR / "models" / "kokoro" / "voices-v1.0.bin"
+
+VOICE_A = "af_nicole"
+VOICE_B = "af_heart"
+WEIGHT_A = 0.25
+SPEED = 0.8
+PITCH_SEMITONES = 1.5
+
+TELEGRAM_SEND = Path.home() / ".local" / "bin" / "telegram-send"
+CAPTION_MAX = 1024
+
+
+def render_blend(text: str, out_wav: Path) -> None:
+    from kokoro_onnx import Kokoro
+    kokoro = Kokoro(str(MODEL_PATH), str(VOICES_PATH))
+    style_a = kokoro.get_voice_style(VOICE_A)
+    style_b = kokoro.get_voice_style(VOICE_B)
+    blended = (WEIGHT_A * style_a + (1.0 - WEIGHT_A) * style_b).astype(np.float32)
+    samples, sample_rate = kokoro.create(text, voice=blended, speed=SPEED, lang="en-us")
+    sf.write(str(out_wav), samples, sample_rate)
+
+
+def wav_to_ogg(wav_path: Path, ogg_path: Path) -> None:
+    factor = 2.0 ** (PITCH_SEMITONES / 12.0)
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-i", str(wav_path),
+            "-af", f"rubberband=pitch={factor:.6f}",
+            "-ac", "1", "-ar", "48000",
+            "-c:a", "libopus", "-b:a", "64k",
+            "-application", "audio",
+            str(ogg_path),
+        ],
+        check=True,
+    )
+
+
+def extract_caption(text: str) -> str:
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped[:CAPTION_MAX]
+    return text[:CAPTION_MAX]
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Render artifact but do not send via Telegram",
+    )
+    args = parser.parse_args()
+
+    text = sys.stdin.read().strip()
+    if not text:
+        print("render-digest-voice: no input text", file=sys.stderr)
+        return 1
+
+    if not args.dry_run:
+        if not (os.environ.get("TELEGRAM_BOT_TOKEN") and os.environ.get("TELEGRAM_CHAT_ID")):
+            print(
+                "render-digest-voice: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set",
+                file=sys.stderr,
+            )
+            return 1
+
+    caption = extract_caption(text)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        wav_path = tmp_path / "digest.wav"
+        ogg_path = tmp_path / "digest.ogg"
+
+        print("render-digest-voice: rendering voice note...", file=sys.stderr)
+        render_blend(text, wav_path)
+        wav_to_ogg(wav_path, ogg_path)
+        print(f"render-digest-voice: encoded {ogg_path.stat().st_size} bytes", file=sys.stderr)
+
+        if args.dry_run:
+            print("render-digest-voice: dry-run complete, not sent", file=sys.stderr)
+            return 0
+
+        result = subprocess.run(
+            [str(TELEGRAM_SEND), "--voice", str(ogg_path), "--caption", caption],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(
+                f"render-digest-voice: telegram-send failed: {result.stderr.strip()}",
+                file=sys.stderr,
+            )
+            return result.returncode
+
+        print("render-digest-voice: voice note sent.", file=sys.stderr)
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
