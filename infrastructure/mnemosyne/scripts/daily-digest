@@ -610,6 +610,28 @@ def send_telegram(digest_text: str) -> bool:
     return True
 
 
+def send_voice(digest_text: str) -> None:
+    """Render and send the digest as a Telegram voice note. Non-fatal on failure."""
+    renderer = Path(__file__).resolve().parent / "render-digest-voice"
+    if not renderer.exists():
+        print(f"Warning: render-digest-voice not found at {renderer}", file=sys.stderr)
+        return
+    result = subprocess.run(
+        [str(renderer)],
+        input=digest_text,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(
+            f"Warning: voice render failed (exit {result.returncode}): "
+            f"{result.stderr.strip()}",
+            file=sys.stderr,
+        )
+    else:
+        print(result.stderr.strip(), file=sys.stderr)
+
+
 # ── Entry point ──────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -629,6 +651,10 @@ def main() -> None:
     parser.add_argument(
         "--no-send", action="store_true",
         help="Generate the report but skip Telegram delivery",
+    )
+    parser.add_argument(
+        "--no-voice", action="store_true",
+        help="Skip the follow-up Telegram voice note after text delivery",
     )
     args = parser.parse_args()
 
@@ -713,11 +739,13 @@ def main() -> None:
         return
 
     print("Sending via Telegram...", file=sys.stderr)
-    if send_telegram(digest_text):
-        print("Sent.", file=sys.stderr)
-    else:
+    if not send_telegram(digest_text):
         print("Telegram delivery failed — report still written.", file=sys.stderr)
         sys.exit(1)
+    print("Sent.", file=sys.stderr)
+
+    if not args.no_voice:
+        send_voice(digest_text)
 
 
 if __name__ == "__main__":
