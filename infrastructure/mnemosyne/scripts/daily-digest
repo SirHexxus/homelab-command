@@ -26,6 +26,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -34,6 +35,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+from gcal import fetch_calendar  # noqa: E402
 from weather import fetch_weather  # noqa: E402
 
 
@@ -44,6 +46,15 @@ SONNET_MODEL = "claude-sonnet-4-6"
 DEFAULT_LOOKAHEAD = 3
 PERSON_LOOKAHEAD_DAYS = 14
 BIRTHDAY_LOOKAHEAD_DAYS = 7
+
+# James's events are split across two calendars: personal items on the
+# primary calendar, family events (church, game night, kids' activities) on
+# the shared "Stacy Family Calendar". The digest pulls from both.
+CALENDAR_IDS = (
+    "primary",
+    "e31e49958e21a3383c4ffaa015f0e27369d6d5c771a7e3f20573bcb38d709af4"
+    "@group.calendar.google.com",
+)
 
 # Any of these in `status:` means the ADMIN task is closed (hidden).
 CLOSED_STATUSES = {"Done", "Completed", "Closed", "Cancelled", "Skipped"}
@@ -332,10 +343,28 @@ def collect_stale_relevant() -> None:
     return None
 
 
-def fetch_calendar_block() -> None:
-    """Today's Google Calendar events. Deferred — see ADMIN task
-    `Wire Google Calendar Block into Daily Digest`."""
-    return None
+def fetch_calendar_block(today: date) -> list[dict] | None:
+    """Today's events across James's Google Calendars. None on any gap.
+
+    Credentials live in a git-ignored JSON file whose path is given by the
+    GOOGLE_CALENDAR_CREDENTIALS env var (set in ~/.bashrc.local, consistent
+    with OPENWEATHER_API_KEY). The file holds the OAuth client_id,
+    client_secret, and refresh_token.
+    """
+    creds_path = os.environ.get("GOOGLE_CALENDAR_CREDENTIALS", "").strip()
+    if not creds_path:
+        return None
+    try:
+        creds = json.loads(Path(creds_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return fetch_calendar(
+        creds.get("client_id", ""),
+        creds.get("client_secret", ""),
+        creds.get("refresh_token", ""),
+        CALENDAR_IDS,
+        today,
+    )
 
 
 # ── Formatters ───────────────────────────────────────────────────────────────
@@ -361,7 +390,7 @@ def format_temporal_anchors(
     weekday: str,
     birthdays: list[dict[str, str]],
     weather: dict | None,
-    calendar: None,
+    calendar: list[dict] | None,
 ) -> str:
     """Section 1 — temporal anchors. Empty → OMIT."""
     lines: list[str] = [f"Date: {weekday}, {today.isoformat()}"]
@@ -388,8 +417,17 @@ def format_temporal_anchors(
                 f"low {weather['low_f']}°F."
             )
 
-    if calendar is None:
-        lines.append("Calendar events: (unavailable — calendar integration not yet wired)")
+    if calendar:
+        lines.append("Calendar events today:")
+        for ev in calendar:
+            location = ev["location"]
+            loc = f" (at {location})" if location else ""
+            if ev["ongoing"]:
+                lines.append(f"- {ev['title']} — ongoing today{loc}")
+            elif ev["all_day"]:
+                lines.append(f"- {ev['title']} — all day{loc}")
+            else:
+                lines.append(f"- {ev['title']} — {ev['start']}–{ev['end']}{loc}")
 
     if birthdays:
         lines.append("Birthdays in the next week:")
@@ -626,7 +664,7 @@ def build_prompt(
     today: date,
     weekday: str,
     weather: dict | None,
-    calendar: None,
+    calendar: list[dict] | None,
     birthdays: list[dict[str, str]],
     overdue: list[dict[str, str]],
     due_today: list[dict[str, str]],
@@ -754,13 +792,16 @@ def main() -> None:
     birthdays = collect_birthdays(wiki_root, today)
     unfinished = collect_unfinished_thoughts(wiki_root, today)
     weather = fetch_weather_block()
-    calendar = fetch_calendar_block()
+    calendar = fetch_calendar_block(today)
     yesterday_log = collect_yesterday_log(wiki_root, yesterday)
 
     if args.dry_run:
         print(f"[dry-run] Date: {today} ({weekday})")
         print(f"[dry-run] Weather: {weather if weather else '(none)'}")
-        print(f"[dry-run] Calendar: {calendar if calendar else '(stub — not wired)'}")
+        if calendar is None:
+            print("[dry-run] Calendar: (unavailable)")
+        else:
+            print(f"[dry-run] Calendar ({len(calendar)}): {[e['title'] for e in calendar]}")
         print(f"[dry-run] Birthdays ({len(birthdays)}): {[b['title'] for b in birthdays]}")
         overdue_titles = [t["title"] for t in tasks["overdue"]]
         due_today_titles = [t["title"] for t in tasks["due_today"]]
