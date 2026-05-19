@@ -1,0 +1,262 @@
+#!/usr/bin/env python3
+"""One-shot OAuth consent flow for the Mnemosyne calendar fetcher.
+
+Mints a Google Calendar refresh token and writes the credentials file
+that `daily-digest` reads via the GOOGLE_CALENDAR_CREDENTIALS env var.
+
+Run this once after creating a Desktop-app OAuth client in Google Cloud
+Console. It opens a browser for consent, captures the redirect on a
+local loopback port, exchanges the authorisation code for tokens, and
+writes the credentials JSON with owner-only (0600) permissions.
+
+Usage:
+  gcal-authorize                                  # prompts for ID/secret
+  gcal-authorize --client-id ID --client-secret SECRET
+  gcal-authorize --client-file CLIENT.json        # Google-downloaded JSON
+  gcal-authorize --output PATH --force            # overwrite existing file
+"""
+
+from __future__ import annotations
+
+import argparse
+import http.server
+import json
+import secrets
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+import webbrowser
+from getpass import getpass
+from pathlib import Path
+
+# ── Constants ────────────────────────────────────────────────────────────────
+
+AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
+TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
+CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
+DEFAULT_OUTPUT = Path.home() / ".config" / "mnemosyne" / "gcal-creds.json"
+REQUEST_TIMEOUT_SECONDS = 30
+SUCCESS_PAGE = (
+    "<html><body><h2>Authorisation complete.</h2>"
+    "<p>You can close this tab and return to the terminal.</p>"
+    "</body></html>"
+)
+
+
+# ── Loopback redirect handler ────────────────────────────────────────────────
+
+class _CallbackHandler(http.server.BaseHTTPRequestHandler):
+    """Captures the single OAuth redirect and stores its query params."""
+
+    def do_GET(self) -> None:  # noqa: N802 — name set by BaseHTTPRequestHandler
+        parsed = urllib.parse.urlparse(self.path)
+        self.server.auth_result = dict(urllib.parse.parse_qsl(parsed.query))
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.end_headers()
+        self.wfile.write(SUCCESS_PAGE.encode("utf-8"))
+
+    def log_message(self, fmt: str, *args: object) -> None:
+        """Silence the default per-request stderr logging."""
+
+
+# ── Consent flow ─────────────────────────────────────────────────────────────
+
+def _exchange_code(
+    client_id: str,
+    client_secret: str,
+    code: str,
+    redirect_uri: str,
+) -> dict:
+    """Exchange an authorisation code for access and refresh tokens.
+
+    Exits the script on any HTTP or parse failure — there is no useful
+    way to continue a half-finished consent flow.
+    """
+    data = urllib.parse.urlencode({
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "code": code,
+        "grant_type": "authorization_code",
+        "redirect_uri": redirect_uri,
+    }).encode("utf-8")
+    request = urllib.request.Request(TOKEN_ENDPOINT, data=data, method="POST")
+    try:
+        with urllib.request.urlopen(
+            request, timeout=REQUEST_TIMEOUT_SECONDS
+        ) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        print(
+            f"Error: token exchange failed ({exc.code}): {detail}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+        print(f"Error: token exchange failed: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _run_consent_flow(client_id: str, client_secret: str) -> str:
+    """Open the browser, capture the redirect, and return the refresh token."""
+    httpd = http.server.HTTPServer(("127.0.0.1", 0), _CallbackHandler)
+    httpd.auth_result = {}
+    port = httpd.server_address[1]
+    redirect_uri = f"http://127.0.0.1:{port}"
+    state = secrets.token_urlsafe(16)
+
+    auth_url = AUTH_ENDPOINT + "?" + urllib.parse.urlencode({
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": CALENDAR_SCOPE,
+        "access_type": "offline",
+        "prompt": "consent",
+        "state": state,
+    })
+
+    print("Opening the consent page in your browser.", file=sys.stderr)
+    print(
+        f"If it does not open, visit this URL manually:\n\n{auth_url}\n",
+        file=sys.stderr,
+    )
+    webbrowser.open(auth_url)
+
+    print("Waiting for the authorisation redirect...", file=sys.stderr)
+    # An empty auth_result means a stray request (e.g. favicon) hit the
+    # loopback port — keep serving until the real redirect arrives.
+    while not httpd.auth_result:
+        httpd.handle_request()
+    result = httpd.auth_result
+    httpd.server_close()
+
+    if result.get("state") != state:
+        print("Error: state mismatch — possible CSRF, aborting.", file=sys.stderr)
+        sys.exit(1)
+    if "error" in result:
+        print(
+            f"Error: consent denied or failed: {result['error']}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    code = result.get("code")
+    if not code:
+        print("Error: no authorisation code in the redirect.", file=sys.stderr)
+        sys.exit(1)
+
+    tokens = _exchange_code(client_id, client_secret, code, redirect_uri)
+    refresh_token = tokens.get("refresh_token")
+    if not refresh_token:
+        print(
+            "Error: Google did not return a refresh token. Revoke the app's "
+            "access at myaccount.google.com/permissions and retry.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return refresh_token
+
+
+def _load_client_file(path: Path) -> tuple[str, str]:
+    """Read client ID and secret from a Google-downloaded OAuth client JSON.
+
+    Google's download wraps the credentials in an `installed` block for
+    Desktop apps (or `web` for web apps). Exits on a missing file or an
+    unrecognised structure.
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"Error: cannot read client file {path}: {exc}", file=sys.stderr)
+        sys.exit(1)
+    block = data.get("installed") or data.get("web") or {}
+    client_id = block.get("client_id", "")
+    client_secret = block.get("client_secret", "")
+    if not (client_id and client_secret):
+        print(
+            f"Error: {path} has no client_id/client_secret under an "
+            "'installed' or 'web' block.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return client_id, client_secret
+
+
+def _write_credentials(
+    output: Path,
+    client_id: str,
+    client_secret: str,
+    refresh_token: str,
+) -> None:
+    """Write the credentials JSON with owner-only (0600) permissions."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "refresh_token": refresh_token,
+    }
+    output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    output.chmod(0o600)
+
+
+# ── Entry point ──────────────────────────────────────────────────────────────
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--client-id", help="OAuth client ID (prompted if omitted)",
+    )
+    parser.add_argument(
+        "--client-secret",
+        help="OAuth client secret (prompted securely if omitted)",
+    )
+    parser.add_argument(
+        "--client-file", type=Path, metavar="PATH",
+        help="Google-downloaded OAuth client JSON (instead of ID/secret)",
+    )
+    parser.add_argument(
+        "--output", type=Path, default=DEFAULT_OUTPUT, metavar="PATH",
+        help=f"Credentials file to write (default: {DEFAULT_OUTPUT})",
+    )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Overwrite the output file if it already exists",
+    )
+    args = parser.parse_args()
+
+    if args.output.exists() and not args.force:
+        print(
+            f"Error: {args.output} already exists. Re-run with --force to "
+            "overwrite.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if args.client_file:
+        client_id, client_secret = _load_client_file(args.client_file)
+    else:
+        client_id = args.client_id or input("OAuth client ID: ").strip()
+        client_secret = (
+            args.client_secret or getpass("OAuth client secret: ").strip()
+        )
+    if not (client_id and client_secret):
+        print("Error: client ID and secret are both required.", file=sys.stderr)
+        sys.exit(1)
+
+    refresh_token = _run_consent_flow(client_id, client_secret)
+    _write_credentials(args.output, client_id, client_secret, refresh_token)
+
+    print(f"\nCredentials written: {args.output} (mode 0600)", file=sys.stderr)
+    print(
+        "Add this line to ~/.bashrc.local if it is not already there:\n",
+        file=sys.stderr,
+    )
+    print(f'  export GOOGLE_CALENDAR_CREDENTIALS="{args.output}"', file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()
