@@ -43,6 +43,9 @@ from weather import fetch_weather  # noqa: E402
 
 DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
 SONNET_MODEL = "claude-sonnet-4-6"
+# Per-run token usage is appended here as JSONL — one record per generation.
+# Lives outside the wiki git repo: operational telemetry, not knowledge.
+TOKEN_LOG = Path.home() / "mneme" / "logs" / "digest-tokens.jsonl"
 DEFAULT_LOOKAHEAD = 3
 PERSON_LOOKAHEAD_DAYS = 14
 BIRTHDAY_LOOKAHEAD_DAYS = 7
@@ -714,6 +717,35 @@ def append_log(wiki_root: Path, today: date) -> None:
         print(f"Warning: could not append to log.md: {exc}", file=sys.stderr)
 
 
+def log_token_usage(today: date, model: str, usage: dict) -> None:
+    """Append a per-run token-usage record to the JSONL token log.
+
+    Non-fatal on failure — a missing telemetry line must never block the
+    digest itself.
+    """
+    inp = usage.get("input_tokens", 0)
+    cache_creation = usage.get("cache_creation_input_tokens", 0)
+    cache_read = usage.get("cache_read_input_tokens", 0)
+    out = usage.get("output_tokens", 0)
+    prompt_total = inp + cache_creation + cache_read
+    record = {
+        "date": today.isoformat(),
+        "model": model,
+        "input": inp,
+        "cache_creation": cache_creation,
+        "cache_read": cache_read,
+        "prompt_total": prompt_total,
+        "output": out,
+        "total": prompt_total + out,
+    }
+    try:
+        TOKEN_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with TOKEN_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record) + "\n")
+    except OSError as exc:
+        print(f"Warning: could not write token log: {exc}", file=sys.stderr)
+
+
 def send_telegram(digest_text: str) -> bool:
     """Send the digest via telegram-send. Returns True on success."""
     result = subprocess.run(
@@ -835,7 +867,12 @@ def main() -> None:
 
     print(f"Generating digest for {today}...", file=sys.stderr)
     result = subprocess.run(
-        [str(Path.home() / ".local" / "bin" / "claude"), "--model", SONNET_MODEL, "-p", prompt],
+        [
+            str(Path.home() / ".local" / "bin" / "claude"),
+            "--model", SONNET_MODEL,
+            "--output-format", "json",
+            "-p", prompt,
+        ],
         capture_output=True,
         text=True,
     )
@@ -847,10 +884,29 @@ def main() -> None:
         )
         sys.exit(1)
 
-    digest_text = result.stdout.strip()
+    try:
+        response = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        print(f"Error: could not parse claude JSON output: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    digest_text = response.get("result", "").strip()
     if not digest_text:
         print("Error: claude returned empty output", file=sys.stderr)
         sys.exit(1)
+
+    usage = response.get("usage", {})
+    log_token_usage(today, SONNET_MODEL, usage)
+    prompt_total = (
+        usage.get("input_tokens", 0)
+        + usage.get("cache_creation_input_tokens", 0)
+        + usage.get("cache_read_input_tokens", 0)
+    )
+    print(
+        f"Tokens — prompt: {prompt_total}, "
+        f"output: {usage.get('output_tokens', 0)}",
+        file=sys.stderr,
+    )
 
     report_path = write_report(wiki_root, today, digest_text)
     append_log(wiki_root, today)
