@@ -222,4 +222,90 @@ important long-term maintenance step.
 
 ---
 
+## Recurring & User ADMIN Tasks: Calendar + Google Tasks as the Scheduling Layer
+
+**Status: architecture decision in progress. The numbered items under "Suggestions
+pending decision" below are Claude's proposals — input to a design decision, not the
+design. James disagrees in part. Do not build against this section until the
+architecture is settled in `ToDo.md` Task 0.5.**
+
+### Background
+
+ADMIN pages for recurring events (church, therapy, game night, etc.) carried
+hand-advanced `due:` dates because nothing computed next occurrences. The daily-digest
+Google Calendar block (landed 2026-05-19) made that manual advancement obsolete: the
+five recurring-event pages now have `due: null` and surface through the calendar block
+instead. That fix exposed the broader question — how should *all* User ADMIN tasks,
+recurring or one-off, be scheduled and tracked?
+
+### Decided
+
+- **Google Tasks is the mechanism for one-off User to-dos.** Bare Calendar events have
+  no completion state; Google Tasks have a native done checkbox. A one-off task ("pick
+  up shield nut") needs to complete; a recurring event ("church") does not. So:
+  recurring scheduled items → Calendar events; one-off User to-dos → Google Tasks.
+- **The n8n pipeline gets built up now** to standardize ingestion and retrieval, rather
+  than continuing on the interim cron path for this slice. The scope crossed the
+  threshold where ad-hoc scripting stops being the cheaper option.
+
+### Suggestions pending decision (Claude's proposals — reasoning included)
+
+James disagrees in part with the items below. They are recorded *with their reasoning*
+so the disagreement can be resolved deliberately during the architecture pass, rather
+than re-argued from scratch.
+
+1. **Division of labor: n8n owns ingestion + scheduling + Telegram I/O; Python owns
+   retrieval logic.** *Reasoning:* n8n has first-class Google Tasks/Calendar nodes, so
+   the *write* side (creating a Task on ingestion) is no-code. The `daily-digest` script
+   is already substantial, tested, and style-guided — porting its Layer-2 collection and
+   Layer-4 prompt logic into n8n nodes would be a downgrade. n8n becomes the cron
+   trigger and Telegram transport; the script keeps the logic.
+
+2. **Read/write split on Google credentials.** n8n holds a read-write credential (it
+   creates Tasks); the digest holds a separate read-only credential (it only reads).
+   *Reasoning:* least privilege on the read path. *Tradeoff:* two OAuth credentials for
+   one Google account — more to manage, and a possible "which token broke" confusion.
+
+3. **A `gtasks.py` module — sibling to `lib/gcal.py`.** Same OAuth pattern, hitting
+   `tasks.googleapis.com`. *Reasoning:* single responsibility and consistency with the
+   existing `weather.py` / `gcal.py` pattern (one stdlib fetcher per source). *Note:* the
+   OAuth token-exchange code would then live in two modules — a small shared
+   `google_oauth.py` helper may be worth extracting.
+
+4. **The digest renders overdue/due Tasks into the Obligations section (Section 2), not
+   only the calendar anchor block.** *Reasoning:* a one-off to-do that is overdue needs
+   the "this needs attention" framing. As a calendar-style anchor line in Section 1 it
+   reads as information, not as a nudge — and the digest's obligations model exists to
+   surface what is slipping.
+
+5. **Reframe the bucketing.** James's framing was "the Calendar becomes the primary
+   bucket for User ADMIN tasks; the wiki ADMIN bucket holds only Maintenance tasks."
+   Suggested reframe: the Calendar/Tasks layer owns *scheduling and completion*; the
+   wiki ADMIN bucket owns *context*. A User task is scheduled in Google and optionally
+   documented in a wiki ADMIN page when it has detail worth keeping (the `see [[Page]]`
+   pointer pattern). *Reasoning:* "bucket" is a wiki-schema concept — one of the seven
+   directories — so calling an external system "a bucket" muddies the schema vocabulary;
+   the `task_type: user | maintenance` frontmatter field already encodes the split this
+   is reaching for. *This is the suggestion James pushed back on most directly — a
+   framing disagreement worth resolving explicitly before anything is built.*
+
+### Open for architecture — must be resolved regardless of the above
+
+- **Obsidian graph cost.** A `[[wikilink]]` written into a Google Task's notes field is
+  plain text — Obsidian's backlink graph cannot see it. Any User task that lives in
+  Google with a `see [[Page]]` pointer loses that graph edge. The digest *can* parse
+  `[[...]]` out of a Task body and load the page, but the wiki graph is poorer for it.
+- **OAuth scope re-mint.** The refresh token minted 2026-05-19 is `calendar.readonly`
+  only. Reading Tasks needs `tasks.readonly` added; `gcal-authorize`'s `CALENDAR_SCOPE`
+  constant becomes a scope *list*, and the consent flow must be re-run.
+- **The `recurrence:` frontmatter field.** Its `weekly | monthly` vocabulary already
+  cannot express real cadences ("third Sunday", "every 3 weeks on Monday"). If Calendar
+  owns the RRULE, decide whether the wiki `recurrence:` field is kept, repurposed, or
+  retired.
+- **Migration of existing pages.** ADMIN pages with `task_type: user` need triage: which
+  become Google Tasks, which become Calendar events, which stay as wiki pages with a
+  Google pointer. The five recurring-event pages edited 2026-05-19 are the first batch.
+
+---
+
 *See `ToDo.md` for the actionable task list. This document is context and thinking, not tasks.*
