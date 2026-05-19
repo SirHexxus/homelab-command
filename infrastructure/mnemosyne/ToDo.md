@@ -43,9 +43,9 @@ The following tasks have no external dependencies and can be worked immediately.
 - [x] Create wiki git repo and initial directory structure (see Phase 1, Task 1)
 - [x] Update Mnemosyne design doc to reflect wiki model architecture (see Phase 0, Task 1)
 - [x] Write `/mneme` and `/mneme-ask` Claude Code skills (direct path — no Hermes needed)
-- [ ] Configure Obsidian vault pointing at wiki repo (see Phase 1, Task 2)
-- [ ] Install and configure Obsidian git plugin (see Phase 1, Task 3)
-- [ ] Create private GitHub remote for wiki repo and push initial scaffold (see Phase 1, Task 1)
+- [x] Configure Obsidian vault pointing at wiki repo (see Phase 1, Task 2)
+- [x] Install and configure Obsidian git plugin (see Phase 1, Task 3)
+- [x] Create private GitHub remote for wiki repo and push initial scaffold (see Phase 1, Task 1)
 - [ ] Draft n8n workflow designs for ingest and retrieval (can design before Hermes is live)
 - [ ] Architect the Calendar + Google Tasks integration for User ADMIN tasks (see Phase 0, Task 5)
 
@@ -103,11 +103,11 @@ The following tasks have no external dependencies and can be worked immediately.
 ---
 
 ## Phase 1 — Foundation (Wiki Repo + Obsidian)
-**Status:** Not started  
+**Status:** Complete except 1.6 (blocked on Hermes LXC)  
 **Blocked by:** Nothing — all Phase 1 tasks are local/desktop work, no Hermes dependency
 
-- [ ] **1.1** Create private GitHub repo for the wiki and push initial scaffold  
-  *Local repo initialized at `~/mneme/wiki/` with initial commit. Needs GitHub remote + push.*  
+- [x] **1.1** Create private GitHub repo for the wiki and push initial scaffold  
+  *Done: local repo at `~/mneme/wiki/` pushed to private GitHub remote.*  
   *Name: `mnemosyne-wiki` (or similar). Initialize with a `README.md` only. Private repo.
   This is the persistent knowledge store — treat it with appropriate care.*  
   **Depends on:** 0.3 (need the schema before creating structure)
@@ -122,17 +122,17 @@ The following tasks have no external dependencies and can be worked immediately.
   *Add `.gitkeep` to all empty directories.*  
   **Depends on:** 1.1, 0.3
 
-- [ ] **1.3** Configure Obsidian vault pointing at the wiki repo (local clone)  
+- [x] **1.3** Configure Obsidian vault pointing at the wiki repo (local clone)  
   *Clone the wiki repo to a local path. Open as an Obsidian vault. Confirm that `[[wikilinks]]`
   resolve correctly, graph view is functional, and Dataview plugin is installed.*  
   **Depends on:** 1.2
 
-- [ ] **1.4** Install and configure the Obsidian git plugin  
+- [x] **1.4** Install and configure the Obsidian git plugin  
   *Configure: auto-pull interval (5 min), auto-commit on change, push on commit. Confirm that
   changes pushed from Hermes (once deployed) appear in Obsidian without manual intervention.*  
   **Depends on:** 1.3
 
-- [ ] **1.5** Install Obsidian Dataview plugin  
+- [x] **1.5** Install Obsidian Dataview plugin  
   *Required for structured queries over YAML frontmatter (ADMIN due dates, PERSON follow-up
   dates). Confirm a test query over frontmatter works.*  
   **Depends on:** 1.3
