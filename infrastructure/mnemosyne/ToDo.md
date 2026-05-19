@@ -1,7 +1,7 @@
 # Mnemosyne: Project Task Tracker
 
 **PM:** Mnemosyne Project  
-**Last Updated:** 2026-04-10 (updated)
+**Last Updated:** 2026-05-19
 **Status:** Phase 0 largely complete; Phase 1 foundation scaffolded; Claude Code direct path live
 
 ---
@@ -47,6 +47,7 @@ The following tasks have no external dependencies and can be worked immediately.
 - [ ] Install and configure Obsidian git plugin (see Phase 1, Task 3)
 - [ ] Create private GitHub remote for wiki repo and push initial scaffold (see Phase 1, Task 1)
 - [ ] Draft n8n workflow designs for ingest and retrieval (can design before Hermes is live)
+- [ ] Architect the Calendar + Google Tasks integration for User ADMIN tasks (see Phase 0, Task 5)
 
 ---
 
@@ -80,6 +81,24 @@ The following tasks have no external dependencies and can be worked immediately.
   address, web clipper inbox folder, n8n Chat Trigger, future sources. Document the inbox
   staging folder pattern for async sources.*  
   **Depends on:** 0.2
+
+- [ ] **0.5** Architect the Calendar + Google Tasks integration for User ADMIN tasks  
+  *Triggered by the daily-digest Google Calendar block (landed 2026-05-19) retiring the
+  manual `due:` advancement on recurring-event pages. Decided: Google Tasks is the mechanism
+  for one-off User to-dos; the n8n pipeline gets built up to standardize ingestion/retrieval.
+  Not yet decided: the n8n / Python division of labor, the Google credential read/write
+  split, whether the digest renders Tasks as obligations, and the wiki-bucket vs
+  scheduling-layer framing. See THOUGHTS.md "Recurring & User ADMIN Tasks" for the proposals,
+  reasoning, and open questions. Output of this pass: the ratified architecture plus concrete
+  build tasks (`gtasks.py`, digest wiring, n8n ingestion routing for `task_type: user`)
+  slotted into Phase 2.*  
+  **Depends on:** Nothing
+
+- [ ] **0.6** Re-mint the Google OAuth refresh token with `tasks.readonly` added  
+  *The token minted 2026-05-19 is `calendar.readonly` only; reading Google Tasks needs
+  `tasks.readonly`. Change `gcal-authorize`'s `CALENDAR_SCOPE` constant to a scope list and
+  re-run the consent flow. Firm regardless of 0.5's outcome — the digest must read Tasks.*  
+  **Depends on:** 0.5 (confirm the final scope list first)
 
 ---
 
