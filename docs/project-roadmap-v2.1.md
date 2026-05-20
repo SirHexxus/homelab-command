@@ -1,6 +1,6 @@
 # Homelab Command Project — Project Roadmap
-**Version:** 2.0
-**Last Updated:** 2026-04-27
+**Version:** 2.1
+**Last Updated:** 2026-05-20
 **Philosophy:** See `docs/homelab-philosophy-v1.0.md` for the values and goals behind this homelab.
 
 ---
@@ -39,12 +39,12 @@ They have been removed from this roadmap to keep scope clean.
 | Hardware Catalog | v1.2 | ✅ Complete |
 | Network & Services Architecture | v1.6 | ✅ Complete |
 | Homelab Philosophy | v1.0 | ✅ Complete |
-| Project Roadmap | v1.9 | ✅ This document |
+| Project Roadmap | v2.1 | ✅ This document |
 | Mnemosyne Design Doc | v1.2 | ✅ Complete |
 | IaC Runbook | v1.2 | ✅ Complete |
 | Argus Design Doc | v1.2 | ✅ Complete |
 | Orpheus Design Doc | v1.1 | ✅ Complete |
-| Hermes Design Doc | v1.0 | ✅ Complete |
+| Hermes Design Doc | v1.1 | ✅ Complete |
 | Ariadne Design Doc | v1.0 | ✅ Complete |
 
 ### Remaining
@@ -143,15 +143,8 @@ reflect revised estimates as of 2026-04-16.
 
 *Note: Cert prep items previously in this phase have been moved to Mnemosyne (Career Advancement pursuit).*
 
-### Hermes (AI Agent) — ⚠️ BACK-BURNERED as of 2026-04-27
-**Status:** Pipeline wired end-to-end but not reliably functional. Requires replanning before
-resuming. Do not add Hermes tasks or invest further time without a dedicated replanning session.
-
-**Blockers that caused back-burner decision:**
-- Gemini free tier eliminated — cloud fallback no longer viable without billing
-- Local models (qwen3:1.7b, qwen3:4b) too slow/small for multi-step ReAct loops on CPU
-- Root cause: Hermes was designed around cloud LLM availability; local-first inference requires
-  a GPU to be practical. Revisit when a GPU (e.g. RTX 3090) is available.
+### Hermes (AI Agent) — ✅ OFF HOLD as of 2026-05-20
+**Status:** Off hold via direct Gemini API billing (~$2/mo projected, $5/mo cap; `gemini-3.5-flash` pinned). Detailed backlog tracked in `apps/hermes/ToDo.md`; design context in `apps/hermes/THOUGHTS.md` and `docs/hermes-design-doc-v1.1.md`.
 
 **What is complete and working:**
 - [x] LLM router (Gemini + Claude clients, task_type routing)
@@ -161,16 +154,13 @@ resuming. Do not add Hermes tasks or invest further time without a dedicated rep
 - [x] LXC deployed and live (10.0.50.17) — wiki repo cloned, systemd service running
 - [x] n8n Telegram → Hermes ingest pipeline wired and tested
 - [x] Async ingest with Telegram callback
+- [x] Replanning session held 2026-04-27; hold lifted 2026-05-20
 
-**Remaining work (deferred — pending hold trigger):**
-- [ ] Hermes Phase 3: Register Telegram bots (@BotFather) + implement `telegram_bot.py`
+**Post-hold-lift candidates (see `apps/hermes/ToDo.md` for current sprint selection at the 2026-06-01 Decide gate):**
+- [ ] Daily Digest LLM swap (`claude -p` → Hermes `/task`) — addresses 29k token-overhead finding
+- [ ] GeminiClient SDK migration (`google-generativeai` → `google-genai`) — pending evaluation
 - [ ] Hermes Phase 5: n8n MCP integration (n8n at 10.0.50.13)
-- [x] Replanning session: reconsider architecture — held 2026-04-27; hold triggers defined
-
-**Hold triggers — Hermes resumes when any one occurs (hard expiry Jan 1 2027):**
-- Bug Bounty Validation (tracked in Mnemosyne) produces a successful outcome
-- Hexxus Web Solutions onboards a new client
-- Jan 1 2027 — if neither above has occurred, Hermes is shuttered
+- [ ] ~~Hermes Phase 3: Register Telegram bots + implement `telegram_bot.py`~~ — **Superseded** (n8n owns the Telegram surface; revisit only if other autonomous agents need a direct user channel)
 
 ### Mnemosyne (Wiki pipeline)
 - [x] Architecture: Design doc updated to git wiki model; `SCHEMA.md` written; `IngestItem` spec documented
@@ -178,7 +168,7 @@ resuming. Do not add Hermes tasks or invest further time without a dedicated rep
 - [x] Foundation: Create private GitHub remote for wiki repo; push initial scaffold
 - [x] Foundation: Configure Obsidian vault + git plugin
 - [x] Foundation: Install and configure Dataview plugin
-**Interim path (active — Hermes not required):**
+**Current path (transition toward Hermes-routed target — operational via `claude -p` workaround):**
 - [ ] n8n: modify Telegram webhook to write raw note to `wiki/inbox/` (text path; no LLM at ingest)
 - [ ] Laptop: `inotifywait` daemon on `~/mneme/wiki/inbox/` — triggers `claude -p` on new files
 - [ ] Laptop: hourly cron `claude -p` inbox sweep; silent if empty, ntfy notification if processed
@@ -186,14 +176,14 @@ resuming. Do not add Hermes tasks or invest further time without a dedicated rep
 - [ ] Laptop: scheduled cron `claude -p` for Daily Digest and Weekly Summary reports
 - [ ] Scripts documented and maintained in `infrastructure/mnemosyne/` in homelab-command repo
 
-**Full pipeline (deferred — pending Hermes hold trigger):**
+**Target path (Hermes-routed — Phase 2T, queued for 2026-06-01 Decide gate):**
 - [ ] Foundation: Grant Hermes LXC deploy key write access to wiki repo
-- [ ] Ingest pipeline: n8n Telegram webhook — voice + file attachment paths
-- [ ] Ingest pipeline: End-to-end test — Telegram note → wiki page → Obsidian (full pipeline)
-- [ ] Retrieval: `/search` and `/ask` Telegram commands via Hermes ReAct loop
-- [ ] Retrieval: n8n Chat Trigger as secondary capture/query interface
-- [ ] Reports: Serendipity Engine, Idea Synthesis Report (require agent reasoning)
+- [ ] Ingest pipeline: cut over n8n inbox-receiver → Hermes `/task` (single-shot dispatch)
+- [ ] Ingest pipeline: voice + file attachment paths via Hermes
+- [ ] Retrieval: Hermes-routed retrieval for Create/Update; Read-direct to Gemini via n8n Chat Trigger (per Read-direct/Write-through-Hermes pattern)
+- [ ] Reports: Serendipity Engine, Idea Synthesis Report (require Hermes reasoning)
 - [ ] Extended sources: Email ingestion, URL capture, Obsidian Web Clipper inbox processing
+- See `infrastructure/mnemosyne/ToDo.md` Phase 2T for the authoritative sprint plan
 
 ### Domain Migration (Namecheap → Porkbun)
 > Transfer window is open as of ~April 2, 2026
@@ -352,6 +342,7 @@ Career Advancement pursuit in Mnemosyne.
 
 ## Version History
 
+- v2.1 (2026-05-20): Hermes off hold via direct Gemini API billing ($5/mo cap, `gemini-3.5-flash` pinned); Phase 2 Hermes section rewritten — Telegram bot superseded by n8n, blockers removed, post-hold-lift candidates queued for 2026-06-01 Decide gate; Phase 2 Mnemosyne section relabeled (Interim→Current path, Full→Target path / Phase 2T); Hermes Design Doc bumped to v1.1; file renamed v1.8→v2.1
 - v2.0 (2026-04-27): Hermes replanning complete — hold triggers documented, replanning item checked off; Mnemosyne Phase 2 restructured into interim cron path (active) vs full pipeline (deferred); Phase 5 CRDC submission window adjusted to mid-August for family trip July 25–Aug 12
 - v1.9 (2026-04-16): Full audit + re-sync — check off all completed work (Hermes LXC live,
   pfSense full firewall IaC, Ariadne media_proxy + ntfy proxy, Mnemosyne wiki scaffold,
