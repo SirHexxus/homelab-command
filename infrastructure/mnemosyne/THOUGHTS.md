@@ -308,4 +308,18 @@ than re-argued from scratch.
 
 ---
 
+---
+
+## LLM Model Routing (decided 2026-05-20)
+
+After billing-enabled API tests against the real digest prompt (Sonnet 4.6 vs Gemini 3.5 Flash vs Gemini 2.5 Pro vs Gemini 3.1 Pro Preview), the routing decision is:
+
+- **Default for all Mnemosyne reports and Hermes operations: `gemini-3.5-flash`** (pinned, not `-latest`). Quality matches or exceeds Sonnet on the digest; cost ~$2/mo for the full report suite + ingest classification, well under the $5/mo Gemini API cap.
+- **Selective escalation candidate: `gemini-3.1-pro-preview` for the Idea Synthesis report only.** This is the report where ruthless signal-vs-noise judgment is the product, and Pro's editorial economy is genuinely better there. *Decision deferred* — wait until Idea Synthesis is actually built (Phase 4 Task 4.4) and producing real reports against the wiki before committing. Pro is preview-only and could be deprecated when 3.5 Pro ships.
+- **Re-evaluate when Gemini 3.5 Pro ships GA (~June 2026).** If quality is competitive and pricing reasonable, it may become the default for everything and retire the Flash/Pro split entirely.
+
+The `model` field in `gemini-creds.json` supports a single default today; when the time comes to add per-report routing, the cleanest path is a `model_overrides` map in the same file (e.g., `{"idea_synthesis": "gemini-3.1-pro-preview"}`) consulted by a small dispatch helper in `gemini.py`.
+
+---
+
 *See `ToDo.md` for the actionable task list. This document is context and thinking, not tasks.*
