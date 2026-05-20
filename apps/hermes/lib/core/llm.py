@@ -144,7 +144,7 @@ class GeminiClient:
         LLMError: On missing credentials, import failure, or other API errors.
     """
 
-    def __init__(self, model: str = "gemini-2.0-flash", api_key: str = "") -> None:
+    def __init__(self, model: str = "gemini-3.5-flash", api_key: str = "") -> None:
         self.model = model
         self._api_key = api_key
 
@@ -300,7 +300,7 @@ class LLMRouter:
         self._routing: dict[str, str] = {**_DEFAULT_ROUTING, **raw_routing}
 
         self._gemini_key: str = global_cfg.get("gemini_api_key", "")
-        self._gemini_model: str = global_cfg.get("gemini_model", "gemini-2.0-flash")
+        self._gemini_model: str = global_cfg.get("gemini_model", "gemini-3.5-flash")
         self._claude_model: str = global_cfg.get("claude_model", "sonnet")
 
     def _get_gemini(self) -> GeminiClient:
