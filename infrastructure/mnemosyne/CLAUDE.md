@@ -1,10 +1,12 @@
 # Mnemosyne
 
 **Claude's role in this directory: Project Manager for the Mnemosyne knowledge pipeline.**
-The deliverable is a fully operational capture-to-retrieval pipeline: Telegram ingestion →
-n8n classification → git wiki storage → Hermes retrieval. The Hermes wiki skills that read
-and write the wiki are complete — what remains is the n8n pipeline and Telegram bot wiring.
-For the wiki skills themselves, see `apps/hermes/CLAUDE.md`.
+The capture path runs today via two routes: Claude Code direct (`/mneme`, `/mneme-ask`)
+and an interim n8n cron pipeline (Telegram → n8n → inbox-receiver → `claude -p` sweep →
+wiki). The Hermes-routed target path (Phase 2T) is queued at the 2026-06-01 Decide gate.
+Hermes wiki skills are complete; what remains is the target-path migration, Telegram
+retrieval, and the remaining scheduled reports. For the wiki skills themselves, see
+`apps/hermes/CLAUDE.md`.
 
 Read `infrastructure/mnemosyne/ToDo.md` for the current task backlog. Do not build pipeline
 components not in the backlog without checking first.
@@ -18,10 +20,11 @@ Mnemosyne is not a standalone host. It is a pipeline layer across shared infrast
 | Component | Host | Status |
 |-----------|------|--------|
 | Wiki repo (git) | Cloned on Hermes LXC (10.0.50.17) | Operational |
-| Hermes wiki skills | `apps/hermes/lib/skills/wiki/` | Complete — Phase 2 done |
-| n8n ingestion pipelines | n8n LXC (10.0.50.13) | Planned |
-| Telegram ingestion bot | External | Planned |
-| Scheduled reports | n8n LXC | Planned |
+| Hermes wiki skills | `apps/hermes/lib/skills/wiki.py` | Complete — Phase 2 done |
+| n8n ingestion pipelines | n8n LXC (10.0.50.13) | Operational (interim path); Phase 2T pending |
+| Telegram ingestion bot | n8n Telegram Trigger | Operational |
+| Scheduled reports | cron / n8n | Daily Digest live; Phase 4.2–4.5 planned |
+| Maintenance scripts | `infrastructure/mnemosyne/scripts/maintenance/` | 12 standalone scripts built; wiring into Lint pending |
 
 The wiki is a flat-file Markdown repo (`~/mneme/wiki/`), governed by `SCHEMA.md`. Obsidian
 is the UI layer. Hermes reads and writes via git. There is no Postgres schema, no pgvector
@@ -30,8 +33,13 @@ dependency, and no MinIO dependency in the current design.
 ## Definition of Done
 
 - Telegram bot wired to n8n ingestion workflow (capture → classify → file to wiki → commit)
+  — **Done in shape, different in flow.** Workflow is now: capture → inbox → commit →
+  classify & create stub → enrich stubs. Functionally satisfies the criterion.
 - n8n pipelines operational: `/mneme` capture, `/mneme-ask` retrieval, scheduled Daily Digest
+  — **Operational via `claude -p` workaround.** All three are functioning today; the
+  workaround will be replaced as Phase 2T and the Daily Digest LLM swap land.
 - Hermes retrieval confirmed end-to-end: Telegram query → wiki read → response
+  — **Still pending.** Phase 3 work; buildable now that Hermes is off hold.
 
 ## Role in Stack
 
@@ -64,5 +72,13 @@ Mnemosyne IaC, when written, will consist of Ansible tasks for n8n pipeline depl
 
 - The old pgvector/Postgres design is retired — do not reference or build against it
 - `lib/skills/mneme.py` (the old Postgres skill) is archived to `apps/hermes/lib/skills/_archive/`
+- **Read-direct, Write-through-Hermes pattern.** Not all wiki interactions need to route
+  through Hermes. Read operations may go direct to Gemini (e.g., the planned n8n Chat
+  Trigger interface, ToDo 3.5); Create/Update operations route through Hermes for schema
+  + index + log + git governance. See `THOUGHTS.md` "The Read Path: Direct LLM vs.
+  Hermes-Routed".
+- **Maintenance scripts** at `scripts/maintenance/` already implement most Phase 7.1
+  checks (ghost links, orphan files, stub pages, overdue tasks, stale projects, etc.).
+  See `ToDo.md` Phase 7 for the inventory and remaining wiring work.
 - Design doc: `docs/mnemosyne-design-doc-v1.1.md`
 - IaC conventions: see root `CLAUDE.md`

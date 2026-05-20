@@ -8,6 +8,14 @@ is a living document, not a spec.
 
 ## Telegram Is Both the User Interface and the Ingestion Channel
 
+**Note (2026-05-20):** This section was written when Hermes was planned to own the
+Telegram bot. n8n now owns the bot frontend (Telegram Trigger node) and HTTP-POSTs into
+Hermes for Create/Update operations — see `[[Project - Hermes]]` for the supersession.
+The design thinking below (multi-turn session state, clarification timeouts, MarkdownV2
+escaping, report-length handling) is all still valid; the *actor* executing the routing
+is n8n, not Hermes. Redis session state is still the right approach — keys are now
+read/written by n8n.
+
 Telegram serves two distinct roles for Mnemosyne, and the bot interface must handle both:
 
 1. **Ingestion endpoint** — the user sends notes, voice memos, and files; the system
@@ -60,6 +68,34 @@ via Telegram as formatted messages. A few constraints to design around:
 - **Delivery timing:** Reports are n8n cron triggers → Hermes generates → n8n sends.
   If report generation takes >30 seconds (large wiki, complex synthesis), consider async:
   n8n triggers, Hermes generates in background, notifies when complete.
+
+---
+
+## The Read Path: Direct LLM vs. Hermes-Routed
+
+*Surfaced 2026-05-20 during Mnemosyne Orient (O2).*
+
+Not all wiki interactions need to route through Hermes. Hermes is the autonomous-execution
+subsystem (Layers 1–4 of `[[Five-Layer AI Stack]]`); it earns its complexity by
+orchestrating multi-step or stateful work — classification + write + commit + push,
+retrieval that needs governance, multi-source synthesis. Read operations against a
+well-structured wiki can be simpler than that.
+
+The n8n Chat Trigger interface (ToDo 3.5) takes the simpler path: n8n connects directly
+to `gemini-3.5-flash` with the wiki repo accessible as context. No Hermes hop. This is
+appropriate when:
+
+- The interaction is Read-only (questions, lookups, summaries)
+- No wiki state changes — no new pages, no frontmatter updates, no git commits
+- The user is in a session and wants low latency
+
+Create and Update operations route through Hermes because they need governance — schema
+compliance, `index.md` / `log.md` updates, git commit + push, `[[wikilink]]` discipline.
+**Read-direct, Write-through-Hermes** is the pattern.
+
+A future embedded Android app could front the same n8n Chat workflow, giving the user a
+Read-direct surface on the phone without going through Telegram. Capture would still use
+the Telegram / Hermes path.
 
 ---
 
