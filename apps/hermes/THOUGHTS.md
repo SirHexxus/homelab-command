@@ -25,6 +25,40 @@ a capable, trustworthy local AI agent. The workflows are tenants.
 
 ---
 
+## Hermes as Autonomous-Execution Subsystem (Layers 1–4)
+
+*Added 2026-05-20 — clarification of Hermes's scope within the Five-Layer AI Stack.*
+
+Complementary framing to "Hermes Is a Platform, Not a Feature": Hermes is the homelab's
+**autonomous-execution subsystem** — the container for all automation functions that
+should run without human (Layer 5) initiation. It encapsulates Layers 1–4 of the
+Five-Layer AI Stack for any task given over to autonomous execution:
+
+- **Layer 4** — Gemini for reasoning and synthesis; n8n for orchestration and workflow routing
+- **Layer 3** — Whisper, nomic-embed-text, and other specialized models when invoked from autonomous flows
+- **Layer 2** — scripts and workflow steps that execute as part of autonomous runs (deterministic logic, API calls, file operations)
+- **Layer 1** — configuration, prompts, and documentation used exclusively by autonomous flows
+
+Hermes does not own every component in the stack. Mnemosyne requests report generation
+from Hermes; specialized models may be invoked from other paths too (e.g., a CLI tool that
+calls Whisper directly). But Hermes is the subsystem that owns most of the autonomous-
+execution surface, and design decisions about Hermes should privilege that role.
+
+**Design target:** OpenClaw-style autonomy. Given a task, Hermes executes mostly
+independently. The human's role is goal-setting and audit, not step-by-step direction.
+See `[[AI Agents Are the Wrong Abstraction Layer]]` ("The OpenClaw Option" section) for
+the architectural framing.
+
+**Why this framing matters for design decisions:**
+- Tools that exist *only* for autonomous use (e.g., scheduled prompt templates, n8n cron
+  triggers, audit-log queryers) belong inside Hermes's scope.
+- Tools used by both human and autonomous paths (e.g., the wiki itself, Whisper LXC, MinIO)
+  live outside Hermes; Hermes invokes them but does not own them.
+- When in doubt about whether something belongs in Hermes: ask "is this initiated without
+  a human?" If yes, it's in scope. If a human pulls the trigger, it's likely outside.
+
+---
+
 ## The Skill System Is Right — Keep It
 
 The `@register_skill()` decorator pattern in `skill_registry.py` is a clean extensibility
@@ -89,6 +123,41 @@ types if needed.
 
 ---
 
+## LLM Defaults After Hold Lift (2026-05-20)
+
+The hold lift on 2026-05-20 (see `[[2026-05-20 — Hermes Off Hold and Orient Inventory]]`)
+established concrete LLM defaults that the abstract tier mapping above must be reconciled
+against. The tier names stay; the model pins are new.
+
+**Primary default:** `gemini-3.5-flash` (pinned, not `-latest`). Quality-validated against
+the real Mnemosyne Daily Digest prompt — caught more calendar overlaps than Sonnet, made a
+synthesis connection neither Sonnet nor 2.5 Pro produced, held the secretary voice the
+prompt asks for. Cost ~$0.0072/run; ~$0.22/month at 30 daily runs.
+
+**Selective escalation candidate (deferred):** `gemini-3.1-pro-preview` for Idea Synthesis
+only. ~5× the cost per run due to mandatory thinking budget, and preview status makes it
+unsafe for production cron jobs without a deprecation watch. Wait until Idea Synthesis is
+actually built and producing real reports before committing.
+
+**Re-evaluation point:** Gemini 3.5 Pro GA (~June 2026). If quality is competitive and
+pricing reasonable, may become the default and retire the Flash/Pro split entirely.
+
+**Safety rail:** $5/month hard cap on the Gemini API on James's personal billing account.
+DigitalOcean droplet was shut down concurrently to free ~$12/month.
+
+**Credentials pattern:** `gemini-creds.json` (0600, JSON pointer file). Siblings:
+`weather-creds.json`, `telegram-creds.json`. Replaces the env-var-only pattern from the
+original Phase 2 GeminiClient. The `model` field supports a single default today;
+per-report routing will need a `model_overrides` map in the same file when escalation
+to Pro for Idea Synthesis becomes real.
+
+**Token-overhead finding (worth remembering):** The current `claude -p` path for Daily
+Digest costs ~31,000 input tokens per run because Claude Code wraps the 2k digest prompt
+in ~29k of framework overhead. That overhead vanishes entirely on a direct API call. Any
+report-style use case currently routed through `claude -p` is paying this overhead tax.
+
+---
+
 ## Local Model Fleet Strategy
 
 Hermes operates a fleet of local models, not a single "local tier." Each model has a
@@ -149,6 +218,9 @@ tune local upward as hardware arrives.
 ---
 
 ## The `mneme.py` Skill Is Dead Weight
+
+**RESOLVED 2026-04-10** — archived to `lib/skills/_archive/mneme_postgres.py`;
+deregistered. Body preserved as historical record of the pivot.
 
 `lib/skills/mneme.py` was written for a Postgres/pgvector architecture that Mnemosyne has
 pivoted away from. It:
@@ -260,6 +332,11 @@ integration from processing timing.
 
 ## Terraform Provider Version Conflict
 
+**RESOLVED 2026-04-10** — pinned to `0.96.0`, `terraform init` re-run, lock file
+regenerated, LXC deployed. The repo-wide convention has since shifted: root `CLAUDE.md`
+now describes an ongoing migration from `0.96.0` to `0.98.1`, and Hermes is already on
+the new version. Body preserved as historical record.
+
 The `.terraform/` directory in `infrastructure/hermes/terraform/` contains provider
 `bpg/proxmox 0.98.1`. The repo-wide convention (root `CLAUDE.md`) requires `0.96.0`.
 
@@ -308,6 +385,12 @@ This aligns with the file-tree agent architecture principle: the agent's job is 
 **Practical implication for the routing table:**
 
 The `classify` task type (already in the routing config as `local`) becomes a single-shot call returning structured JSON. The `wiki_write` task type may not need a full agent loop — n8n can handle the write once classification output is returned.
+
+**Update 2026-05-20:** Single-shot dispatch is now an active candidate for the
+`[[Decide First Mnemosyne and Hermes Build Sprint]]` gate (2026-06-01) — listed in
+`ToDo.md` under "ReAct-loop scope reduction" in the Post-Hold-Lift Candidates section. The
+direction is no longer indefinite future architecture; it is one of three to four
+candidates competing for the first post-hold-lift build sprint.
 
 ---
 

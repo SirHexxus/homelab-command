@@ -72,5 +72,5 @@ credentials, Postgres connection string for Mnemosyne, API keys (Gemini, Claude)
 ## Notes
 
 - `scripts/` and `test-results/` are untracked — review before committing or gitignoring
-- Design doc: `docs/hermes-design-doc-v1.0.md`
+- Design doc: `docs/hermes-design-doc-v1.1.md`
 - IaC conventions: see root `CLAUDE.md`

@@ -3,7 +3,17 @@
 **From:** Mnemosyne Project  
 **To:** Hermes Project  
 **Date:** 2026-04-10  
-**Status:** Awaiting Hermes delivery before Mnemosyne implementation can proceed
+**Status:** Historical record — original requirements spec preserved as-written
+
+> **Status update (2026-05-20):** Phase 1 deliverables 1, 2, 3, 4, 5, and 7 are complete
+> (see `ToDo.md` Phase 2 Completion table). Deliverable 6 (Telegram bot) is **superseded**
+> by the n8n-as-bot-frontend architecture — n8n owns the Telegram surface and HTTP-POSTs
+> into Hermes at `10.0.50.17:8765/task` (workflow at
+> `infrastructure/mnemosyne/n8n/mnemosyne-ingest-v1.json`).
+>
+> Per-deliverable "Current state:" paragraphs below describe pre-Phase-2 state and are
+> stale. They are preserved as historical record of what the spec was answering. Active
+> forward asks live in `apps/hermes/ToDo.md` and the wiki page `[[Project - Hermes]]`.
 
 ---
 
@@ -169,7 +179,11 @@ storage paradigm. Write `wiki.py` clean.
 
 ---
 
-### 6. Telegram Bot Interface (Personal Context)
+### 6. Telegram Bot Interface (Personal Context) — SUPERSEDED 2026-05-20
+
+**Status:** Superseded by n8n-as-bot-frontend architecture. n8n's Telegram Trigger node
+owns the bot surface; n8n HTTP-POSTs ingest items into Hermes. No
+`lib/interfaces/telegram_bot.py` will be built. Original spec preserved below.
 
 **Priority:** MEDIUM — blocks user-facing ingest and retrieval  
 **Current state:** Phase 3 in the Hermes plan. `lib/interfaces/telegram_bot.py` not
