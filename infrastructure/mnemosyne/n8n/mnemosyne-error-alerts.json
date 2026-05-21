@@ -1,0 +1,67 @@
+{
+  "name": "Mnemosyne Error Alerts",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "f8e91572-e8a1-4964-8bd0-3b808517f16d",
+      "name": "Error Trigger"
+    },
+    {
+      "parameters": {
+        "chatId": "1135813646",
+        "text": "=🛑 Workflow Failed\n\nWorkflow: {{ $json.workflow.name }}\nNode: {{ $json.execution.lastNodeExecuted }}\nError: {{ $json.execution.error?.message ?? 'unknown' }}\nMode: {{ $json.execution.mode }}\nExec: https://automation.hexxusweb.com/workflow/{{ $json.workflow.id }}/executions/{{ $json.execution.id }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "f6a48b9c-5e19-4088-85e4-d6a4bce765ee",
+      "name": "Send a text message",
+      "webhookId": "fa6a28cd-a28d-4c07-8e7e-b71b9de52bf2",
+      "credentials": {
+        "telegramApi": {
+          "id": "jfhTkDLLipHkDAGz",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "161d891a-ce89-49da-b789-c9119b5550c5",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c9e69cd1bf2e801166c2a3da21d08c97e1b62941466cb59e2b9d5f95dbc43244"
+  },
+  "id": "vXSYJNLnQlyeQ79i",
+  "tags": []
+}
