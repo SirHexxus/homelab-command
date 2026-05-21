@@ -12,7 +12,7 @@
       "typeVersion": 1.2,
       "position": [
         0,
-        880
+        1080
       ],
       "id": "11eb8a29-7a55-4f5d-97f6-30597d846482",
       "name": "Telegram Trigger",
@@ -36,7 +36,7 @@
       "typeVersion": 1.2,
       "position": [
         2016,
-        528
+        624
       ],
       "id": "019321b0-e18f-44e6-9c1c-53ffc18ef211",
       "name": "Already Saved",
@@ -186,7 +186,7 @@
       "typeVersion": 3.4,
       "position": [
         224,
-        816
+        1016
       ],
       "id": "e1606f04-3d2d-4a8d-93a3-f83c8169773b",
       "name": "Route by Message Type"
@@ -203,7 +203,7 @@
       "typeVersion": 1.2,
       "position": [
         448,
-        808
+        1152
       ],
       "id": "8cb40311-0e44-4acc-9102-f43488c5aac5",
       "name": "command stub",
@@ -217,13 +217,13 @@
     },
     {
       "parameters": {
-        "jsCode": "const msg = $('Telegram Trigger').item.json;\nconst chatId = String(msg.message.chat.id);\nconst isVoice = !!msg.message.voice;\nconst isVideo = !!msg.message.video;\nconst isFile = !!(msg.message.document || msg.message.photo);\nconst caption = msg.message.caption ?? null;\nconst inputJson = $input.item.json;\n\nlet text = null;\nlet fileRef = null;\nlet rawContentType;\nlet dedupKey;\n\nif (isVoice) {\n  text = inputJson.text;\n  rawContentType = 'voice';\n} else if (isVideo) {\n  const transcript = inputJson.text ?? null;\n  text = [caption, transcript].filter(Boolean).join('\\n\\n---\\nTranscript:\\n');\n  rawContentType = 'video';\n} else if (isFile) {\n  if (inputJson.text || inputJson.data) {\n    text = inputJson.text ?? inputJson.data;\n    rawContentType = 'file_text';\n  } else {\n    try { fileRef = $('Build File Key').item.json._file_key; } catch(e) { fileRef = null; }\n    rawContentType = 'file_ref';\n  }\n  if (caption) text = caption + (text ? '\\n\\n---\\n' + text : '');\n} else {\n  text = msg.message.text;\n  rawContentType = 'text';\n}\n\nif (text) {\n  let h = 5381;\n  for (let i = 0; i < text.length; i++) h = (((h << 5) + h) + text.charCodeAt(i)) >>> 0;\n  dedupKey = `dedup:${h.toString(16).padStart(8, '0')}`;\n} else {\n  const fileId = msg.message.video?.file_id\n    ?? msg.message.document?.file_id\n    ?? msg.message.photo?.[msg.message.photo.length - 1]?.file_id\n    ?? $execution.id;\n  dedupKey = `dedup:${fileId}`;\n}\n\nreturn [{ json: { ...msg, _text: text, _file_ref: fileRef, _chat_id: chatId, _dedup_key: dedupKey, _raw_content_type: rawContentType } }];"
+        "jsCode": "const msg = $('Telegram Trigger').item.json;\nconst chatId = String(msg.message.chat.id);\nconst isVoice = !!msg.message.voice;\nconst isVideo = !!msg.message.video;\nconst isFile = !!(msg.message.document || msg.message.photo);\nconst caption = msg.message.caption ?? null;\nconst inputJson = $input.item.json;\n\nlet text = null;\nlet fileRef = null;\nlet rawContentType;\nlet dedupKey;\n\nif (isVoice) {\n  text = inputJson.text;\n  rawContentType = 'voice';\n} else if (isVideo) {\n  const transcript = inputJson.text ?? null;\n  text = [caption, transcript].filter(Boolean).join('\\n\\n## Transcript\\n\\n');\n  try { fileRef = $('Build Video Key').item.json._file_key; } catch(e) { fileRef = null; }\n  rawContentType = 'video';\n} else if (isFile) {\n  if (inputJson.text || inputJson.data) {\n    text = inputJson.text ?? inputJson.data;\n    rawContentType = 'file_text';\n  } else {\n    try { fileRef = $('Build File Key').item.json._file_key; } catch(e) { fileRef = null; }\n    rawContentType = 'file_ref';\n  }\n  if (caption) text = caption + (text ? '\\n\\n---\\n' + text : '');\n} else {\n  text = msg.message.text;\n  rawContentType = 'text';\n}\n\nif (text) {\n  let h = 5381;\n  for (let i = 0; i < text.length; i++) h = (((h << 5) + h) + text.charCodeAt(i)) >>> 0;\n  dedupKey = `dedup:${h.toString(16).padStart(8, '0')}`;\n} else {\n  const fileId = msg.message.video?.file_id\n    ?? msg.message.document?.file_id\n    ?? msg.message.photo?.[msg.message.photo.length - 1]?.file_id\n    ?? $execution.id;\n  dedupKey = `dedup:${fileId}`;\n}\n\nreturn [{ json: { ...msg, _text: text, _file_ref: fileRef, _chat_id: chatId, _dedup_key: dedupKey, _raw_content_type: rawContentType } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         1344,
-        616
+        720
       ],
       "id": "6f3f0f6b-b421-4554-885d-3aa650d5ff8b",
       "name": "Build Dedup Hash"
@@ -239,7 +239,7 @@
       "typeVersion": 1,
       "position": [
         1568,
-        616
+        720
       ],
       "id": "ba316517-bc7f-4cbf-960d-456d503cb1d4",
       "name": "Check Dedup",
@@ -279,7 +279,7 @@
       "typeVersion": 2.3,
       "position": [
         1792,
-        616
+        720
       ],
       "id": "8df70cda-199e-4e7f-bdd8-472ab18c348c",
       "name": "Is Duplicate?"
@@ -292,7 +292,7 @@
       "typeVersion": 2,
       "position": [
         2016,
-        720
+        816
       ],
       "id": "b2fbb17e-7555-4314-b7b8-43279532d7e1",
       "name": "Build IngestItem"
@@ -309,7 +309,7 @@
       "typeVersion": 1,
       "position": [
         2464,
-        720
+        816
       ],
       "id": "8b19d8e9-f832-42d6-865d-bba028010ebb",
       "name": "Mark Seen",
@@ -332,7 +332,7 @@
       "typeVersion": 1.2,
       "position": [
         2688,
-        720
+        816
       ],
       "id": "5ae863a6-9c08-4fba-80e1-b1a4f898929c",
       "name": "Confirm to User",
@@ -392,7 +392,7 @@
       "typeVersion": 4.4,
       "position": [
         2240,
-        720
+        816
       ],
       "id": "44cc371b-e3df-4d76-b2a2-dfe045221ddf",
       "name": "POST to inbox-receiver",
@@ -414,7 +414,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        672,
+        896,
         192
       ],
       "id": "35208b90-3d38-4cc6-9ecb-dccfed9d03cb",
@@ -456,8 +456,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        896,
-        240
+        1120,
+        272
       ],
       "id": "cec67e4b-1c1e-49b9-a77b-46ddf7ed82d0",
       "name": "Transcribe",
@@ -473,7 +473,7 @@
       "typeVersion": 1.2,
       "position": [
         448,
-        520
+        576
       ],
       "id": "f4cf18c4-68c2-40a6-bb5f-4dc9b2a100ce",
       "name": "Get File Node",
@@ -573,7 +573,7 @@
       "typeVersion": 3.4,
       "position": [
         672,
-        488
+        544
       ],
       "id": "872ac3b7-d3a1-4e40-bd35-b4b610493122",
       "name": "Switch on MIME Type"
@@ -589,7 +589,7 @@
       "typeVersion": 1,
       "position": [
         1120,
-        808
+        864
       ],
       "id": "dfc5dbb9-c21e-4ded-9d29-39aeaf128929",
       "name": "MinIO Upload Node",
@@ -609,7 +609,7 @@
       "typeVersion": 1.1,
       "position": [
         1120,
-        424
+        480
       ],
       "id": "f79f2fa8-5d64-45c8-bd59-62b7f50e3ba4",
       "name": "Extract from PDF"
@@ -638,7 +638,7 @@
       "typeVersion": 1.1,
       "position": [
         1120,
-        616
+        672
       ],
       "id": "87e395bc-0683-439c-bc8e-e1ebb9264761",
       "name": "Extract from Text"
@@ -662,7 +662,7 @@
       "typeVersion": 3.4,
       "position": [
         896,
-        808
+        864
       ],
       "id": "5c06fea7-c5d4-4fa1-a5f0-6407d083b5d1",
       "name": "Build File Key"
@@ -676,8 +676,8 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        672,
-        952
+        448,
+        1344
       ],
       "id": "bcd94680-4a9f-4ca9-b52a-49630378b3f6",
       "name": "Get Video File",
@@ -697,7 +697,7 @@
             {
               "id": "a2d3f118-ed31-4327-879c-64556dcb7471",
               "name": "_file_key",
-              "value": "=files/{{ new Date().getFullYear() }}/{{ String(new Date().getMonth() + 1).padStart(2, '0') }}/{{ $execution.id }}-{{ $('Telegram Trigger').item.json.message.document?.file_name ??   'video' }}",
+              "value": "=files/{{ new Date().getFullYear() }}/{{ String(new Date().getMonth() + 1).padStart(2, '0') }}/{{ $execution.id }}-{{ $('Telegram Trigger').item.json.message.video?.file_unique_id ?? 'unknown-video' }}.mp4",
               "type": "string"
             }
           ]
@@ -708,8 +708,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        896,
-        1024
+        672,
+        1344
       ],
       "id": "ec3da389-e3df-4123-8b67-c88c62dba420",
       "name": "Build Video Key"
@@ -724,8 +724,8 @@
       "type": "n8n-nodes-base.s3",
       "typeVersion": 1,
       "position": [
-        1120,
-        1024
+        896,
+        1440
       ],
       "id": "4db650cd-d506-4998-b8e7-32ef14187b03",
       "name": "MinIO Video Upload Node",
@@ -748,7 +748,7 @@
       "typeVersion": 1.2,
       "position": [
         448,
-        1096
+        1536
       ],
       "id": "dde8c951-7ae6-4fa7-baae-080b0a5a3ce3",
       "name": "Send Failure to User",
@@ -759,15 +759,51 @@
           "name": "Telegram account"
         }
       }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "937cd1ef-9b77-4f30-8c30-3b50d29b040a",
+              "name": "update_id",
+              "value": "={{ $('Route by Message Type').item.json.update_id }}",
+              "type": "number"
+            },
+            {
+              "id": "bf983390-1772-45b2-89d6-6504f10e34d5",
+              "name": "message",
+              "value": "={{ $('Route by Message Type').item.json.message }}",
+              "type": "object"
+            },
+            {
+              "id": "e63975e8-d9da-4cb7-b83b-61eb94c69dcd",
+              "name": "_file_key",
+              "value": "={{ $json._file_key }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        896,
+        1248
+      ],
+      "id": "e613c419-153d-4eef-9f1f-478b23b71b03",
+      "name": "Set-up for Transcription"
     }
   ],
   "pinData": {
     "Telegram Trigger": [
       {
         "json": {
-          "update_id": 264203169,
+          "update_id": 264203173,
           "message": {
-            "message_id": 345,
+            "message_id": 354,
             "from": {
               "id": 1135813646,
               "is_bot": false,
@@ -781,11 +817,31 @@
               "username": "SirHexxus",
               "type": "private"
             },
-            "date": 1779392735,
-            "location": {
-              "latitude": 38.272112,
-              "longitude": -95.980005
-            }
+            "date": 1779397675,
+            "video": {
+              "duration": 86,
+              "width": 576,
+              "height": 1024,
+              "mime_type": "video/mp4",
+              "thumbnail": {
+                "file_id": "AAMCAQADGQEAAgFgag9zVez8QhuQk6egvDlmv1zQ93wAAmgIAAIH13hEx6i4yWHX28QBAAdtAAM7BA",
+                "file_unique_id": "AQADaAgAAgfXeERy",
+                "file_size": 17246,
+                "width": 180,
+                "height": 320
+              },
+              "thumb": {
+                "file_id": "AAMCAQADGQEAAgFgag9zVez8QhuQk6egvDlmv1zQ93wAAmgIAAIH13hEx6i4yWHX28QBAAdtAAM7BA",
+                "file_unique_id": "AQADaAgAAgfXeERy",
+                "file_size": 17246,
+                "width": 180,
+                "height": 320
+              },
+              "file_id": "BAACAgEAAxkBAAIBYGoPc1Xs_EIbkJOnoLw5Zr9c0Pd8AAJoCAACB9d4RMeouMlh19vEOwQ",
+              "file_unique_id": "AgADaAgAAgfXeEQ",
+              "file_size": 18268526
+            },
+            "caption": "This is a test to see if we save both the caption AND the transcript (best case scenario) this time. \nFeel free to discard this note when enriching, but not when converting to a stub, though it IS worth noting that Depersonalization/Derealization/Dissociation is something I frequently suffer from, and so this video is DEEPLY disturbing to me. \n...But I like scary stuff, so I saved the video."
           }
         }
       }
@@ -1040,11 +1096,6 @@
       "main": [
         [
           {
-            "node": "Transcribe",
-            "type": "main",
-            "index": 0
-          },
-          {
             "node": "Build Video Key",
             "type": "main",
             "index": 0
@@ -1057,6 +1108,27 @@
         [
           {
             "node": "MinIO Video Upload Node",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Set-up for Transcription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MinIO Video Upload Node": {
+      "main": [
+        []
+      ]
+    },
+    "Set-up for Transcription": {
+      "main": [
+        [
+          {
+            "node": "Transcribe",
             "type": "main",
             "index": 0
           }
@@ -1072,10 +1144,9 @@
     "timeSavedMode": "fixed",
     "errorWorkflow": "vXSYJNLnQlyeQ79i",
     "timezone": "America/Los_Angeles",
-    "callerPolicy": "workflowsFromSameOwner",
-    "executionTimeout": -1
+    "callerPolicy": "workflowsFromSameOwner"
   },
-  "versionId": "e929e617-98fa-4394-bcae-d0dd434b2b13",
+  "versionId": "28ebe39a-5a9d-4511-b26c-7328247e778d",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "c9e69cd1bf2e801166c2a3da21d08c97e1b62941466cb59e2b9d5f95dbc43244"
