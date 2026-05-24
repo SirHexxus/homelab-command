@@ -12,7 +12,7 @@ See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all h
 | Document | Version | Purpose |
 |----------|---------|---------|
 | [Homelab Philosophy](homelab-philosophy-v1.0.md) | v1.0 | Goals, principles, and the values behind every homelab decision |
-| [Project Roadmap](project-roadmap-v2.1.md) | v2.1 | Phased delivery plan, current pursuits, and project structure |
+| [Project Roadmap](project-roadmap-v2.2.md) | v2.2 | Phased delivery plan, current pursuits, and project structure |
 | [IaC Runbook](iac-runbook-v1.2.md) | v1.3 | Terraform + Ansible conventions, workflow, secrets, and recovery procedures |
 | [Hardware Catalog](hardware-catalog-v1.2.md) | v1.2 | Physical inventory - compute, storage, and networking equipment |
 | [Network & Services Architecture](network-services-architecture-v1.6.md) | v1.6 | VLAN topology, IP schema, firewall architecture, and services inventory |

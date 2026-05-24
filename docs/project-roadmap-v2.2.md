@@ -1,6 +1,6 @@
 # Homelab Command Project — Project Roadmap
-**Version:** 2.1
-**Last Updated:** 2026-05-20
+**Version:** 2.2
+**Last Updated:** 2026-05-24
 **Philosophy:** See `docs/homelab-philosophy-v1.0.md` for the values and goals behind this homelab.
 
 ---
@@ -39,7 +39,7 @@ They have been removed from this roadmap to keep scope clean.
 | Hardware Catalog | v1.2 | ✅ Complete |
 | Network & Services Architecture | v1.6 | ✅ Complete |
 | Homelab Philosophy | v1.0 | ✅ Complete |
-| Project Roadmap | v2.1 | ✅ This document |
+| Project Roadmap | v2.2 | ✅ This document |
 | Mnemosyne Design Doc | v1.2 | ✅ Complete |
 | IaC Runbook | v1.2 | ✅ Complete |
 | Argus Design Doc | v1.2 | ✅ Complete |
@@ -169,12 +169,14 @@ reflect revised estimates as of 2026-04-16.
 - [x] Foundation: Configure Obsidian vault + git plugin
 - [x] Foundation: Install and configure Dataview plugin
 **Current path (transition toward Hermes-routed target — operational via `claude -p` workaround):**
-- [ ] n8n: modify Telegram webhook to write raw note to `wiki/inbox/` (text path; no LLM at ingest)
-- [ ] Laptop: `inotifywait` daemon on `~/mneme/wiki/inbox/` — triggers `claude -p` on new files
-- [ ] Laptop: hourly cron `claude -p` inbox sweep; silent if empty, ntfy notification if processed
-  - Sleep window: 01:00–07:00; `!!` prefix in message bypasses sleep window
-- [ ] Laptop: scheduled cron `claude -p` for Daily Digest and Weekly Summary reports
-- [ ] Scripts documented and maintained in `infrastructure/mnemosyne/` in homelab-command repo
+- [x] n8n: Telegram webhook writes raw note to `wiki/inbox/` (text path; no LLM at ingest)
+- [x] Laptop: `inotifywait` daemon on `~/mneme/wiki/inbox/` — `mnemosyne-watch-inbox.service` (systemd) triggers `claude -p` on new files
+- [x] Laptop: hourly cron `claude -p` inbox sweep (`triage-inbox`); silent if empty, ntfy notification if processed
+- [x] Laptop: scheduled cron `claude -p` for Daily Digest (`daily-digest`, 07:00 daily)
+- [x] Scripts maintained in `infrastructure/mnemosyne/scripts/` (triage-inbox, daily-digest, watch-inbox, enrich-stubs, render-digest-voice, maintenance suite, prompts, lib)
+- [ ] Sleep window 01:00–07:00 + `!!` prefix bypass — not yet implemented in `triage-inbox`/`watch-inbox`
+- [ ] Weekly Summary report — no `weekly-summary` script yet (Sunday maintenance crons exist but are checks, not a narrative summary)
+- [ ] Scripts README — `infrastructure/mnemosyne/scripts/README.md` exists; verify up to date
 
 **Target path (Hermes-routed — Phase 2T, queued for 2026-06-01 Decide gate):**
 - [ ] Foundation: Grant Hermes LXC deploy key write access to wiki repo
@@ -342,6 +344,7 @@ Career Advancement pursuit in Mnemosyne.
 
 ## Version History
 
+- v2.2 (2026-05-24): Phase 2 Mnemosyne current-path audit — checked off n8n→inbox ingest, inotifywait systemd watcher, hourly `triage-inbox` cron, `daily-digest` cron, and `infrastructure/mnemosyne/scripts/` maintenance; remaining items narrowed to sleep window + `!!` bypass, Weekly Summary script, README verification
 - v2.1 (2026-05-20): Hermes off hold via direct Gemini API billing ($5/mo cap, `gemini-3.5-flash` pinned); Phase 2 Hermes section rewritten — Telegram bot superseded by n8n, blockers removed, post-hold-lift candidates queued for 2026-06-01 Decide gate; Phase 2 Mnemosyne section relabeled (Interim→Current path, Full→Target path / Phase 2T); Hermes Design Doc bumped to v1.1; file renamed v1.8→v2.1
 - v2.0 (2026-04-27): Hermes replanning complete — hold triggers documented, replanning item checked off; Mnemosyne Phase 2 restructured into interim cron path (active) vs full pipeline (deferred); Phase 5 CRDC submission window adjusted to mid-August for family trip July 25–Aug 12
 - v1.9 (2026-04-16): Full audit + re-sync — check off all completed work (Hermes LXC live,
