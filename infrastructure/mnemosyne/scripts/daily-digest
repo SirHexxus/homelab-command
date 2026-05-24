@@ -324,6 +324,10 @@ def collect_unfinished_thoughts(wiki_root: Path, today: date) -> list[dict[str, 
         if not fm:
             continue
 
+        # Skip tombstones: pages already merged elsewhere are not unfinished.
+        if "merged" in fm.get("tags", "").lower():
+            continue
+
         reasons: list[str] = []
 
         if fm.get("status", "").lower() == "draft":
