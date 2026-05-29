@@ -1,0 +1,63 @@
+# roles/hermes_agent/tasks/profile.yml
+#
+# Provision each Hermes-Agent profile (persona). Profiles isolate SOUL.md
+# (persona prompt), USER.md (user model), MEMORY.md (episodic notes), and
+# sessions. See [[Chiron Persona Design Principles]] for the three-layer
+# concerns model and why USER.md content stays nearly-identical across
+# personas while SOUL.md diverges.
+
+- name: Create Hermes-Agent profiles
+  ansible.builtin.shell: |
+    set -o pipefail
+    source {{ hermes_agent_config_dir }}/env
+    export PATH="$HOME/.local/bin:$PATH"
+    {{ hermes_agent_cli_symlink }} profile create "{{ item.name }}" \
+      --description {{ item.description | quote }}
+  args:
+    executable: /bin/bash
+    creates: "{{ hermes_agent_data_dir }}/profiles/{{ item.name }}/SOUL.md"
+  loop: "{{ hermes_agent_profiles }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Template per-profile SOUL.md (persona system prompt)
+  ansible.builtin.template:
+    src: "{{ item.soul_template }}"
+    dest: "{{ hermes_agent_data_dir }}/profiles/{{ item.name }}/SOUL.md"
+    owner: root
+    group: root
+    mode: '0600'
+  loop: "{{ hermes_agent_profiles }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: restart hermes-agent
+
+- name: Template per-profile USER.md (user model — same person, persona-tuned emphasis)
+  ansible.builtin.template:
+    src: "{{ item.user_template }}"
+    dest: "{{ hermes_agent_data_dir }}/profiles/{{ item.name }}/USER.md"
+    owner: root
+    group: root
+    mode: '0600'
+  loop: "{{ hermes_agent_profiles }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: restart hermes-agent
+
+- name: Set sticky default profile
+  ansible.builtin.shell: |
+    set -o pipefail
+    source {{ hermes_agent_config_dir }}/env
+    export PATH="$HOME/.local/bin:$PATH"
+    current=$({{ hermes_agent_cli_symlink }} profile list 2>/dev/null | awk '/^[[:space:]]*◆/ {print $1}' | tr -d '◆')
+    if [[ "$current" != "{{ hermes_agent_active_profile }}" ]]; then
+      {{ hermes_agent_cli_symlink }} profile use "{{ hermes_agent_active_profile }}" >/dev/null
+      echo "switched"
+    else
+      echo "unchanged"
+    fi
+  args:
+    executable: /bin/bash
+  register: profile_switch
+  changed_when: "'switched' in profile_switch.stdout"
+  notify: restart hermes-agent

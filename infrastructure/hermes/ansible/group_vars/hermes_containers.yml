@@ -1,34 +1,37 @@
-# group_vars/hermes_containers.yml - Hermes Container Variables (non-secret)
+# group_vars/hermes_containers.yml — Hermes-Agent (Chiron) container variables
 #
-# These variables apply to all hosts in the hermes_containers group.
-# Secret values belong in vault.yml (Ansible Vault encrypted).
+# Non-secret. Per-deployment overrides on top of roles/hermes_agent/defaults/.
+# Secrets go in vault.yml (Ansible Vault encrypted).
 
-# Proxmox configuration (for IP freeze via pct set)
+# ── Proxmox (used by provision.yml pre_tasks for IP freeze) ────────────────
 proxmox_host:   10.0.10.2
 container_vmid: 110
 
-# Service port
-hermes_port: 8765
+# ── Hermes-Agent deployment ────────────────────────────────────────────────
+# Pinned to spike-validated commit (v2026.5.28-17). Bump after the next
+# upstream release that has been spike-re-validated against this stack.
+hermes_agent_version: "11d93096b"
 
-# Service user
-hermes_user:  hermes
-hermes_group: hermes
+# DM allowlist (Telegram user IDs). James (SirHexxus) only for now.
+hermes_agent_telegram_allowed_users: "1135813646"
 
-# Repository
-hermes_repo: "https://github.com/SirHexxus/homelab-command.git"
+# MCP servers to register. n8n-echo is the smoke-test endpoint validated in
+# the spike + Week 1; production MCP endpoints get added here as they come
+# online.
+hermes_agent_mcp_servers:
+  - name: n8n-echo
+    url:  "https://automation.hexxusweb.com/mcp/d0cda6d1-e177-4550-80d2-c34eb5fca616"
 
-# Installation paths
-hermes_install_dir: /opt/hermes
-hermes_app_dir:     /opt/hermes/apps/hermes
-hermes_venv_dir:    /opt/hermes/apps/hermes/.venv
-hermes_config_dir:  /opt/hermes/apps/hermes/config
-hermes_log_dir:     /opt/hermes/apps/hermes/logs
+# Persona profile list. Currently just Haley; Margot/Quinn/Reese added in
+# their respective build-sequence weeks (see migration sprint page).
+hermes_agent_profiles:
+  - name:        haley
+    description: >-
+      Senior personal assistant persona: coaching warmth + sardonic
+      accountability; designed against [[The Man I Want To Be]] and the
+      Hexxus Voice Identity Guide. Default for the @HaleyChironBot
+      Telegram surface.
+    soul_template: haley-SOUL.md.j2
+    user_template: haley-USER.md.j2
 
-# Resource settings
-max_open_files: 65535
-
-# Telegram bot tokens (sourced from vault)
-telegram_token_personal: "{{ vault_telegram_token_personal | default('') }}"
-
-# Phase 2: HTTP endpoint live — uvicorn serves lib.interfaces.api
-hermes_deploy_service: true
+hermes_agent_active_profile: haley

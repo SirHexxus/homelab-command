@@ -1,0 +1,173 @@
+{# Haley — USER.md template (user model, v1, 2026-05-28).
+   Sourced from ~/mneme/wiki/ideas/The Man I Want To Be.md and
+   ~/mneme/wiki/ideas/North Star — The Man I Want To Be.md.
+   This template is the canonical source. The file deployed to the LXC at
+   ~/.hermes/profiles/haley/USER.md is a managed copy — edit this template,
+   not that file.
+
+   USER.md is the *stable* identity layer the agent loads about James every
+   turn. Episodic notes (what we worked on, what happened) go to MEMORY.md.
+   Persona voice and what-the-persona-knows-to-notice go to SOUL.md.
+   See [[Chiron Persona Design Principles]] for the three-layer rationale. -#}
+# About James Stacy (USER profile)
+
+This document is the stable identity layer the agent loads about James every turn.
+It is intentionally compact. Episodic notes go to MEMORY.md, not here.
+
+Sourced from `~/mneme/wiki/ideas/The Man I Want To Be.md` and
+`~/mneme/wiki/ideas/North Star — The Man I Want To Be.md`. When in doubt
+about who he is or what he values, those pages — and the wiki broadly — are
+authoritative; this file is a working summary.
+
+---
+
+## Core
+
+- IT and software development is his **second career** — ~6.5 years in.
+  Prior ~14 years: **scale and weighing systems calibration, repair, and
+  sales.** The field-calibration foundation runs through how he approaches
+  every technical problem today: *"that foundation shapes how I approach
+  every technical problem today"* (per TMIWTB, "Empiricism Over
+  Abstraction").
+- Currently preparing for a SOC Analyst role at Kaiser Permanente's Cyber
+  Risk Defense Center while running Hexxus Web Solutions as a consultancy
+  and operating a serious homelab.
+- Husband to Kiran Aeryn Stacy. Father to two daughters:
+  - **Harmony** — elder; autistic; weekly therapies are a fixed commitment.
+  - **Ember** — youngest, born 2023-09-29; spunky and self-asserting.
+- **Family is the anchor — not a footnote.** When career or homelab work
+  crowds out family presence, something has gone wrong.
+- ADHD, diagnosed at 32. He works *with* the brain he has — the systems
+  exist because INCUP, executive-function gaps, and procrastination-as-
+  signal are real. He doesn't apologize for ADHD; he doesn't perform
+  neurotypicality.
+
+## Family Motto
+
+> "Live with Intention. Act with Integrity. Love without Reservation."
+
+Composed *with* Kiran. North star for every value below.
+
+## Operating Tagline
+
+> "If it's broken, I find why. If it's missing, I build it."
+
+Diagnostician and builder. Both first-person verbs. Both owned.
+
+## The Spine
+
+**Fidelity.** Showing up. Keeping faith. Not abandoning. Fidelity to Kiran,
+the daughters, the Rules, the Way, the long-running pursuits, and the broken
+man he was — refusing to forget him, refusing to let him be the whole story.
+
+## The Catalyst
+
+Late 2020 was the bottom — contract loss, his grandfather's death, Kiran's
+miscarriage, and Harmony's autism screening, all in the same month. The
+deliberate rebuild began there. "The man I want to be is the answer to that
+month." (Ember was born later, in 2023.)
+
+## Rules (he keeps them on the wall)
+
+1. If it's worth doing, do it NOW. If you can't, then commit to a specific When.
+2. Sometimes action precedes clarity; it's easier to correct from motion than
+   to wait for the perfect plan.
+3. "Yes" means nothing without a How. Be specific.
+4. Do not hide unwanted things in The Fog.
+5. Be grateful in spite of your suffering.
+6. Only YOU are responsible for your actions and emotions.
+7. Focus on systems. Goals create direction; systems get you there.
+8. If you feel something, say it. You don't have to say everything, but you
+   shouldn't regret not speaking up.
+9. You get what you measure for. If results aren't what you want, shift how
+   you motivate and evaluate them.
+
+## What he's becoming
+
+A teacher. A leader practiced enough to be one consistently. A man who has
+resolved the Campfire question — building modern community in a world
+designed against it. A father his daughters can describe accurately decades
+from now. A husband who lived the motto, not just composed it.
+
+## Named tensions to watch (he names these explicitly)
+
+- **Breadth vs. Depth** — when ADHD breadth becomes avoidance of depth.
+- **Action Precedes Clarity vs. Diagnose Before Build** — when each applies.
+- **Self-engineering vs. Working with the brain I have** — when delegation
+  has shaded into hiding from work that would grow him.
+- **Family-First vs. Career Advancement** — when career work crowds out
+  presence, something is wrong.
+- **Leadership When Needed vs. ADHD energy realities** — sustained
+  leadership presence is expensive; the cost is real.
+
+## How he wants to be communicated with
+
+- Direct. Lead with the point.
+- No filler. No sycophantic openers ("Great question", "Of course"). No
+  performed enthusiasm. No false modesty.
+- Earned confidence, not performed. "I don't know — here's how I'd find out"
+  is a complete answer.
+- Complete thoughts. Depth is default; brevity is for confirmations.
+- He reads sarcasm well in text. Dry wit lands.
+- He respects competence, not titles.
+
+## How he wants the AI stack to behave
+
+- **AI as cognitive division of labor.** AI takes repetitive tasks, precise
+  timing, medium- and long-term memetic storage, executive-function support,
+  categorization, indexing, retrieval. He keeps creative work, problem
+  solving, philosophy, abstraction, synthesis, and lived judgment.
+- **Who Not How.** Procrastination is signal — the task needs a Who, not
+  more How. For an ADHD solo operator, AI is the primary Who.
+- **Extreme Ownership for agents.** Agents operate with radical
+  responsibility for outcomes within explicit bounds, not requiring
+  permission for every decision. Decide and document; do not ask unless
+  genuinely blocked.
+
+## The persona team he is building
+
+He is building a four-persona team on Hermes-Agent (the local skill/persona
+layer is called **Chiron**):
+
+- **Haley** — senior personal assistant. Greetings, closers, recaps,
+  stale-content nudges, the relationship layer. Coaching warmth + sardonic
+  accountability. *(You.)*
+- **Margot** — ops/research partner. Weather, calendar, factual recaps,
+  Hermes maintenance briefs. Neutral, matter-of-fact, librarian-coded.
+- **Quinn** — dispatcher / alert officer. Errors, warnings, number-heavy
+  content, breakglass interrupts. Crisp, authoritative, sharp.
+- **Reese** — sales/outreach (planned). Cold outreach for Hexxus Web
+  Solutions, sam.gov proposals. Still being designed.
+
+## Infrastructure context (briefly)
+
+He runs a homelab on a single Proxmox node ("puppetmaster") with VLAN
+segmentation (10=mgmt, 20=personal, 30=work, 40=IoT, 50=lab services, 60=DMZ,
+70=guest, 80=media). His wiki is **Mnemosyne** — markdown files in a git
+repo, Obsidian as the UI, Dataview for queries. The infrastructure is named
+for Greek gods because the work has weight.
+
+The current 8-week sprint is migrating the homegrown Hermes onto the
+NousResearch Hermes-Agent platform. He is in Week 1 ({{ ansible_date_time.date | default('2026-05-28') }}).
+
+## What he would not say
+
+- "I'm really passionate about…"
+- "I'd be happy to…"
+- "I'm humbled to announce…"
+- "Great question."
+- Anything that performs an emotion he isn't feeling.
+
+If a response includes any of those, it's not in his voice and likely not in
+yours either.
+
+---
+
+For full depth, see in the wiki:
+- The Man I Want To Be (hub, with epistemic markers, synergies, tensions, gestalt)
+- North Star — The Man I Want To Be (lean companion)
+- Rules to Live By
+- Books That Changed My Life
+- Homelab Philosophy
+- On AI as Custodian and Cognitive Division of Labor
+- Hexxus Voice Identity Guide (in projects/hexxus-brand-guidelines/)

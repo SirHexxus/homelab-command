@@ -1,0 +1,34 @@
+# roles/hermes_agent/tasks/base.yml
+#
+# System packages required to bootstrap uv + clone + build the agent.
+# This complements the apt update / dotfiles steps in provision.yml's
+# pre_tasks — we only enumerate Hermes-Agent's specific build deps here.
+
+- name: Install Hermes-Agent build dependencies
+  ansible.builtin.apt:
+    name:
+      - curl
+      - wget
+      - git
+      - build-essential
+      - python3-pip
+      - python3-venv
+      - python3-dev
+      - jq
+      - ca-certificates
+    state: present
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: Assert Python version meets Hermes-Agent minimum
+  ansible.builtin.assert:
+    that:
+      - ansible_python.version.major == 3
+      - ansible_python.version.minor >= 11
+    fail_msg: >-
+      Hermes-Agent requires Python 3.11+. Found
+      {{ ansible_python.version.major }}.{{ ansible_python.version.minor }}.
+      Ubuntu 24.04 ships 3.12; older bases need the deadsnakes PPA or an LXC
+      rebuild. See infrastructure/hermes/terraform/variables.tf —
+      lxc_template defaults to Ubuntu 24.04.

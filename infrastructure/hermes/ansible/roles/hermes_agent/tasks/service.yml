@@ -1,0 +1,28 @@
+# roles/hermes_agent/tasks/service.yml
+#
+# systemd unit for the headless gateway. Runs `hermes gateway run` (NOT
+# `gateway start` — that command targets a Hermes-Agent-managed unit which
+# we are deliberately not using; we own the unit ourselves for IaC clarity).
+#
+# TimeoutStopSec must exceed the gateway's drain_timeout (180s) or systemd
+# will SIGKILL mid-drain — surfaced during the Week 1 spike.
+
+- name: Install hermes-agent systemd unit
+  ansible.builtin.template:
+    src: hermes-agent.service.j2
+    dest: "/etc/systemd/system/{{ hermes_agent_service_name }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart hermes-agent
+
+- name: Flush handlers so daemon-reload happens before enable
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start hermes-agent service
+  ansible.builtin.systemd:
+    name: "{{ hermes_agent_service_name }}"
+    enabled: yes
+    state: started

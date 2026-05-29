@@ -1,0 +1,12 @@
+# roles/hermes_agent/handlers/main.yml
+
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: yes
+  listen: "reload systemd"
+
+- name: restart hermes-agent
+  ansible.builtin.systemd:
+    name: "{{ hermes_agent_service_name }}"
+    state: restarted
+  listen: "restart hermes-agent"

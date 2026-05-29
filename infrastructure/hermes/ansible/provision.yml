@@ -1,32 +1,28 @@
-# ansible/provision.yml - Hermes AI Agent Provisioning Playbook
+# ansible/provision.yml — Hermes-Agent (Chiron) Provisioning Playbook
 #
-# Installs and configures Hermes on a fresh LXC container.
+# Installs and configures Hermes-Agent on a fresh LXC container.
 # Run after Terraform creates the container:
 #
 #   ansible-playbook -i inventory.ini provision.yml --ask-vault-pass
-
+#
+# Variables: group_vars/hermes_containers.yml (non-secret) +
+#            group_vars/vault.yml (secrets — see vault.yml.example)
+#
+# Replaces the homegrown-Hermes provisioning that used roles/hermes/.
+# The legacy role is kept on disk until the Week 8 rename cascade
+# (apps/hermes/ → apps/chiron/); this playbook no longer references it.
 ---
-- name: Provision Hermes AI Agent Container
+- name: Provision Hermes-Agent (Chiron) Container
   hosts: hermes_containers
   vars_files:
     - group_vars/vault.yml
 
   vars:
     apt_cache_valid_time: 3600
-    debian_packages:
-      - curl
-      - wget
-      - git
-      - build-essential
-      - python3-pip
-      - python3-venv
-      - python3-dev
-      - software-properties-common
-      - jq
 
   pre_tasks:
     - name: Verify Ansible version
-      assert:
+      ansible.builtin.assert:
         that:
           - ansible_version.major >= 2
           - ansible_version.minor >= 10
@@ -34,29 +30,30 @@
       run_once: yes
 
     - name: Display deployment information
-      debug:
+      ansible.builtin.debug:
         msg: |
           ============================================================
-          Starting Hermes Container Provisioning
+          Starting Hermes-Agent (Chiron) Container Provisioning
           ============================================================
           Target Host: {{ inventory_hostname }}
-          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
-          Python: {{ ansible_python_version }}
-          CPU Cores: {{ ansible_processor_vcpus }}
-          RAM: {{ (ansible_memtotal_mb / 1024) | round(2) }} GB
+          OS:          {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Python:      {{ ansible_python_version }}
+          CPU Cores:   {{ ansible_processor_vcpus }}
+          RAM:         {{ (ansible_memtotal_mb / 1024) | round(2) }} GB
 
-          Hermes Configuration:
-            - Port: {{ hermes_port }}
-            - App dir: {{ hermes_app_dir }}
-            - Repo: {{ hermes_repo }}
+          Hermes-Agent:
+            Version:     {{ hermes_agent_version }}
+            Install dir: {{ hermes_agent_install_dir | default('/opt/hermes-agent') }}
+            Profile:     {{ hermes_agent_active_profile | default('haley') }}
 
           ============================================================
 
-    # --- Network: Freeze DHCP IP as Static ---
-    # Proxmox overwrites in-container network config on boot, so the static IP
-    # must be set at the Proxmox level via `pct set` rather than inside the container.
+    # ── Network: Freeze DHCP IP as Static ─────────────────────────────────
+    # Proxmox overwrites in-container network config on boot, so the static
+    # IP must be set at the Proxmox level via `pct set` rather than inside
+    # the container.
     - name: Check if Proxmox container is using DHCP
-      command: pct config {{ container_vmid }}
+      ansible.builtin.command: "pct config {{ container_vmid }}"
       register: pct_config
       delegate_to: "{{ proxmox_host }}"
       vars:
@@ -64,17 +61,17 @@
       changed_when: false
 
     - name: Display current network information
-      debug:
+      ansible.builtin.debug:
         msg: |
           Network Configuration:
-          - Current IP: {{ ansible_default_ipv4.address }}/{{ ansible_default_ipv4.prefix }}
-          - Gateway: {{ ansible_default_ipv4.gateway }}
-          - MAC: {{ ansible_default_ipv4.macaddress }}
-          - VMID: {{ container_vmid }}
-          - Method: {{ 'DHCP' if 'ip=dhcp' in pct_config.stdout else 'Static' }}
+            Current IP: {{ ansible_default_ipv4.address }}/{{ ansible_default_ipv4.prefix }}
+            Gateway:    {{ ansible_default_ipv4.gateway }}
+            MAC:        {{ ansible_default_ipv4.macaddress }}
+            VMID:       {{ container_vmid }}
+            Method:     {{ 'DHCP' if 'ip=dhcp' in pct_config.stdout else 'Static' }}
 
     - name: Freeze DHCP-assigned IP in Proxmox container config
-      command: >
+      ansible.builtin.command: >
         pct set {{ container_vmid }} -net0
         name=eth0,bridge=vmbr1,hwaddr={{ ansible_default_ipv4.macaddress }},ip={{ ansible_default_ipv4.address }}/{{ ansible_default_ipv4.prefix }},gw={{ ansible_default_ipv4.gateway }}
       delegate_to: "{{ proxmox_host }}"
@@ -84,29 +81,23 @@
 
   tasks:
     # =========================================================================
-    # 1. SYSTEM UPDATES & DEPENDENCIES
+    # 1. SYSTEM UPDATES
     # =========================================================================
     - name: Update package cache
-      apt:
+      ansible.builtin.apt:
         update_cache: yes
         cache_valid_time: "{{ apt_cache_valid_time }}"
       when: ansible_os_family == "Debian"
 
     - name: Upgrade all packages to latest versions
-      apt:
+      ansible.builtin.apt:
         upgrade: dist
         autoremove: yes
         autoclean: yes
       when: ansible_os_family == "Debian"
 
-    - name: Install required system packages
-      apt:
-        name: "{{ debian_packages }}"
-        state: present
-      when: ansible_os_family == "Debian"
-
     - name: Verify internet connectivity
-      uri:
+      ansible.builtin.uri:
         url: "https://pypi.org"
         method: HEAD
         status_code: [200, 301, 302]
@@ -117,60 +108,63 @@
     # 2. DOTFILES
     # =========================================================================
     - name: Install dotfiles for root
-      import_role:
+      ansible.builtin.import_role:
         name: dotfiles
 
     # =========================================================================
-    # 3. HERMES APPLICATION
+    # 3. HERMES-AGENT (CHIRON)
     # =========================================================================
-    - name: Install Hermes
-      include_role:
-        name: hermes
+    - name: Install and configure Hermes-Agent
+      ansible.builtin.import_role:
+        name: hermes_agent
 
+  post_tasks:
     # =========================================================================
     # 4. HEALTH CHECK
     # =========================================================================
-    - name: Wait for Hermes service to be ready
-      uri:
-        url: "http://localhost:{{ hermes_port }}/health"
-        status_code: [200]
-        timeout: 10
-      register: hermes_health
-      until: hermes_health.status is defined and hermes_health.status == 200
-      retries: 30
-      delay: 5
+    # Hermes-Agent doesn't expose a /health endpoint; gateway liveness is
+    # checked via systemd + a Doctor exit-code probe.
+    - name: Confirm hermes-agent service is active
+      ansible.builtin.command: "systemctl is-active {{ hermes_agent_service_name | default('hermes-agent') }}"
+      register: service_state
       changed_when: false
-      ignore_errors: yes
+      failed_when: service_state.stdout != "active"
 
-    - name: Check service status if health check failed
-      command: systemctl status hermes
-      register: service_status
-      when: hermes_health.failed | default(false)
+    - name: Run hermes doctor as smoke check
+      ansible.builtin.shell: |
+        set -o pipefail
+        source /etc/hermes-agent/env
+        hermes doctor
+      args:
+        executable: /bin/bash
+      register: doctor_run
       changed_when: false
-      ignore_errors: yes
+      failed_when: doctor_run.rc != 0
 
-    - name: Display service status on failure
-      debug:
-        msg: "{{ service_status.stdout_lines | default(['Service status unavailable']) }}"
-      when: hermes_health.failed | default(false)
+    - name: Confirm webhook port is listening
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ hermes_agent_webhook_port | default(8644) }}"
+        timeout: 30
 
     - name: Display connection information
-      debug:
+      ansible.builtin.debug:
         msg: |
           ============================================================
-          Hermes Provisioning Complete!
+          Hermes-Agent Provisioning Complete
           ============================================================
 
-          Connection Information:
-          - Host: {{ inventory_hostname }}
-          - Port: {{ hermes_port }}
-          - API Endpoint: http://{{ inventory_hostname }}:{{ hermes_port }}
+          Service:        hermes-agent.service (active)
+          Active profile: {{ hermes_agent_active_profile | default('haley') }}
+          Gateway:        webhook + telegram platforms enabled
+          Webhook URL:    http://{{ inventory_hostname }}:{{ hermes_agent_webhook_port | default(8644) }}/webhooks/<route>
 
-          Endpoints (Phase 4 web UI):
-          - GET  /health   - Health check
-          - POST /task     - Submit a task
+          Quick checks:
+            ssh root@{{ inventory_hostname }} 'systemctl status hermes-agent.service'
+            ssh root@{{ inventory_hostname }} 'hermes profile list'
+            ssh root@{{ inventory_hostname }} 'hermes mcp test n8n-echo'
 
-          Quick Test:
-          curl http://{{ inventory_hostname }}:{{ hermes_port }}/health
+          End-to-end smoke:
+            DM @HaleyChironBot on Telegram — Haley should respond.
 
           ============================================================

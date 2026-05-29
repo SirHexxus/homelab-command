@@ -1,0 +1,61 @@
+# roles/hermes_agent/tasks/install.yml
+#
+# Clone, checkout the pinned commit, create the venv, install the package
+# with all extras. Re-runs only when the pinned version changes (the git
+# module's "changed" status drives reinstall).
+
+- name: Ensure install dir exists
+  ansible.builtin.file:
+    path: "{{ hermes_agent_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Mark Hermes-Agent src dir as git-safe
+  ansible.builtin.command:
+    cmd: "git config --system --add safe.directory {{ hermes_agent_src_dir }}"
+  changed_when: false
+
+- name: Clone or update Hermes-Agent
+  ansible.builtin.git:
+    repo: "{{ hermes_agent_repo }}"
+    dest: "{{ hermes_agent_src_dir }}"
+    version: "{{ hermes_agent_version }}"
+    update: yes
+    force: no
+  register: hermes_agent_clone
+
+- name: Create Python {{ hermes_agent_python_version }} venv via uv
+  ansible.builtin.command:
+    cmd: "{{ hermes_agent_uv_bin }} venv .venv --python {{ hermes_agent_python_version }}"
+    chdir: "{{ hermes_agent_src_dir }}"
+    creates: "{{ hermes_agent_venv_dir }}/bin/python"
+
+- name: Install Hermes-Agent with [all] extras (editable)
+  ansible.builtin.shell: |
+    set -o pipefail
+    source {{ hermes_agent_venv_dir }}/bin/activate
+    {{ hermes_agent_uv_bin }} pip install -e ".[all]"
+  args:
+    executable: /bin/bash
+    chdir: "{{ hermes_agent_src_dir }}"
+  when: hermes_agent_clone.changed
+  notify: restart hermes-agent
+
+- name: Install python-telegram-bot in venv (optional extra)
+  ansible.builtin.shell: |
+    set -o pipefail
+    source {{ hermes_agent_venv_dir }}/bin/activate
+    {{ hermes_agent_uv_bin }} pip install python-telegram-bot
+  args:
+    executable: /bin/bash
+    chdir: "{{ hermes_agent_src_dir }}"
+    creates: "{{ hermes_agent_venv_dir }}/lib/python{{ hermes_agent_python_version }}/site-packages/telegram/__init__.py"
+
+- name: Symlink hermes CLI into /usr/local/bin
+  ansible.builtin.file:
+    src: "{{ hermes_agent_bin }}"
+    dest: "{{ hermes_agent_cli_symlink }}"
+    state: link
+    force: yes
