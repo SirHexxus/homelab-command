@@ -1,0 +1,62 @@
+# roles/hermes_agent/defaults/main.yml
+#
+# Defaults for the Hermes-Agent installation (the NousResearch upstream).
+# Overridden in group_vars/hermes_containers.yml for the live deployment.
+#
+# The local persona/skill layer is "Chiron" (see CLAUDE.md service roster).
+# This role manages the upstream agent; persona content (SOUL.md, USER.md)
+# is templated from the wiki / brand guide and applied per profile.
+
+# ── Upstream source ─────────────────────────────────────────────────────────
+hermes_agent_repo:    "https://github.com/NousResearch/hermes-agent.git"
+hermes_agent_version: "11d93096b"   # spike-validated commit (v2026.5.28-17)
+
+# ── Filesystem layout ───────────────────────────────────────────────────────
+hermes_agent_install_dir: /opt/hermes-agent
+hermes_agent_src_dir:     /opt/hermes-agent/hermes-agent
+hermes_agent_venv_dir:    /opt/hermes-agent/hermes-agent/.venv
+hermes_agent_bin:         /opt/hermes-agent/hermes-agent/.venv/bin/hermes
+hermes_agent_cli_symlink: /usr/local/bin/hermes
+hermes_agent_data_dir:    /root/.hermes
+hermes_agent_config_dir:  /etc/hermes-agent
+
+# ── Python ──────────────────────────────────────────────────────────────────
+hermes_agent_python_version: "3.11"
+hermes_agent_uv_bin:         /root/.local/bin/uv
+
+# ── Model routing (Gemini-only per [[chiron-hermes-agent-pivot]]) ──────────
+hermes_agent_default_model:    gemini-3.5-flash
+hermes_agent_model_provider:   gemini
+hermes_agent_model_base_url:   "https://generativelanguage.googleapis.com/v1beta"
+
+# ── Webhook platform ───────────────────────────────────────────────────────
+hermes_agent_webhook_enabled: true
+hermes_agent_webhook_host:    "0.0.0.0"   # listen on all interfaces (n8n LXC reachability)
+hermes_agent_webhook_port:    8644
+
+# ── Telegram platform ──────────────────────────────────────────────────────
+hermes_agent_telegram_enabled:       true
+hermes_agent_telegram_allowed_users: ""   # comma-separated Telegram user IDs
+
+# ── MCP servers (list of {name, url}) ──────────────────────────────────────
+hermes_agent_mcp_servers: []
+
+# ── Profile + persona ──────────────────────────────────────────────────────
+# The role currently provisions a single persona: Haley. Margot/Quinn/Reese
+# will be added as additional profiles in future weeks of the migration.
+hermes_agent_active_profile: haley
+hermes_agent_profiles:
+  - name:        haley
+    description: >-
+      Senior personal assistant persona: coaching warmth + sardonic
+      accountability; designed against [[The Man I Want To Be]] and the
+      Hexxus Voice Identity Guide. Default for the Telegram surface.
+    soul_template: haley-SOUL.md.j2
+    user_template: haley-USER.md.j2
+
+# ── systemd unit ───────────────────────────────────────────────────────────
+hermes_agent_service_name:        hermes-agent
+hermes_agent_service_restart_sec: 5
+# Must exceed the gateway's drain_timeout (180s) per the spike-discovered
+# stale-unit warning — otherwise systemd may SIGKILL mid-drain.
+hermes_agent_service_stop_timeout: 210

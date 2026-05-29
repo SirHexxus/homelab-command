@@ -1,0 +1,117 @@
+# roles/hermes_agent/tasks/config.yml
+#
+# Provision /etc/hermes-agent/ (systemd EnvironmentFile + sidecar secrets)
+# and patch ~/.hermes/config.yaml in place. Patching is preferred over full
+# templating because Hermes-Agent owns the schema (~30 top-level keys,
+# _config_version bumped across upstream releases) and overwriting risks
+# stomping fields the agent itself manages.
+
+- name: Ensure /etc/hermes-agent exists
+  ansible.builtin.file:
+    path: "{{ hermes_agent_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Template /etc/hermes-agent/env (systemd EnvironmentFile)
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ hermes_agent_config_dir }}/env"
+    owner: root
+    group: root
+    mode: '0600'
+  notify: restart hermes-agent
+
+- name: Write webhook HMAC secret sidecar
+  ansible.builtin.copy:
+    content: "{{ vault_chiron_webhook_secret }}"
+    dest: "{{ hermes_agent_config_dir }}/webhook-secret"
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+
+- name: Ensure ~/.hermes exists
+  ansible.builtin.file:
+    path: "{{ hermes_agent_data_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Scaffold ~/.hermes/config.yaml if absent (one-shot via hermes doctor)
+  ansible.builtin.shell: |
+    set -o pipefail
+    source {{ hermes_agent_config_dir }}/env
+    export PATH="$HOME/.local/bin:$PATH"
+    {{ hermes_agent_cli_symlink }} doctor >/dev/null 2>&1 || true
+  args:
+    executable: /bin/bash
+    creates: "{{ hermes_agent_data_dir }}/config.yaml"
+
+- name: Patch ~/.hermes/config.yaml (model + webhook + telegram platforms)
+  ansible.builtin.shell: |
+    set -o pipefail
+    source {{ hermes_agent_venv_dir }}/bin/activate
+    python3 - <<'PYEOF'
+    import yaml, sys
+    from pathlib import Path
+    p = Path("{{ hermes_agent_data_dir }}/config.yaml")
+    cfg = yaml.safe_load(p.read_text())
+    desired_model = {
+        "default":  "{{ hermes_agent_default_model }}",
+        "provider": "{{ hermes_agent_model_provider }}",
+        "base_url": "{{ hermes_agent_model_base_url }}",
+    }
+    desired_platforms = {
+        "webhook": {
+            "enabled": {{ hermes_agent_webhook_enabled | bool | string | lower | capitalize }},
+            "extra": {
+                "host":   "{{ hermes_agent_webhook_host }}",
+                "port":   {{ hermes_agent_webhook_port }},
+                "secret": Path("{{ hermes_agent_config_dir }}/webhook-secret").read_text().strip(),
+            },
+        },
+        "telegram": {
+            "enabled": {{ hermes_agent_telegram_enabled | bool | string | lower | capitalize }},
+        },
+    }
+    changed = False
+    if cfg.get("model") != desired_model:
+        cfg["model"] = desired_model
+        changed = True
+    if (cfg.get("platforms") or {}) != desired_platforms:
+        cfg["platforms"] = desired_platforms
+        changed = True
+    if changed:
+        p.write_text(yaml.safe_dump(cfg, sort_keys=False, default_flow_style=False))
+        print("changed")
+    else:
+        print("unchanged")
+    PYEOF
+  args:
+    executable: /bin/bash
+  register: config_patch
+  changed_when: "'changed' in config_patch.stdout"
+  notify: restart hermes-agent
+
+- name: Register MCP servers
+  ansible.builtin.shell: |
+    set -o pipefail
+    source {{ hermes_agent_config_dir }}/env
+    export PATH="$HOME/.local/bin:$PATH"
+    if {{ hermes_agent_cli_symlink }} mcp list 2>/dev/null | grep -q "^[[:space:]]*{{ item.name }}\b"; then
+      echo "exists"
+    else
+      printf "n\ny\n" | {{ hermes_agent_cli_symlink }} mcp add "{{ item.name }}" --url "{{ item.url }}"
+      echo "added"
+    fi
+  args:
+    executable: /bin/bash
+  loop: "{{ hermes_agent_mcp_servers }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: mcp_add
+  changed_when: "'added' in mcp_add.stdout"
+  notify: restart hermes-agent

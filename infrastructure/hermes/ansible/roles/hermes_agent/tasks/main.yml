@@ -1,0 +1,22 @@
+# roles/hermes_agent/tasks/main.yml
+#
+# Orchestrator. Each step is idempotent and notifies the restart handler
+# only when state actually changes.
+
+- import_tasks: base.yml
+  tags: [hermes-agent, base]
+
+- import_tasks: uv.yml
+  tags: [hermes-agent, uv]
+
+- import_tasks: install.yml
+  tags: [hermes-agent, install]
+
+- import_tasks: config.yml
+  tags: [hermes-agent, config]
+
+- import_tasks: profile.yml
+  tags: [hermes-agent, profile]
+
+- import_tasks: service.yml
+  tags: [hermes-agent, service]

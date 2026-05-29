@@ -11,10 +11,23 @@
 #   ansible-playbook provision.yml --ask-vault-pass
 #   ansible-playbook provision.yml --vault-password-file ~/.vault-password
 
-gemini_api_key:                   ""
-hermes_api_token:                 ""
-telegram_token_personal:          ""
+# ── Hermes-Agent / Chiron (active) ─────────────────────────────────────────
+# These three are the secrets the hermes_agent role needs. Vault convention
+# is `vault_<service>_<credential>` per root CLAUDE.md.
+
+vault_chiron_gemini_api_key:     ""    # Google AI Studio API key (Gemini 3.5 Flash)
+vault_chiron_telegram_bot_token: ""    # @HaleyChironBot bot token from @BotFather
+vault_chiron_webhook_secret:     ""    # HMAC-SHA256 secret; generate: openssl rand -hex 32
+
+# ── Mnemosyne wiki access (still used by other tooling) ────────────────────
+vault_wiki_deploy_key: ""    # base64 of private key: base64 -w0 /path/to/key
+
+# ── Legacy (homegrown Hermes — being decommissioned in the Week 8 cascade) ─
+# Kept here until the rename cascade so other playbooks that still reference
+# them don't break. Delete once the apps/hermes/ → apps/chiron/ rename lands.
+gemini_api_key:                   ""    # superseded by vault_chiron_gemini_api_key
+hermes_api_token:                 ""    # superseded — n8n uses webhook HMAC now
+telegram_token_personal:          ""    # superseded by vault_chiron_telegram_bot_token
 telegram_token_professional:      ""
 purelymail_personal_password:     ""
 purelymail_professional_password: ""
-vault_wiki_deploy_key: ""    # base64 of private key: base64 -w0 /path/to/key

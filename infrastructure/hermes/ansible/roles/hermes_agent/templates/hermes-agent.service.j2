@@ -1,0 +1,23 @@
+; /etc/systemd/system/hermes-agent.service
+; Managed by Ansible (roles/hermes_agent/templates/hermes-agent.service.j2).
+; Headless Hermes-Agent gateway — the persona/skill layer is Chiron.
+
+[Unit]
+Description=Hermes-Agent headless gateway (Chiron)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory={{ hermes_agent_src_dir }}
+EnvironmentFile={{ hermes_agent_config_dir }}/env
+ExecStart={{ hermes_agent_bin }} gateway run
+Restart=on-failure
+RestartSec={{ hermes_agent_service_restart_sec }}s
+TimeoutStopSec={{ hermes_agent_service_stop_timeout }}s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

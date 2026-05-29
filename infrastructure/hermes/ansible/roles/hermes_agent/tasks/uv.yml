@@ -1,0 +1,23 @@
+# roles/hermes_agent/tasks/uv.yml
+#
+# Install Astral's uv. Hermes-Agent's project layout uses uv for the venv
+# bootstrap (Python 3.11 auto-download) and for editable installs with the
+# `[all]` extras.
+
+- name: Check if uv is already installed
+  ansible.builtin.stat:
+    path: "{{ hermes_agent_uv_bin }}"
+  register: uv_stat
+
+- name: Install uv (Astral installer)
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+  args:
+    executable: /bin/bash
+    creates: "{{ hermes_agent_uv_bin }}"
+  when: not uv_stat.stat.exists
+
+- name: Verify uv runs
+  ansible.builtin.command: "{{ hermes_agent_uv_bin }} --version"
+  changed_when: false
