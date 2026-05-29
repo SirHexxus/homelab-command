@@ -103,9 +103,9 @@ variable "container_storage" {
 }
 
 variable "lxc_template" {
-  description = "LXC template to use (Ubuntu 22.04 recommended)"
+  description = "LXC template to use (Ubuntu 24.04 — required for Hermes-Agent Python 3.11+)"
   type        = string
-  default     = "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
+  default     = "local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
 }
 
 # =============================================================================
