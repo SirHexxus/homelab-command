@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# Direct MCP smoke test against n8n. No Hermes-Agent involved.
+# Performs the full MCP handshake: initialize → notifications/initialized → tools/call.
+# Verifies the workflow itself before pulling Hermes-Agent into the picture.
+
+set -u
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ENDPOINT_FILE="$SCRIPT_DIR/n8n-endpoint.txt"
+
+if [[ ! -f "$ENDPOINT_FILE" ]]; then
+	printf 'ERROR: %s not found\n' "$ENDPOINT_FILE" >&2
+	printf 'Save the n8n MCP endpoint URL there first.\n' >&2
+	exit 1
+fi
+
+ENDPOINT="$(tr -d '[:space:]' < "$ENDPOINT_FILE")"
+ACCEPT='application/json, text/event-stream'
+TMP_HEADERS="$(mktemp)"
+trap 'rm -f "$TMP_HEADERS"' EXIT
+
+printf '==> Endpoint: %s\n' "$ENDPOINT"
+
+# --- Step 1: initialize ---
+printf '\n==> Step 1: initialize\n'
+INIT_PAYLOAD='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"spike-smoke","version":"0.1.0"}}}'
+
+INIT_BODY="$(curl -sS -D "$TMP_HEADERS" -X POST "$ENDPOINT" \
+	-H "Accept: $ACCEPT" \
+	-H 'Content-Type: application/json' \
+	-d "$INIT_PAYLOAD" \
+	--max-time 10)"
+RC=$?
+if [[ $RC -ne 0 ]]; then
+	printf 'ERROR: initialize curl failed (rc=%s)\n' "$RC" >&2
+	exit 1
+fi
+
+SESSION="$(grep -i '^mcp-session-id:' "$TMP_HEADERS" | \
+	awk '{print $2}' | tr -d '\r\n')"
+if [[ -z "$SESSION" ]]; then
+	printf 'ERROR: no mcp-session-id in response headers\n' >&2
+	cat "$TMP_HEADERS" >&2
+	exit 1
+fi
+printf '    session: %s\n' "$SESSION"
+printf '    body:    %s\n' "$INIT_BODY"
+
+# --- Step 2: notifications/initialized ---
+printf '\n==> Step 2: notifications/initialized\n'
+curl -sS -X POST "$ENDPOINT" \
+	-H "Accept: $ACCEPT" \
+	-H 'Content-Type: application/json' \
+	-H "Mcp-Session-Id: $SESSION" \
+	-d '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+	--max-time 10
+printf '    sent\n'
+
+# --- Step 3: tools/call echo ---
+printf '\n==> Step 3: tools/call echo\n'
+CALL_PAYLOAD='{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"echo","arguments":{"message":"direct test from spike-1"}}}'
+
+CALL_RESPONSE="$(curl -sS -X POST "$ENDPOINT" \
+	-H "Accept: $ACCEPT" \
+	-H 'Content-Type: application/json' \
+	-H "Mcp-Session-Id: $SESSION" \
+	-d "$CALL_PAYLOAD" \
+	--max-time 10)"
+printf '    response: %s\n' "$CALL_RESPONSE"
+
+# --- Verify ---
+if printf '%s' "$CALL_RESPONSE" | grep -q 'pong: direct test from spike-1'; then
+	printf '\n==> PASS: echo round-trip works\n'
+	exit 0
+fi
+printf '\n==> FAIL: expected "pong: direct test from spike-1" not in response\n' >&2
+exit 1

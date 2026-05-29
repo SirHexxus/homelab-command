@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Snapshot RSS of the hermes gateway process every hour to memory.log.
+# Run in the background or via cron during Spike 2's 24h test window.
+
+set -u
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOG="$SCRIPT_DIR/memory.log"
+INTERVAL="${INTERVAL:-3600}"
+
+log_line() {
+	local ts pid rss
+	ts="$(date -Iseconds)"
+	pid="$(pgrep -f 'hermes.*gateway' | head -1)"
+	if [[ -z "$pid" ]]; then
+		printf '%s DOWN\n' "$ts" >> "$LOG"
+		return
+	fi
+	rss="$(ps -p "$pid" -o rss= 2>/dev/null | tr -d ' ')"
+	if [[ -z "$rss" ]]; then
+		printf '%s PID=%s RSS_KB=UNKNOWN\n' "$ts" "$pid" >> "$LOG"
+		return
+	fi
+	printf '%s PID=%s RSS_KB=%s\n' "$ts" "$pid" "$rss" >> "$LOG"
+}
+
+printf '==> Logging to %s every %s seconds\n' "$LOG" "$INTERVAL"
+while true; do
+	log_line
+	sleep "$INTERVAL"
+done

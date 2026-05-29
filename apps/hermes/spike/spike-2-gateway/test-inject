@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Inject one webhook event into the Hermes-Agent gateway, signed with HMAC-SHA256.
+# Captures rc + latency + response body to inject.log.
+#
+# Env overrides:
+#   WEBHOOK_URL    default: http://127.0.0.1:8644/webhooks/spike-test
+#   WEBHOOK_SECRET default: spike-hmac-secret-for-now
+#   PAYLOAD        default: a sample message JSON
+#
+# Edit defaults if the spike route name or secret changes.
+
+set -u
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOG="$SCRIPT_DIR/inject.log"
+
+URL="${WEBHOOK_URL:-http://127.0.0.1:8644/webhooks/spike-test}"
+SECRET="${WEBHOOK_SECRET:-spike-hmac-secret-for-now}"
+PAYLOAD="${PAYLOAD:-{\"message\": \"injection at $(date -Iseconds)\"}}"
+
+SIG="$(printf '%s' "$PAYLOAD" \
+	| openssl dgst -sha256 -hmac "$SECRET" \
+	| awk '{print $2}')"
+
+if [[ -z "$SIG" ]]; then
+	printf 'ERROR: HMAC computation failed (is openssl installed?)\n' >&2
+	exit 1
+fi
+
+START="$(date +%s.%N)"
+# Retry on connection-refused (rc=7) for up to ~10s in case the gateway
+# is mid-restart. Other failures fall through immediately.
+RC=7
+ATTEMPT=0
+while [[ $RC -eq 7 && $ATTEMPT -lt 5 ]]; do
+	RESPONSE="$(curl -sS -X POST "$URL" \
+		-H 'Content-Type: application/json' \
+		-H "X-Webhook-Signature: $SIG" \
+		-d "$PAYLOAD" \
+		2>&1)"
+	RC=$?
+	[[ $RC -eq 7 ]] && sleep 2
+	ATTEMPT=$((ATTEMPT + 1))
+done
+END="$(date +%s.%N)"
+
+ELAPSED="$(awk -v s="$START" -v e="$END" 'BEGIN { printf "%.3f", e - s }')"
+
+{
+	printf '=== %s ===\n' "$(date -Iseconds)"
+	printf 'url:      %s\n' "$URL"
+	printf 'rc:       %s\n' "$RC"
+	printf 'elapsed:  %s sec\n' "$ELAPSED"
+	printf 'payload:  %s\n' "$PAYLOAD"
+	printf 'response: %s\n' "$RESPONSE"
+	printf '\n'
+} >> "$LOG"
+
+printf 'rc=%s elapsed=%s sec response=%s\n' "$RC" "$ELAPSED" "$RESPONSE"
+exit "$RC"
