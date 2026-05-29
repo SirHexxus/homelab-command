@@ -19,6 +19,13 @@ hermes_agent_bin:         /opt/hermes-agent/hermes-agent/.venv/bin/hermes
 hermes_agent_cli_symlink: /usr/local/bin/hermes
 hermes_agent_data_dir:    /root/.hermes
 hermes_agent_config_dir:  /etc/hermes-agent
+hermes_agent_ssh_dir:     /root/.ssh
+
+# ── Mnemosyne wiki (cloned via tasks/wiki.yml) ─────────────────────────────
+# The wiki is a git repo (markdown vault) consumed by the `mneme_wiki` skill.
+# Same deploy key + git-user config pattern as the inbox_receiver role.
+hermes_agent_wiki_repo: "git@github.com:SirHexxus/mnemosyne-wiki.git"
+hermes_agent_wiki_dir:  /root/mneme/wiki
 
 # ── Python ──────────────────────────────────────────────────────────────────
 hermes_agent_python_version: "3.11"

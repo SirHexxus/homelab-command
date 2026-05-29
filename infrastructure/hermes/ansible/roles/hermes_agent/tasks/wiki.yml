@@ -1,0 +1,108 @@
+# roles/hermes_agent/tasks/wiki.yml
+#
+# Clone the Mnemosyne wiki onto the LXC so the mneme_wiki skill has a
+# working tree to read and write. Pattern mirrors
+# infrastructure/mnemosyne/inbox-receiver/ansible/roles/inbox_receiver/tasks/main.yml
+# Section 4 — same deploy key, same git-user config, same idempotency
+# guards. Adapted from app_user/app_group to root (the gateway runs as
+# root on this LXC).
+
+- name: Ensure parent directory exists for wiki clone
+  file:
+    path: "{{ hermes_agent_wiki_dir | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Ensure SSH directory exists
+  file:
+    path: "{{ hermes_agent_ssh_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Deploy wiki SSH deploy key
+  copy:
+    content: "{{ vault_wiki_deploy_key | b64decode }}"
+    dest: "{{ hermes_agent_ssh_dir }}/wiki_deploy"
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Fetch github.com SSH host key
+  command: ssh-keyscan -t ed25519 github.com
+  register: github_keyscan
+  changed_when: false
+  check_mode: false   # ssh-keyscan is read-only; safe to run during --check
+  failed_when: github_keyscan.rc != 0 or github_keyscan.stdout == ''
+
+- name: Add github.com to known_hosts
+  known_hosts:
+    path: "{{ hermes_agent_ssh_dir }}/known_hosts"
+    name: github.com
+    key: "{{ github_keyscan.stdout }}"
+    state: present
+
+- name: Set known_hosts ownership
+  file:
+    path: "{{ hermes_agent_ssh_dir }}/known_hosts"
+    owner: root
+    group: root
+    mode: '0644'
+
+# Clone + post-clone config are guarded by `when: not ansible_check_mode`.
+# In --check, the `command: git clone` would be skipped silently (Ansible's
+# conservative default for command modules), leaving the .git/config tasks
+# below to fail on a non-existent path. Guarding the whole block makes
+# --check cleanly report "would clone + configure" without crashing.
+- name: Clone mnemosyne-wiki repository
+  command: git clone {{ hermes_agent_wiki_repo }} {{ hermes_agent_wiki_dir }}
+  args:
+    creates: "{{ hermes_agent_wiki_dir }}/.git"
+  environment:
+    GIT_SSH_COMMAND: >-
+      ssh -i {{ hermes_agent_ssh_dir }}/wiki_deploy
+      -o UserKnownHostsFile={{ hermes_agent_ssh_dir }}/known_hosts
+      -o StrictHostKeyChecking=yes
+  when: not ansible_check_mode
+
+- name: Set wiki directory ownership
+  file:
+    path: "{{ hermes_agent_wiki_dir }}"
+    state: directory
+    owner: root
+    group: root
+    recurse: yes
+  when: not ansible_check_mode
+
+- name: Configure wiki repo to use deploy key
+  ini_file:
+    path: "{{ hermes_agent_wiki_dir }}/.git/config"
+    section: core
+    option: sshCommand
+    value: >-
+      ssh -i {{ hermes_agent_ssh_dir }}/wiki_deploy
+      -o UserKnownHostsFile={{ hermes_agent_ssh_dir }}/known_hosts
+      -o StrictHostKeyChecking=yes
+    mode: '0644'
+  when: not ansible_check_mode
+
+- name: Configure git user name for commits
+  ini_file:
+    path: "{{ hermes_agent_wiki_dir }}/.git/config"
+    section: user
+    option: name
+    value: "{{ vault_git_user_name }}"
+    mode: '0644'
+  when: not ansible_check_mode
+
+- name: Configure git user email for commits
+  ini_file:
+    path: "{{ hermes_agent_wiki_dir }}/.git/config"
+    section: user
+    option: email
+    value: "{{ vault_git_user_email }}"
+    mode: '0644'
+  when: not ansible_check_mode
