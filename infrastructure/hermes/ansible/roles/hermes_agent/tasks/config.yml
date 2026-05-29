@@ -1,10 +1,13 @@
 # roles/hermes_agent/tasks/config.yml
 #
-# Provision /etc/hermes-agent/ (systemd EnvironmentFile + sidecar secrets)
-# and patch ~/.hermes/config.yaml in place. Patching is preferred over full
-# templating because Hermes-Agent owns the schema (~30 top-level keys,
-# _config_version bumped across upstream releases) and overwriting risks
-# stomping fields the agent itself manages.
+# Provision /etc/hermes-agent/ (systemd EnvironmentFile + sidecar secrets),
+# scaffold the global ~/.hermes/config.yaml (so `hermes doctor` works), and
+# register MCP servers. The per-profile config.yaml patching (model +
+# platforms) happens in profile.yml AFTER the active profile is created and
+# selected — Hermes-Agent reads from the active profile's config.yaml, not
+# the global one. Patching only the global is silent-failure territory; see
+# the Week 1 post-codify dry-run incident (webhook went dark for ~5 hours
+# until caught).
 
 - name: Ensure /etc/hermes-agent exists
   ansible.builtin.file:
@@ -49,52 +52,6 @@
   args:
     executable: /bin/bash
     creates: "{{ hermes_agent_data_dir }}/config.yaml"
-
-- name: Patch ~/.hermes/config.yaml (model + webhook + telegram platforms)
-  ansible.builtin.shell: |
-    set -o pipefail
-    source {{ hermes_agent_venv_dir }}/bin/activate
-    python3 - <<'PYEOF'
-    import yaml, sys
-    from pathlib import Path
-    p = Path("{{ hermes_agent_data_dir }}/config.yaml")
-    cfg = yaml.safe_load(p.read_text())
-    desired_model = {
-        "default":  "{{ hermes_agent_default_model }}",
-        "provider": "{{ hermes_agent_model_provider }}",
-        "base_url": "{{ hermes_agent_model_base_url }}",
-    }
-    desired_platforms = {
-        "webhook": {
-            "enabled": {{ hermes_agent_webhook_enabled | bool | string | lower | capitalize }},
-            "extra": {
-                "host":   "{{ hermes_agent_webhook_host }}",
-                "port":   {{ hermes_agent_webhook_port }},
-                "secret": Path("{{ hermes_agent_config_dir }}/webhook-secret").read_text().strip(),
-            },
-        },
-        "telegram": {
-            "enabled": {{ hermes_agent_telegram_enabled | bool | string | lower | capitalize }},
-        },
-    }
-    changed = False
-    if cfg.get("model") != desired_model:
-        cfg["model"] = desired_model
-        changed = True
-    if (cfg.get("platforms") or {}) != desired_platforms:
-        cfg["platforms"] = desired_platforms
-        changed = True
-    if changed:
-        p.write_text(yaml.safe_dump(cfg, sort_keys=False, default_flow_style=False))
-        print("changed")
-    else:
-        print("unchanged")
-    PYEOF
-  args:
-    executable: /bin/bash
-  register: config_patch
-  changed_when: "'changed' in config_patch.stdout"
-  notify: restart hermes-agent
 
 - name: Register MCP servers
   ansible.builtin.shell: |
