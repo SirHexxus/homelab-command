@@ -19,8 +19,12 @@ vault_chiron_gemini_api_key:     ""    # Google AI Studio API key (Gemini 3.5 Fl
 vault_chiron_telegram_bot_token: ""    # @HaleyChironBot bot token from @BotFather
 vault_chiron_webhook_secret:     ""    # HMAC-SHA256 secret; generate: openssl rand -hex 32
 
-# ── Mnemosyne wiki access (still used by other tooling) ────────────────────
+# ── Mnemosyne wiki access (used by the mneme_wiki skill via tasks/wiki.yml) ─
+# Same three vars as the inbox_receiver role — reuse the existing vault values
+# rather than generating new keys / identities.
 vault_wiki_deploy_key: ""    # base64 of private key: base64 -w0 /path/to/key
+vault_git_user_name:   ""    # commit author name (e.g., "James Stacy")
+vault_git_user_email:  ""    # commit author email
 
 # ── Legacy (homegrown Hermes — being decommissioned in the Week 8 cascade) ─
 # Kept here until the rename cascade so other playbooks that still reference
