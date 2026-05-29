@@ -1,0 +1,24 @@
+# systemd user service for the Hermes-Agent verification spike.
+# Install:
+#     mkdir -p ~/.config/systemd/user
+#     cp hermes-agent-spike.service ~/.config/systemd/user/
+#     systemctl --user daemon-reload
+#     systemctl --user enable --now hermes-agent-spike.service
+# Logs:    journalctl --user -u hermes-agent-spike.service -f
+# Stop:    systemctl --user stop hermes-agent-spike.service
+# Status:  systemctl --user status hermes-agent-spike.service
+
+[Unit]
+Description=Hermes-Agent verification spike (headless gateway)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/hermes-agent-spike/hermes-agent
+ExecStart=%h/hermes-agent-spike/hermes-agent/.venv/bin/hermes gateway start
+Restart=on-failure
+RestartSec=5s
+# stdout/stderr go to the user journal — capture with journalctl --user
+
+[Install]
+WantedBy=default.target

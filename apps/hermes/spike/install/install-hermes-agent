@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Install Hermes-Agent for the verification spike.
+# Throwaway. Installs to $HOME/hermes-agent-spike; venv-based; no system-wide changes.
+# Style: tabs, no `set -e`, explicit error checks.
+
+set -u
+set -o pipefail
+
+SPIKE_ROOT="${SPIKE_ROOT:-$HOME/hermes-agent-spike}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+
+log() { printf '==> %s\n' "$*"; }
+die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+
+# --- Preflight ---
+if ! "$PYTHON_BIN" --version 2>&1 | grep -qE '3\.(11|12|13)'; then
+	die "Python 3.11+ required, found: $($PYTHON_BIN --version 2>&1)"
+fi
+
+log "Spike root: $SPIKE_ROOT"
+mkdir -p "$SPIKE_ROOT" || die "Could not create $SPIKE_ROOT"
+mkdir -p "$SPIKE_ROOT/logs" || die "Could not create logs dir"
+cd "$SPIKE_ROOT" || die "Could not enter $SPIKE_ROOT"
+
+# --- uv ---
+if ! command -v uv >/dev/null 2>&1; then
+	log "Installing uv (Hermes-Agent uses it for venv management)"
+	if ! curl -LsSf https://astral.sh/uv/install.sh | sh; then
+		die "uv install failed"
+	fi
+	# shellcheck disable=SC1091
+	source "$HOME/.local/bin/env" 2>/dev/null || \
+		export PATH="$HOME/.local/bin:$PATH"
+fi
+
+# --- Clone ---
+if [[ ! -d hermes-agent ]]; then
+	log "Cloning Hermes-Agent"
+	if ! git clone https://github.com/NousResearch/hermes-agent.git; then
+		die "git clone failed"
+	fi
+fi
+cd hermes-agent || die "Could not enter hermes-agent dir"
+git pull --ff-only 2>/dev/null || log "WARN: git pull failed; using existing checkout"
+
+# --- venv + install ---
+log "Creating venv (Python 3.11)"
+uv venv .venv --python 3.11 || die "uv venv failed"
+# shellcheck disable=SC1091
+source .venv/bin/activate || die "venv activate failed"
+log "Installing Hermes-Agent (slow step — ~3-5 minutes)"
+uv pip install -e ".[all]" || die "pip install failed"
+
+# --- Convenience symlink ---
+mkdir -p "$HOME/.local/bin"
+ln -sf "$SPIKE_ROOT/hermes-agent/.venv/bin/hermes" \
+	"$HOME/.local/bin/hermes-spike"
+
+# --- Sanity ---
+log "Verifying install"
+"$SPIKE_ROOT/hermes-agent/.venv/bin/hermes" --version || \
+	die "hermes --version failed"
+
+log "Install complete"
+cat <<EOF
+
+Next steps (discovery — actual commands TBD from \`hermes --help\`):
+  1. Activate venv:   source $SPIKE_ROOT/hermes-agent/.venv/bin/activate
+  2. Run doctor:      hermes doctor
+  3. Configure model: hermes model         (or whatever the docs say)
+  4. Set Gemini key:  hermes config set    (or whatever the docs say)
+
+The hermes-spike binary is symlinked to ~/.local/bin so it runs without
+activating the venv. Use either invocation.
+
+Then proceed to spike-1-mcp/README.md or spike-2-gateway/README.md.
+EOF

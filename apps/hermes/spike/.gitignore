@@ -1,0 +1,6 @@
+# Spike-local data — don't commit
+n8n-endpoint.txt
+n8n-transport.txt
+*.log
+findings-private.md
+.hermes-agent-state/
