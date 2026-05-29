@@ -43,7 +43,7 @@ container_storage = "local-lvm"
 
 # LXC template - verify this exists on your Proxmox server:
 #   ssh root@proxmox "pveam list local"
-lxc_template = "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
+lxc_template = "local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
 
 # =============================================================================
 # NETWORK SETTINGS (Lab Services VLAN 50)
