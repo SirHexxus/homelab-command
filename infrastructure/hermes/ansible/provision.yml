@@ -105,22 +105,17 @@
       changed_when: false
 
     # =========================================================================
-    # 2. DOTFILES
+    # 2. HERMES-AGENT (CHIRON)
     # =========================================================================
-    - name: Install dotfiles for root
-      ansible.builtin.import_role:
-        name: dotfiles
-
-    # =========================================================================
-    # 3. HERMES-AGENT (CHIRON)
-    # =========================================================================
+    # Dotfiles intentionally skipped on this service LXC. Add the dotfiles
+    # role back here if interactive shells on the box ever become a workflow.
     - name: Install and configure Hermes-Agent
       ansible.builtin.import_role:
         name: hermes_agent
 
   post_tasks:
     # =========================================================================
-    # 4. HEALTH CHECK
+    # 3. HEALTH CHECK
     # =========================================================================
     # Hermes-Agent doesn't expose a /health endpoint; gateway liveness is
     # checked via systemd + a Doctor exit-code probe.
