@@ -61,3 +61,57 @@
   register: profile_switch
   changed_when: "'switched' in profile_switch.stdout"
   notify: restart hermes-agent
+
+# Per-profile config patching MUST happen after profile creation (the file
+# `<profile_dir>/config.yaml` is created by `hermes profile create`) and is
+# where the gateway actually reads from when a profile is active. Patching
+# the global `~/.hermes/config.yaml` is useless once any profile is sticky
+# — discovered the hard way Week 1 post-codify (webhook went dark ~5h).
+- name: Patch per-profile config.yaml (model + platforms)
+  ansible.builtin.shell: |
+    set -o pipefail
+    source {{ hermes_agent_venv_dir }}/bin/activate
+    python3 - <<'PYEOF'
+    import yaml
+    from pathlib import Path
+    p = Path("{{ hermes_agent_data_dir }}/profiles/{{ item.name }}/config.yaml")
+    cfg = yaml.safe_load(p.read_text())
+    desired_model = {
+        "default":  "{{ hermes_agent_default_model }}",
+        "provider": "{{ hermes_agent_model_provider }}",
+        "base_url": "{{ hermes_agent_model_base_url }}",
+    }
+    desired_platforms = {
+        "webhook": {
+            "enabled": {{ hermes_agent_webhook_enabled | bool | string | lower | capitalize }},
+            "extra": {
+                "host":   "{{ hermes_agent_webhook_host }}",
+                "port":   {{ hermes_agent_webhook_port }},
+                "secret": Path("{{ hermes_agent_config_dir }}/webhook-secret").read_text().strip(),
+            },
+        },
+        "telegram": {
+            "enabled": {{ hermes_agent_telegram_enabled | bool | string | lower | capitalize }},
+        },
+    }
+    changed = False
+    if cfg.get("model") != desired_model:
+        cfg["model"] = desired_model
+        changed = True
+    if (cfg.get("platforms") or {}) != desired_platforms:
+        cfg["platforms"] = desired_platforms
+        changed = True
+    if changed:
+        p.write_text(yaml.safe_dump(cfg, sort_keys=False, default_flow_style=False))
+        print("changed")
+    else:
+        print("unchanged")
+    PYEOF
+  args:
+    executable: /bin/bash
+  loop: "{{ hermes_agent_profiles }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: profile_config_patch
+  changed_when: "'changed' in profile_config_patch.stdout"
+  notify: restart hermes-agent
