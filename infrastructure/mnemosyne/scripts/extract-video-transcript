@@ -1,0 +1,417 @@
+#!/usr/bin/env python3
+"""Extract a transcript from a video URL via yt-dlp + local Whisper.
+
+Saves the transcript as a sibling raw-source markdown file in the Mnemosyne
+wiki, following the sibling raw-sources pattern. Callable manually by James
+on the CLI, by triage-inbox (with --automation), and by any agent.
+
+Manual default: no duration cap, human-readable progress on stderr.
+With --automation: 60-min cap (configurable), JSON stdout, fail-soft on
+transient failures so triage-inbox can decide how to tag the stub.
+
+Whisper endpoint and quirks per the Mnemosyne wiki memory:
+- POST http://10.0.50.12:9000/v1/audio/transcriptions
+- model=small (only model available), response_format=text but server always
+  returns JSON, so parse via .text field.
+
+yt-dlp invocation per the wiki memory:
+- pipx-installed yt-dlp + node + --js-runtimes node, --cookies-from-browser
+  firefox. If cookies fail (no graphical session, etc.), retry without.
+
+Usage:
+    extract-video-transcript [options] <url>
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import uuid
+from datetime import date
+from pathlib import Path
+
+LIB_DIR = Path(__file__).resolve().parent / "lib"
+sys.path.insert(0, str(LIB_DIR))
+import raw_source  # noqa: E402  (must come after sys.path manipulation)
+
+
+# Exit codes
+EXIT_OK = 0
+EXIT_USAGE = 1
+EXIT_UNRESOLVABLE = 2
+EXIT_NO_AUDIO = 3
+EXIT_WHISPER = 4
+EXIT_WIKI_WRITE = 5
+EXIT_OVER_CAP = 10
+EXIT_TRANSIENT = 20
+
+DEFAULT_CAP_MIN = 60
+WHISPER_URL = "http://10.0.50.12:9000/v1/audio/transcriptions"
+WHISPER_MODEL = "small"
+WHISPER_LABEL = f"whisper-{WHISPER_MODEL} @ 10.0.50.12:9000"
+SCRIPT_VERSION = "extract-video-transcript@1.0"
+
+VALID_SOURCES = {
+    "telegram", "email", "web_clipper", "n8n_chat",
+    "claude_code", "manual", "hermes_agent",
+}
+
+
+# ── yt-dlp probe + download ──────────────────────────────────────────────────
+
+def _yt_dlp_command(url: str, *, with_cookies: bool, extra_args: list[str]) -> list[str]:
+    cmd = ["yt-dlp", "--js-runtimes", "node"]
+    if with_cookies:
+        cmd += ["--cookies-from-browser", "firefox"]
+    cmd += extra_args + [url]
+    return cmd
+
+
+def yt_dlp_probe(url: str, *, verbose: bool) -> dict | None:
+    """Return yt-dlp's metadata JSON, or None if the URL is unresolvable.
+
+    Retries without cookies on first failure (cookies may not work headlessly).
+    """
+    for with_cookies in (True, False):
+        cmd = _yt_dlp_command(
+            url,
+            with_cookies=with_cookies,
+            extra_args=["--dump-json", "--skip-download", "--no-warnings"],
+        )
+        if verbose:
+            print(f"[probe] {' '.join(cmd)}", file=sys.stderr)
+        try:
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=60
+            )
+        except subprocess.TimeoutExpired:
+            if verbose:
+                print("[probe] timeout", file=sys.stderr)
+            return None
+        if proc.returncode == 0 and proc.stdout.strip():
+            # --dump-json may emit multiple JSON objects for playlists;
+            # take the first.
+            first_line = proc.stdout.strip().splitlines()[0]
+            try:
+                return json.loads(first_line)
+            except json.JSONDecodeError:
+                return None
+        if with_cookies and verbose:
+            print(
+                f"[probe] cookie attempt failed (rc={proc.returncode}); retrying without",
+                file=sys.stderr,
+            )
+    return None
+
+
+def yt_dlp_download_audio(url: str, dest_dir: Path, *, verbose: bool) -> Path | None:
+    """Download bestaudio to dest_dir; return path to the downloaded file."""
+    out_template = str(dest_dir / "audio.%(ext)s")
+    for with_cookies in (True, False):
+        cmd = _yt_dlp_command(
+            url,
+            with_cookies=with_cookies,
+            extra_args=[
+                "-f", "bestaudio/best",
+                "-o", out_template,
+                "--no-warnings",
+            ],
+        )
+        if verbose:
+            print(f"[download] {' '.join(cmd)}", file=sys.stderr)
+        try:
+            proc = subprocess.run(cmd, capture_output=not verbose, text=True, timeout=600)
+        except subprocess.TimeoutExpired:
+            if verbose:
+                print("[download] timeout", file=sys.stderr)
+            return None
+        if proc.returncode == 0:
+            files = sorted(dest_dir.glob("audio.*"))
+            return files[0] if files else None
+    return None
+
+
+# ── Whisper ──────────────────────────────────────────────────────────────────
+
+def whisper_transcribe(audio_path: Path, *, verbose: bool) -> str | None:
+    """POST audio to Whisper and return transcript text, or None on failure."""
+    cmd = [
+        "curl", "-s", "--fail", "--max-time", "900",
+        "-X", "POST",
+        "-F", f"file=@{audio_path}",
+        "-F", f"model={WHISPER_MODEL}",
+        "-F", "response_format=text",
+        WHISPER_URL,
+    ]
+    if verbose:
+        print(f"[whisper] POST {WHISPER_URL}", file=sys.stderr)
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=950)
+    except subprocess.TimeoutExpired:
+        if verbose:
+            print("[whisper] timeout", file=sys.stderr)
+        return None
+    if proc.returncode != 0:
+        if verbose:
+            print(f"[whisper] curl rc={proc.returncode}: {proc.stderr.strip()}", file=sys.stderr)
+        return None
+    raw = proc.stdout.strip()
+    # Server always returns JSON regardless of response_format=text per memory.
+    try:
+        return json.loads(raw)["text"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        # Fall back to raw output (in case server behavior changes someday).
+        return raw or None
+
+
+# ── Wiki write ───────────────────────────────────────────────────────────────
+
+def write_raw_source(
+    wiki_root: Path, rel_path: str, content: str, *, verbose: bool
+) -> bool:
+    """Write content via the mneme_wiki write_wiki_page.py primitive."""
+    write_script = (
+        Path.home()
+        / "projects/homelab-command/apps/hermes/skills/mneme_wiki/scripts/write_wiki_page.py"
+    )
+    if not write_script.exists():
+        print(f"error: write_wiki_page.py not found at {write_script}", file=sys.stderr)
+        return False
+    env = os.environ.copy()
+    env["MNEME_WIKI_PATH"] = str(wiki_root)
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(write_script), rel_path, "-"],
+            input=content,
+            text=True,
+            capture_output=not verbose,
+            env=env,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        return False
+    return proc.returncode == 0
+
+
+# ── Output ───────────────────────────────────────────────────────────────────
+
+def emit_json(payload: dict) -> None:
+    print(json.dumps(payload), flush=True)
+
+
+def emit_human_summary(payload: dict) -> None:
+    status = payload.get("status")
+    if status == "ok":
+        print(f"Status:    {status}")
+        print(f"Platform:  {payload.get('platform')}")
+        print(f"Title:     {payload.get('title')}")
+        print(f"Duration:  {payload.get('duration_seconds')}s")
+        print(f"Raw source: {payload.get('raw_source_path')}")
+    else:
+        print(f"Status: {status}")
+        if payload.get("reason"):
+            print(f"Reason: {payload['reason']}")
+
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Extract a transcript from a video URL via yt-dlp + Whisper.",
+    )
+    parser.add_argument("url", help="Video URL to transcribe.")
+    parser.add_argument(
+        "--automation", action="store_true",
+        help="Triage-driven mode: enforce duration cap, JSON-only stdout, fail-soft.",
+    )
+    parser.add_argument(
+        "--duration-cap", type=int, default=DEFAULT_CAP_MIN,
+        help=f"Duration cap in minutes (automation only; default {DEFAULT_CAP_MIN}).",
+    )
+    parser.add_argument(
+        "--stub-page", default=None,
+        help="Wiki-relative path of the stub for linked_from backfill.",
+    )
+    parser.add_argument(
+        "--source", default="manual",
+        help="SCHEMA source enum value (default: manual).",
+    )
+    parser.add_argument(
+        "--wiki-root", default=None,
+        help="Wiki root override (default: $MNEME_WIKI_PATH or ~/mneme/wiki).",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Probe only; do not download or transcribe.",
+    )
+    parser.add_argument(
+        "--json", action="store_true", dest="json_out",
+        help="Force JSON output even in manual mode.",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    verbose = not args.automation
+    json_out = args.automation or args.json_out
+
+    if args.source not in VALID_SOURCES:
+        print(f"error: --source must be one of {sorted(VALID_SOURCES)}", file=sys.stderr)
+        return EXIT_USAGE
+
+    if args.wiki_root:
+        os.environ["MNEME_WIKI_PATH"] = args.wiki_root
+    try:
+        wiki_root = raw_source.resolve_wiki_root()
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+
+    # Probe metadata.
+    if verbose:
+        print(f"Probing {args.url} ...", file=sys.stderr)
+    meta = yt_dlp_probe(args.url, verbose=verbose)
+    if meta is None:
+        result = {"status": "unresolvable", "source_url": args.url}
+        if json_out:
+            emit_json(result)
+        else:
+            emit_human_summary(result)
+        return EXIT_UNRESOLVABLE
+
+    title = meta.get("title") or "Untitled"
+    creator = meta.get("uploader") or meta.get("channel")
+    duration_s = int(meta.get("duration") or 0)
+    platform = meta.get("extractor_key") or meta.get("extractor") or "generic"
+    platform = platform.lower()
+    canonical_url = meta.get("webpage_url") or args.url
+
+    # Cap check.
+    if args.automation and duration_s > args.duration_cap * 60:
+        result = {
+            "status": "skipped",
+            "reason": "over duration cap",
+            "duration_seconds": duration_s,
+            "duration_cap_seconds": args.duration_cap * 60,
+            "source_url": canonical_url,
+            "title": title,
+            "platform": platform,
+        }
+        emit_json(result)
+        return EXIT_OVER_CAP
+
+    if args.dry_run:
+        result = {
+            "status": "dry-run",
+            "duration_seconds": duration_s,
+            "title": title,
+            "platform": platform,
+            "source_url": canonical_url,
+        }
+        if json_out:
+            emit_json(result)
+        else:
+            emit_human_summary(result)
+        return EXIT_OK
+
+    # Download audio.
+    with tempfile.TemporaryDirectory(prefix="extract-video-") as tmp:
+        tmp_path = Path(tmp)
+        audio = yt_dlp_download_audio(canonical_url, tmp_path, verbose=verbose)
+        if audio is None:
+            result = {
+                "status": "no-audio",
+                "reason": "yt-dlp could not download audio",
+                "source_url": canonical_url,
+            }
+            if json_out:
+                emit_json(result)
+            else:
+                emit_human_summary(result)
+            return EXIT_NO_AUDIO
+
+        # Transcribe.
+        if verbose:
+            print(f"Transcribing ({audio.stat().st_size // 1024} KB) ...", file=sys.stderr)
+        transcript = whisper_transcribe(audio, verbose=verbose)
+
+    if not transcript:
+        result = {
+            "status": "transcript-pending",
+            "reason": "whisper unreachable or empty response",
+            "source_url": canonical_url,
+            "title": title,
+            "platform": platform,
+            "duration_seconds": duration_s,
+        }
+        if json_out:
+            emit_json(result)
+        else:
+            emit_human_summary(result)
+        return EXIT_WHISPER
+
+    # Stub-page slug → "Stub Title" for linked_from backfill timing:
+    # In --automation, the stub may not exist yet (triage will backfill).
+    # Otherwise, accept whatever --stub-page resolves to.
+    stub_title: str | None = None
+    if args.stub_page:
+        stub_title = Path(args.stub_page).stem
+
+    # Build frontmatter + body.
+    today = date.today()
+    extraction_mode = "automation" if args.automation else "manual"
+    frontmatter = raw_source.build_video_frontmatter(
+        source_url=canonical_url,
+        title=title,
+        creator=creator,
+        duration_s=duration_s,
+        platform=platform,
+        captured_via=args.source,
+        transcriber=WHISPER_LABEL,
+        extraction_mode=extraction_mode,
+        extracted_by=SCRIPT_VERSION,
+        created=today,
+        stub_title=stub_title,
+    )
+
+    # Filename + write.
+    fname = raw_source.raw_source_filename(today, title, f"{platform} transcript")
+    rel_path = f"raw-sources/{fname}"
+    body = f"# {title}\n\nSource: {canonical_url}\n\n## Transcript\n\n{transcript.strip()}\n"
+    content = frontmatter + body
+
+    ok = write_raw_source(wiki_root, rel_path, content, verbose=verbose)
+    if not ok:
+        result = {
+            "status": "wiki-write-failed",
+            "source_url": canonical_url,
+            "title": title,
+        }
+        if json_out:
+            emit_json(result)
+        else:
+            emit_human_summary(result)
+        return EXIT_WIKI_WRITE
+
+    result = {
+        "status": "ok",
+        "raw_source_path": rel_path,
+        "duration_seconds": duration_s,
+        "platform": platform,
+        "source_url": canonical_url,
+        "title": title,
+    }
+    if json_out:
+        emit_json(result)
+    else:
+        emit_human_summary(result)
+    return EXIT_OK
+
+
+if __name__ == "__main__":
+    sys.exit(main())
