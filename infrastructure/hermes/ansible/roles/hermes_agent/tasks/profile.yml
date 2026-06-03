@@ -103,9 +103,9 @@
         changed = True
     if changed:
         p.write_text(yaml.safe_dump(cfg, sort_keys=False, default_flow_style=False))
-        print("changed")
+        print("WROTE_CHANGES")
     else:
-        print("unchanged")
+        print("NO_CHANGES")
     PYEOF
   args:
     executable: /bin/bash
@@ -113,5 +113,8 @@
   loop_control:
     label: "{{ item.name }}"
   register: profile_config_patch
-  changed_when: "'changed' in profile_config_patch.stdout"
+  # Distinct sentinels: a substring test like "'changed' in stdout" matches
+  # "unchanged" too, which silently made this task always-changed (+ a spurious
+  # gateway restart every run). Match the explicit write marker instead.
+  changed_when: "'WROTE_CHANGES' in profile_config_patch.stdout"
   notify: restart hermes-agent
