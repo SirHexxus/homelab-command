@@ -34,7 +34,7 @@ from pathlib import Path
 
 AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
-CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
+CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events"
 DEFAULT_OUTPUT = Path.home() / ".config" / "mnemosyne" / "gcal-creds.json"
 REQUEST_TIMEOUT_SECONDS = 30
 SUCCESS_PAGE = (

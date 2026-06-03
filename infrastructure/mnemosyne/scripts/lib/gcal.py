@@ -236,3 +236,236 @@ def fetch_calendar(
 
     collected.sort(key=lambda pair: pair[0])
     return [event for _, event in collected]
+
+
+# ── Calendar writes ──────────────────────────────────────────────────────────
+#
+# Writes are intentionally additive — added below the read API, never edits
+# of it. The read contract (None on failure) carries over: write helpers
+# return per-call result dicts; apply_calendar_overrides aggregates them
+# into a per-override status array. No exceptions propagate to callers.
+
+INSTANCES_ENDPOINT = (
+    "https://www.googleapis.com/calendar/v3/calendars/{cal}/events/{eid}/instances"
+)
+
+
+def _request_with_body(
+    url: str,
+    method: str,
+    access_token: str,
+    body: dict,
+) -> tuple[int, dict | None]:
+    """Issue a method-with-JSON-body request. Returns (status, parsed body or None)."""
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method=method,
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as resp:
+            raw = resp.read().decode("utf-8")
+            status = resp.status
+    except urllib.error.HTTPError as exc:
+        try:
+            err_body = json.loads(exc.read().decode("utf-8"))
+        except (json.JSONDecodeError, OSError):
+            err_body = None
+        return exc.code, err_body
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return 0, None
+    try:
+        return status, json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        return status, None
+
+
+def _find_event_instance(
+    calendar_id: str,
+    access_token: str,
+    title: str,
+    target_date: str,
+) -> dict | None:
+    """Find the concrete event instance matching `title` on `target_date`.
+
+    Lists events in the target date's 24-hour window (singleEvents=True) and
+    returns the first non-cancelled instance whose summary matches `title`
+    exactly. This walks live instances directly — no need to locate the
+    recurrence master first, which is brittle when the calendar has multiple
+    dead recurring masters with the same title.
+
+    Returns the instance dict (which includes `recurringEventId` if it came
+    from a recurring series) or None if no match.
+    """
+    try:
+        d = date.fromisoformat(target_date)
+    except ValueError:
+        return None
+    time_min = datetime.combine(d, time.min).astimezone().isoformat()
+    time_max = datetime.combine(d + timedelta(days=1), time.min).astimezone().isoformat()
+    query = urllib.parse.urlencode({
+        "timeMin": time_min,
+        "timeMax": time_max,
+        "singleEvents": "true",
+        "maxResults": "250",
+        "orderBy": "startTime",
+    })
+    url = (
+        EVENTS_ENDPOINT.format(cal=urllib.parse.quote(calendar_id, safe=""))
+        + "?"
+        + query
+    )
+    payload = _get_json(url, access_token)
+    if payload is None:
+        return None
+    items = payload.get("items") or []
+    for item in items:
+        if item.get("status") == "cancelled":
+            continue
+        if (item.get("summary") or "").strip() == title:
+            return item
+    return None
+
+
+def _apply_move_instance(
+    calendar_id: str,
+    access_token: str,
+    override: dict,
+) -> dict:
+    match = override.get("match") or {}
+    title = match.get("title")
+    target_date = match.get("date")
+    new_start = override.get("new_start")
+    new_end = override.get("new_end")
+    if not (title and target_date and new_start and new_end):
+        return {"status": "skipped", "reason": "missing required fields"}
+    instance = _find_event_instance(calendar_id, access_token, title, target_date)
+    if instance is None:
+        return {"status": "failed", "reason": f"no live instance of {title!r} on {target_date}"}
+    body = {
+        "start": {"dateTime": new_start},
+        "end": {"dateTime": new_end},
+    }
+    if override.get("note"):
+        body["description"] = override["note"]
+    url = (
+        EVENTS_ENDPOINT.format(cal=urllib.parse.quote(calendar_id, safe=""))
+        + "/"
+        + urllib.parse.quote(instance["id"], safe="")
+    )
+    status, body_resp = _request_with_body(url, "PATCH", access_token, body)
+    if status == 200:
+        return {"status": "applied", "instance_id": instance["id"]}
+    return {"status": "failed", "reason": f"PATCH returned {status}", "body": body_resp}
+
+
+def _apply_cancel_instance(
+    calendar_id: str,
+    access_token: str,
+    override: dict,
+) -> dict:
+    match = override.get("match") or {}
+    title = match.get("title")
+    target_date = match.get("date")
+    if not (title and target_date):
+        return {"status": "skipped", "reason": "missing required fields"}
+    instance = _find_event_instance(calendar_id, access_token, title, target_date)
+    if instance is None:
+        return {"status": "failed", "reason": f"no live instance of {title!r} on {target_date}"}
+    url = (
+        EVENTS_ENDPOINT.format(cal=urllib.parse.quote(calendar_id, safe=""))
+        + "/"
+        + urllib.parse.quote(instance["id"], safe="")
+    )
+    status, body_resp = _request_with_body(
+        url, "PATCH", access_token, {"status": "cancelled"}
+    )
+    if status == 200:
+        return {"status": "applied", "instance_id": instance["id"]}
+    return {"status": "failed", "reason": f"PATCH returned {status}", "body": body_resp}
+
+
+def _apply_add_event(
+    calendar_id: str,
+    access_token: str,
+    override: dict,
+) -> dict:
+    title = override.get("title")
+    start = override.get("start")
+    end = override.get("end")
+    if not (title and start and end):
+        return {"status": "skipped", "reason": "missing required fields"}
+    body = {
+        "summary": title,
+        "start": {"dateTime": start},
+        "end": {"dateTime": end},
+    }
+    if override.get("note"):
+        body["description"] = override["note"]
+    if override.get("location"):
+        body["location"] = override["location"]
+    url = EVENTS_ENDPOINT.format(cal=urllib.parse.quote(calendar_id, safe=""))
+    status, body_resp = _request_with_body(url, "POST", access_token, body)
+    if status in (200, 201):
+        return {"status": "applied", "event_id": (body_resp or {}).get("id")}
+    return {"status": "failed", "reason": f"POST returned {status}", "body": body_resp}
+
+
+_ACTION_DISPATCH = {
+    "move_instance": _apply_move_instance,
+    "cancel_instance": _apply_cancel_instance,
+    "add_event": _apply_add_event,
+}
+
+
+def apply_calendar_overrides(
+    client_id: str,
+    client_secret: str,
+    refresh_token: str,
+    calendar_id: str,
+    overrides: list[dict],
+) -> dict:
+    """Apply a list of schedule overrides to one Google Calendar.
+
+    Per-override status; no transactional rollback. Returns:
+        {
+            "applied": [...],   # successful overrides with their action results
+            "failed":  [...],   # overrides that hit an API error
+            "skipped": [...],   # overrides missing required fields or unknown actions
+        }
+    Auth failures or absent inputs return an error sentinel:
+        {"error": "..."}
+    """
+    if not (client_id and client_secret and refresh_token and calendar_id):
+        return {"error": "missing auth or calendar_id"}
+    if not overrides:
+        return {"applied": [], "failed": [], "skipped": []}
+
+    access_token = _get_access_token(client_id, client_secret, refresh_token)
+    if access_token is None:
+        return {"error": "token exchange failed (scope may be too narrow for writes)"}
+
+    applied: list[dict] = []
+    failed: list[dict] = []
+    skipped: list[dict] = []
+    for override in overrides:
+        action = (override.get("action") or "").strip()
+        handler = _ACTION_DISPATCH.get(action)
+        if handler is None:
+            skipped.append({"override": override, "reason": f"unknown action {action!r}"})
+            continue
+        result = handler(calendar_id, access_token, override)
+        status = result.get("status")
+        entry = {"override": override, "result": result}
+        if status == "applied":
+            applied.append(entry)
+        elif status == "skipped":
+            skipped.append(entry)
+        else:
+            failed.append(entry)
+    return {"applied": applied, "failed": failed, "skipped": skipped}
