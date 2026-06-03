@@ -12,6 +12,10 @@
 - import_tasks: install.yml
   tags: [hermes-agent, install]
 
+- import_tasks: litellm.yml
+  tags: [hermes-agent, litellm, vertex]
+  when: hermes_agent_litellm_enabled | bool
+
 - import_tasks: wiki.yml
   tags: [hermes-agent, wiki]
 

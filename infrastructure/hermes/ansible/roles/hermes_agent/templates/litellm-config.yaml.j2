@@ -1,0 +1,16 @@
+# LiteLLM proxy config — Vertex AI Gemini for Hermes-Agent (Chiron)
+# Managed by Ansible role: hermes_agent (litellm tasks). Edits here are overwritten.
+# Routes Hermes-Agent's OpenAI-compatible calls to Vertex AI (credit-covered).
+# Auth: NONE — bound to 127.0.0.1 only; reachable solely by on-host processes.
+model_list:
+{% for m in hermes_agent_litellm_models %}
+  - model_name: {{ m }}
+    litellm_params:
+      model: vertex_ai/{{ m }}
+      vertex_project: {{ hermes_agent_vertex_project }}
+      vertex_location: {{ hermes_agent_vertex_location }}
+      vertex_credentials: {{ hermes_agent_vertex_sa_dest }}
+{% endfor %}
+
+litellm_settings:
+  drop_params: true

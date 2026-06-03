@@ -1,0 +1,109 @@
+# roles/hermes_agent/tasks/litellm.yml
+#
+# LiteLLM proxy sidecar — gives Hermes-Agent a credit-covered Vertex AI path.
+# Hermes-Agent v0.15 has no native Vertex provider, and Vertex needs
+# short-lived SA OAuth tokens (not a static key); LiteLLM authenticates with
+# the service-account JSON and refreshes tokens internally, exposing a plain
+# OpenAI-compatible endpoint on loopback. Hermes-Agent points its `custom`
+# provider at it (see defaults/main.yml + tasks/profile.yml).
+#
+# Keyless by design: bound to 127.0.0.1 only, so reachable solely by on-host
+# processes. The SA JSON (the actual credential) stays 0600 root.
+
+- name: Ensure LiteLLM install dir exists
+  ansible.builtin.file:
+    path: "{{ hermes_agent_litellm_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Ensure /etc/litellm exists
+  ansible.builtin.file:
+    path: "{{ hermes_agent_litellm_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Create LiteLLM venv
+  ansible.builtin.command:
+    cmd: "python3 -m venv {{ hermes_agent_litellm_venv_dir }}"
+    creates: "{{ hermes_agent_litellm_venv_dir }}/bin/python"
+
+- name: Install LiteLLM[proxy] + Vertex deps (pinned)
+  ansible.builtin.shell: |
+    set -o pipefail
+    have_litellm=$("{{ hermes_agent_litellm_venv_dir }}/bin/python" -c \
+      'from importlib.metadata import version,PackageNotFoundError
+    try: print(version("litellm"))
+    except PackageNotFoundError: print("none")' 2>/dev/null)
+    have_aip=$("{{ hermes_agent_litellm_venv_dir }}/bin/python" -c \
+      'from importlib.metadata import version,PackageNotFoundError
+    try: print(version("google-cloud-aiplatform"))
+    except PackageNotFoundError: print("none")' 2>/dev/null)
+    if [[ "$have_litellm" == "{{ hermes_agent_litellm_version }}" \
+       && "$have_aip" == "{{ hermes_agent_litellm_aiplatform_version }}" ]]; then
+      echo "unchanged"
+    else
+      "{{ hermes_agent_litellm_venv_dir }}/bin/pip" install --quiet --upgrade pip
+      "{{ hermes_agent_litellm_venv_dir }}/bin/pip" install --quiet \
+        "litellm[proxy]=={{ hermes_agent_litellm_version }}" \
+        "google-cloud-aiplatform=={{ hermes_agent_litellm_aiplatform_version }}"
+      echo "installed"
+    fi
+  args:
+    executable: /bin/bash
+  register: litellm_pip
+  changed_when: "'installed' in litellm_pip.stdout"
+  notify: restart litellm
+
+- name: Deploy Vertex service-account JSON
+  ansible.builtin.copy:
+    content: "{{ vault_chiron_vertex_sa_json }}"
+    dest: "{{ hermes_agent_vertex_sa_dest }}"
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  notify: restart litellm
+
+- name: Template LiteLLM config.yaml
+  ansible.builtin.template:
+    src: litellm-config.yaml.j2
+    dest: "{{ hermes_agent_litellm_config_dir }}/config.yaml"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart litellm
+
+- name: Template LiteLLM EnvironmentFile (keyless — comment-only placeholder)
+  ansible.builtin.copy:
+    content: |
+      # /etc/litellm/env — systemd EnvironmentFile for litellm.service
+      # Managed by Ansible. Keyless proxy (loopback-only): no LITELLM_MASTER_KEY.
+    dest: "{{ hermes_agent_litellm_config_dir }}/env"
+    owner: root
+    group: root
+    mode: '0600'
+  notify: restart litellm
+
+- name: Install litellm systemd unit
+  ansible.builtin.template:
+    src: litellm.service.j2
+    dest: "/etc/systemd/system/{{ hermes_agent_litellm_service_name }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart litellm
+
+- name: Flush handlers so daemon-reload + restart happen before enable
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start litellm service
+  ansible.builtin.systemd:
+    name: "{{ hermes_agent_litellm_service_name }}"
+    enabled: yes
+    state: started

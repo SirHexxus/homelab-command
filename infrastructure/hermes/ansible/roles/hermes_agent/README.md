@@ -14,14 +14,23 @@ rename). See `docs/hermes-design-doc-v1.1.md` and the Mnemosyne sprint page
 2. Bootstraps `uv` (Astral's Python manager) for the install user (`uv.yml`).
 3. Clones Hermes-Agent at the pinned commit, creates a Python 3.11 venv via
    uv, `pip install -e ".[all]"` plus `python-telegram-bot` (`install.yml`).
-4. Templates `/etc/hermes-agent/env` (systemd EnvironmentFile, secrets via
-   Vault) and patches `~/.hermes/config.yaml` to set the default model and
-   enable the webhook + Telegram platforms. Registers configured MCP
-   servers (`config.yml`).
-5. Creates each configured Hermes-Agent profile (persona), templates its
-   `SOUL.md` (persona system prompt) and `USER.md` (user model), and sets
-   the sticky default profile (`profile.yml`).
-6. Installs and starts `/etc/systemd/system/hermes-agent.service` running
+4. Installs the **LiteLLM proxy sidecar** (`litellm.yml`): a loopback-only
+   (`127.0.0.1:4000`) OpenAI-compatible endpoint that authenticates to
+   **Vertex AI** with a service-account JSON and refreshes tokens
+   internally. Hermes-Agent has no native Vertex provider and Vertex needs
+   short-lived SA OAuth tokens, so the proxy bridges the gap — and moves
+   inference spend onto the credit-covered Vertex path. Keyless by design
+   (loopback only); the SA JSON stays `0600 root`.
+5. Templates `/etc/hermes-agent/env` (systemd EnvironmentFile, secrets via
+   Vault — `GOOGLE_API_KEY` is now TTS-only) and scaffolds the global
+   `~/.hermes/config.yaml`. Registers configured MCP servers (`config.yml`).
+6. Creates each configured Hermes-Agent profile (persona), templates its
+   `SOUL.md` and `USER.md`, sets the sticky default profile, and patches the
+   **active profile's** `config.yaml` — primary model (`custom` provider →
+   the LiteLLM proxy → Vertex `gemini-2.5-flash`), webhook + Telegram
+   platforms, and the 5 aux-task overrides (→ Vertex `gemini-2.5-flash-lite`)
+   (`profile.yml`).
+7. Installs and starts `/etc/systemd/system/hermes-agent.service` running
    `hermes gateway run` (`service.yml`).
 
 Each task is idempotent — re-runs converge to no-change when the LXC is
@@ -115,9 +124,10 @@ overridden in `group_vars/hermes_containers.yml`:
 
 | Vault variable                       | Purpose                                  |
 | ------------------------------------ | ---------------------------------------- |
-| `vault_chiron_gemini_api_key`        | Google AI Studio API key for Gemini      |
+| `vault_chiron_gemini_api_key`        | Google AI Studio key — TTS only now      |
 | `vault_chiron_telegram_bot_token`    | @HaleyChironBot bot token                |
 | `vault_chiron_webhook_secret`        | HMAC-SHA256 secret for inbound webhooks  |
+| `vault_chiron_vertex_sa_json`        | Vertex AI service-account JSON (LiteLLM) |
 
 See `group_vars/vault.yml.example` for placeholder format.
 

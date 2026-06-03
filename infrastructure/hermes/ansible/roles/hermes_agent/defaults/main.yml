@@ -31,10 +31,56 @@ hermes_agent_wiki_dir:  /root/mneme/wiki
 hermes_agent_python_version: "3.11"
 hermes_agent_uv_bin:         /root/.local/bin/uv
 
-# ── Model routing (Gemini-only per [[chiron-hermes-agent-pivot]]) ──────────
-hermes_agent_default_model:    gemini-3.5-flash
-hermes_agent_model_provider:   gemini
-hermes_agent_model_base_url:   "https://generativelanguage.googleapis.com/v1beta"
+# ── Model routing (Vertex AI via a local LiteLLM proxy — credit-covered) ───
+# Hermes-Agent v0.15 has NO native Vertex provider (only AI Studio `gemini`
+# + Code Assist OAuth), and Vertex needs short-lived SA OAuth tokens, not a
+# static key. So primary inference goes through a LiteLLM proxy on loopback
+# that authenticates to Vertex with a service-account JSON and refreshes
+# tokens internally; Hermes-Agent just sees an OpenAI-compatible endpoint
+# (provider: custom). This moves spend off out-of-pocket AI Studio onto the
+# $1,000 GenAI App Builder credit. See [[hermes-agent-aux-tasks-layer3]].
+hermes_agent_default_model:    gemini-2.5-flash
+hermes_agent_model_provider:   custom
+hermes_agent_model_base_url:   "http://127.0.0.1:4000/v1"
+
+# Aux-task routing: the 5 high-volume / low-judgment tasks → Vertex Flash-Lite
+# via the same proxy. The other 6 (vision, web_extract, compression, mcp,
+# triage_specifier, kanban_decomposer) stay on `auto` (= primary). See the
+# Layer-3 aux-router memo for the rationale and per-task breakdown.
+hermes_agent_aux_lite_model:    gemini-2.5-flash-lite
+hermes_agent_aux_lite_provider: custom
+hermes_agent_aux_lite_base_url: "http://127.0.0.1:4000/v1"
+hermes_agent_aux_lite_tasks:
+  - skills_hub
+  - approval
+  - title_generation
+  - profile_describer
+  - curator
+
+# ── LiteLLM proxy (Vertex AI sidecar) ──────────────────────────────────────
+# Loopback-only (127.0.0.1) → reachable solely by on-host processes, so the
+# proxy runs keyless; the real credential (SA JSON) stays 0600 root and is
+# never exposed by the proxy. Pinned versions for reproducible spend shape.
+hermes_agent_litellm_enabled:     true
+hermes_agent_litellm_install_dir: /opt/litellm
+hermes_agent_litellm_venv_dir:    /opt/litellm/venv
+hermes_agent_litellm_config_dir:  /etc/litellm
+hermes_agent_litellm_version:     "1.87.0"
+hermes_agent_litellm_aiplatform_version: "1.154.0"
+hermes_agent_litellm_host:        "127.0.0.1"
+hermes_agent_litellm_port:        4000
+hermes_agent_litellm_service_name: litellm
+
+# Vertex project/location + where the SA JSON lands (deployed from vault).
+hermes_agent_vertex_project:  gen-lang-client-0234750661
+hermes_agent_vertex_location: us-central1
+hermes_agent_vertex_sa_dest:  /etc/litellm/vertex-sa.json
+
+# Models exposed by the proxy (model_name == route name Hermes-Agent calls).
+hermes_agent_litellm_models:
+  - gemini-2.5-flash
+  - gemini-2.5-flash-lite
+  - gemini-2.5-pro
 
 # ── Webhook platform ───────────────────────────────────────────────────────
 hermes_agent_webhook_enabled: true
