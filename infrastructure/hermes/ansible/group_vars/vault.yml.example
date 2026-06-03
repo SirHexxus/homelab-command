@@ -15,9 +15,20 @@
 # These three are the secrets the hermes_agent role needs. Vault convention
 # is `vault_<service>_<credential>` per root CLAUDE.md.
 
-vault_chiron_gemini_api_key:     ""    # Google AI Studio API key (Gemini 3.5 Flash)
+vault_chiron_gemini_api_key:     ""    # Google AI Studio key — TTS only now (render_voice.py); inference moved to Vertex
 vault_chiron_telegram_bot_token: ""    # @HaleyChironBot bot token from @BotFather
 vault_chiron_webhook_secret:     ""    # HMAC-SHA256 secret; generate: openssl rand -hex 32
+
+# Vertex AI service-account JSON (key for the LiteLLM proxy — see tasks/litellm.yml).
+# Primary + aux inference go through Vertex via this SA; spend is credit-covered.
+# Paste the full service-account key JSON as a YAML literal block:
+#   vault_chiron_vertex_sa_json: |
+#     {
+#       "type": "service_account",
+#       "project_id": "gen-lang-client-0234750661",
+#       ...
+#     }
+vault_chiron_vertex_sa_json:     ""    # SA JSON for vertex-hermes-agent@…; roles/aiplatform.user
 
 # ── Mnemosyne wiki access (used by the mneme_wiki skill via tasks/wiki.yml) ─
 # Same three vars as the inbox_receiver role — reuse the existing vault values

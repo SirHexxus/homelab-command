@@ -10,3 +10,9 @@
     name: "{{ hermes_agent_service_name }}"
     state: restarted
   listen: "restart hermes-agent"
+
+- name: restart litellm
+  ansible.builtin.systemd:
+    name: "{{ hermes_agent_litellm_service_name }}"
+    state: restarted
+  listen: "restart litellm"

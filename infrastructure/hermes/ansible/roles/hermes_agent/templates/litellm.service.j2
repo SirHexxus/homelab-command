@@ -1,0 +1,17 @@
+[Unit]
+Description=LiteLLM proxy (Vertex AI Gemini for Hermes-Agent / Chiron)
+Documentation=https://docs.litellm.ai/docs/proxy/configs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile={{ hermes_agent_litellm_config_dir }}/env
+ExecStart={{ hermes_agent_litellm_venv_dir }}/bin/litellm --config {{ hermes_agent_litellm_config_dir }}/config.yaml --host {{ hermes_agent_litellm_host }} --port {{ hermes_agent_litellm_port }}
+Restart=on-failure
+RestartSec=5
+User=root
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
