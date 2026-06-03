@@ -1,0 +1,555 @@
+#!/usr/bin/env python3
+"""Extract OCR data from an image via Gemini multimodal.
+
+Saves the result as a sibling raw-source markdown file in the Mnemosyne wiki.
+With --work-schedule, parses to a structured ScheduleOverride JSON and
+optionally applies the overrides to Google Calendar (gated by --apply +
+confidence >= 0.7).
+
+Callable manually by James on the CLI, by triage-inbox (with --automation),
+and by any agent. Triage NEVER passes --apply — calendar writes require
+explicit human / agent authorization.
+
+Reuses the daily-digest Gemini integration pattern (google-genai client,
+creds from $GEMINI_CREDENTIALS or ~/.config/mnemosyne/gemini-creds.json).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import mimetypes
+import os
+import re
+import subprocess
+import sys
+from datetime import date, timedelta
+from pathlib import Path
+
+LIB_DIR = Path(__file__).resolve().parent / "lib"
+sys.path.insert(0, str(LIB_DIR))
+import raw_source  # noqa: E402
+import llm_client  # noqa: E402
+
+
+# Exit codes
+EXIT_OK = 0
+EXIT_USAGE = 1
+EXIT_UNREADABLE = 2
+EXIT_GEMINI_FAIL = 3
+EXIT_LOW_CONFIDENCE = 4
+EXIT_WIKI_WRITE = 5
+EXIT_CALENDAR_FAIL = 6
+EXIT_DECLINED = 7
+
+GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_CREDS_PATH = Path.home() / ".config" / "mnemosyne" / "gemini-creds.json"
+DEFAULT_CALENDAR_ALIASES = Path.home() / ".config" / "mnemosyne" / "calendar-aliases.json"
+DEFAULT_GCAL_CREDS_PATH = Path.home() / ".config" / "mnemosyne" / "gcal-creds.json"
+SCRIPT_VERSION = "extract-image-data@1.1"
+APPLY_CONFIDENCE_FLOOR = 0.7
+
+VALID_SOURCES = {
+    "telegram", "email", "web_clipper", "n8n_chat",
+    "claude_code", "manual", "hermes_agent",
+}
+
+PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
+
+
+# ── Credentials ──────────────────────────────────────────────────────────────
+
+# NOTE: load_gemini_creds was used with the direct Gemini API. The script now
+# routes through Vertex AI via lib/llm_client.py, which reads vertex-creds.json.
+# This function is retained but unused as of 2026-06-03; safe to delete once
+# daily-digest also migrates.
+
+
+def load_calendar_aliases() -> dict[str, str]:
+    if not DEFAULT_CALENDAR_ALIASES.exists():
+        return {}
+    try:
+        return json.loads(DEFAULT_CALENDAR_ALIASES.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def load_gcal_creds() -> tuple[str, str, str] | None:
+    """Return (client_id, client_secret, refresh_token) or None.
+
+    Layout mirrors gcal-authorize output. Same path convention as the digest creds.
+    """
+    try:
+        creds = json.loads(DEFAULT_GCAL_CREDS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    client_id = (creds.get("client_id") or "").strip()
+    client_secret = (creds.get("client_secret") or "").strip()
+    refresh_token = (creds.get("refresh_token") or "").strip()
+    if not (client_id and client_secret and refresh_token):
+        return None
+    return client_id, client_secret, refresh_token
+
+
+def fetch_baseline_pattern(verbose: bool = False) -> str | None:
+    """Fetch the baseline recurring events for a typical upcoming workday.
+
+    Picks the next Mon-Fri date strictly after today, queries the primary
+    calendar via gcal.fetch_calendar, and formats the events as plain text
+    for injection into the Gemini schedule prompt. Returns None on any
+    failure (missing creds, network, no events) — Gemini falls back to
+    inferring baseline from the schedule image itself.
+    """
+    creds = load_gcal_creds()
+    if creds is None:
+        return None
+    try:
+        import gcal as gcal_lib
+    except ImportError:
+        return None
+
+    # Next weekday strictly after today.
+    today = date.today()
+    target = today + timedelta(days=1)
+    while target.weekday() >= 5:  # 5=Sat, 6=Sun
+        target += timedelta(days=1)
+
+    events = gcal_lib.fetch_calendar(
+        creds[0], creds[1], creds[2], ("primary",), target
+    )
+    if not events:
+        return None
+
+    lines = [
+        f"Reference baseline for a typical workday "
+        f"({target.isoformat()}, {target.strftime('%A')}):"
+    ]
+    for e in events:
+        title = e.get("title") or "(untitled)"
+        if e.get("all_day"):
+            lines.append(f"- {title} (all day)")
+        else:
+            start = e.get("start") or "?"
+            end = e.get("end") or "?"
+            lines.append(f"- {title}: {start} – {end}")
+    if verbose:
+        print(f"[baseline] fetched {len(events)} events for {target.isoformat()}", file=sys.stderr)
+    return "\n".join(lines)
+
+
+# ── Gemini call ──────────────────────────────────────────────────────────────
+
+def load_prompt(name: str) -> str:
+    path = PROMPTS_DIR / name
+    if not path.exists():
+        raise RuntimeError(f"prompt template not found: {path}")
+    return path.read_text(encoding="utf-8")
+
+
+def call_gemini_multimodal(
+    image_bytes: bytes,
+    mime: str,
+    system_prompt: str,
+    user_text: str,
+    model: str,
+    creds: dict | None = None,
+) -> str:
+    """Send image + prompts to Vertex AI Gemini via lib/llm_client.
+
+    Returns the response text (stripped). Raises llm_client.LLMError on
+    SDK / credential issues; caller handles.
+    """
+    response = llm_client.call_multimodal(
+        system_prompt=system_prompt,
+        user_text=user_text,
+        image_bytes=image_bytes,
+        mime=mime,
+        model=model,
+        creds=creds,
+    )
+    return (response.text or "").strip()
+
+
+def strip_code_fence(text: str) -> str:
+    """Strip a leading ```json ... ``` fence if Gemini added one."""
+    fenced = re.match(r"^```(?:json)?\s*\n(.*)\n```\s*$", text, re.DOTALL)
+    if fenced:
+        return fenced.group(1).strip()
+    return text
+
+
+def parse_gemini_json(text: str) -> dict:
+    cleaned = strip_code_fence(text)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Gemini did not return parseable JSON: {exc}\n---\n{text}")
+
+
+# ── Wiki write ───────────────────────────────────────────────────────────────
+
+def write_raw_source(wiki_root: Path, rel_path: str, content: str) -> bool:
+    write_script = (
+        Path.home()
+        / "projects/homelab-command/apps/hermes/skills/mneme_wiki/scripts/write_wiki_page.py"
+    )
+    if not write_script.exists():
+        print(f"error: write_wiki_page.py not found at {write_script}", file=sys.stderr)
+        return False
+    env = os.environ.copy()
+    env["MNEME_WIKI_PATH"] = str(wiki_root)
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(write_script), rel_path, "-"],
+            input=content,
+            text=True,
+            capture_output=True,
+            env=env,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        return False
+    return proc.returncode == 0
+
+
+# ── Output ───────────────────────────────────────────────────────────────────
+
+def emit_json(payload: dict) -> None:
+    print(json.dumps(payload), flush=True)
+
+
+def emit_human_summary(payload: dict) -> None:
+    print(f"Status:    {payload.get('status')}")
+    if "confidence" in payload:
+        print(f"Confidence: {payload['confidence']:.2f}")
+    if "raw_source_path" in payload:
+        print(f"Raw source: {payload['raw_source_path']}")
+    if "applied" in payload:
+        print(f"Applied to calendar: {payload['applied']}")
+    if "reason" in payload:
+        print(f"Reason: {payload['reason']}")
+
+
+# ── Calendar apply (deferred to lib/gcal.py extension) ───────────────────────
+
+def apply_overrides(parsed: dict, aliases: dict, verbose: bool) -> dict:
+    """Apply schedule overrides via gcal.py::apply_calendar_overrides.
+
+    Returns a result dict — passes the gcal sentinel format through, plus an
+    'error' key on auth/resolution failures.
+    """
+    try:
+        import gcal
+    except ImportError as exc:
+        return {"error": f"gcal module not available: {exc}"}
+    creds = load_gcal_creds()
+    if creds is None:
+        return {"error": f"gcal creds not loadable at {DEFAULT_GCAL_CREDS_PATH}"}
+    client_id, client_secret, refresh_token = creds
+
+    overrides = parsed.get("overrides") or []
+    # Calendar alias resolution: the parse may name a calendar (e.g. "Work",
+    # "family"); fall back to "primary". Aliases map name -> calendar_id.
+    target = (parsed.get("calendar_id") or "primary").strip()
+    calendar_id = aliases.get(target, target)
+    if verbose:
+        print(f"[apply] calendar_id={calendar_id} overrides={len(overrides)}", file=sys.stderr)
+
+    return gcal.apply_calendar_overrides(
+        client_id, client_secret, refresh_token, calendar_id, overrides
+    )
+
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Extract OCR data from an image via Gemini multimodal.",
+    )
+    parser.add_argument("image_path", help="Path to the image file.")
+    parser.add_argument(
+        "--work-schedule", action="store_true",
+        help="Schedule-parsing mode; emit structured override JSON.",
+    )
+    apply_group = parser.add_mutually_exclusive_group()
+    apply_group.add_argument(
+        "--apply", action="store_true",
+        help="With --work-schedule: apply overrides to Google Calendar.",
+    )
+    apply_group.add_argument(
+        "--no-apply", action="store_true",
+        help="With --work-schedule: parse only, never apply.",
+    )
+    parser.add_argument(
+        "--automation", action="store_true",
+        help="Triage-driven mode: JSON-only stdout, fail-soft, no interactive prompt.",
+    )
+    parser.add_argument(
+        "--stub-page", default=None,
+        help="Wiki-relative path of the stub for linked_from backfill.",
+    )
+    parser.add_argument(
+        "--source", default="manual",
+        help="SCHEMA source enum value (default: manual).",
+    )
+    parser.add_argument(
+        "--context", default=None,
+        help="Free-text context hint passed to Gemini.",
+    )
+    parser.add_argument(
+        "--wiki-root", default=None,
+        help="Wiki root override (default: $MNEME_WIKI_PATH or ~/mneme/wiki).",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="OCR + parse only; never write file, never touch GCal.",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    verbose = not args.automation
+    json_out = args.automation
+
+    if args.apply and not args.work_schedule:
+        print("error: --apply requires --work-schedule", file=sys.stderr)
+        return EXIT_USAGE
+
+    if args.source not in VALID_SOURCES:
+        print(f"error: --source must be one of {sorted(VALID_SOURCES)}", file=sys.stderr)
+        return EXIT_USAGE
+
+    image_path = Path(args.image_path).expanduser().resolve()
+    if not image_path.exists() or not image_path.is_file():
+        print(f"error: image not found: {image_path}", file=sys.stderr)
+        return EXIT_UNREADABLE
+
+    mime = mimetypes.guess_type(image_path)[0] or ""
+    if not mime.startswith("image/"):
+        print(f"error: not an image (mime={mime!r}): {image_path}", file=sys.stderr)
+        return EXIT_UNREADABLE
+
+    if args.wiki_root:
+        os.environ["MNEME_WIKI_PATH"] = args.wiki_root
+    try:
+        wiki_root = raw_source.resolve_wiki_root()
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+
+    # Load Vertex creds + resolve model.
+    try:
+        vertex_creds = llm_client.load_vertex_creds()
+    except llm_client.LLMError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    model = vertex_creds.get("model") or GEMINI_MODEL
+
+    prompt_name = (
+        "extract-image-schedule.md" if args.work_schedule else "extract-image-ocr.md"
+    )
+    try:
+        system_prompt = load_prompt(prompt_name)
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+
+    user_text = "Process the attached image per the system instructions."
+    if args.context:
+        user_text += f"\n\nAdditional context from caller: {args.context}"
+
+    # For schedule mode, inject the actual baseline pattern from Google Calendar
+    # so Gemini doesn't have to infer it from the schedule image itself.
+    if args.work_schedule:
+        baseline = fetch_baseline_pattern(verbose=verbose)
+        if baseline:
+            user_text += (
+                "\n\n== BASELINE WORK WEEK PATTERN ==\n"
+                f"{baseline}\n\n"
+                "The schedule image is for an upcoming work week. The list above shows "
+                "what a typical workday already looks like on James's calendar. "
+                "Emit override entries ONLY for events in the image whose start/end "
+                "time differs from this baseline, plus any add_event entries for events "
+                "in the image that don't appear in the baseline at all. If a day's "
+                "events all match the baseline exactly, produce zero overrides for that day."
+            )
+        elif verbose:
+            print("[baseline] could not fetch — Gemini will infer baseline from image", file=sys.stderr)
+
+    # Call Vertex AI Gemini via shared llm_client.
+    if verbose:
+        print(f"Calling {model} on Vertex ({vertex_creds['location']}) ...", file=sys.stderr)
+    try:
+        image_bytes = image_path.read_bytes()
+        response_text = call_gemini_multimodal(
+            image_bytes, mime, system_prompt, user_text, model, creds=vertex_creds,
+        )
+    except llm_client.LLMError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_GEMINI_FAIL
+    except Exception as exc:  # noqa: BLE001
+        print(f"error: Vertex call failed: {exc}", file=sys.stderr)
+        return EXIT_GEMINI_FAIL
+
+    try:
+        parsed = parse_gemini_json(response_text)
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_GEMINI_FAIL
+
+    confidence = float(parsed.get("confidence") or 0.0)
+    caption = parsed.get("caption") or image_path.stem
+    ocr_text = parsed.get("ocr_text") or parsed.get("raw_schedule_text") or ""
+
+    # Build sidecar.
+    today = date.today()
+    extraction_mode = "automation" if args.automation else "manual"
+    stub_title = Path(args.stub_page).stem if args.stub_page else None
+    extra_tags: list[str] = []
+    if args.work_schedule:
+        extra_tags.append("work-schedule")
+    for cat in (parsed.get("categories") or []):
+        if isinstance(cat, str) and cat not in extra_tags:
+            extra_tags.append(cat)
+
+    frontmatter = raw_source.build_image_frontmatter(
+        source_filename=image_path.name,
+        mime=mime,
+        captured_via=args.source,
+        ocr_by=model,
+        extraction_mode=extraction_mode,
+        extracted_by=SCRIPT_VERSION,
+        extraction_context=args.context,
+        created=today,
+        extra_tags=extra_tags,
+        stub_title=stub_title,
+    )
+
+    fname_kind = "schedule OCR" if args.work_schedule else "image OCR"
+    fname = raw_source.raw_source_filename(today, caption, fname_kind)
+    rel_path = f"raw-sources/{fname}"
+
+    body_parts = [f"# {caption}", "", "## OCR Text", "", ocr_text or "(no text detected)"]
+    if args.work_schedule:
+        overrides = parsed.get("overrides") or []
+        body_parts.extend([
+            "",
+            "## Proposed Schedule Overrides",
+            "",
+            "```json",
+            json.dumps({"overrides": overrides, "confidence": confidence}, indent=2),
+            "```",
+        ])
+        concerns = parsed.get("concerns") or []
+        if concerns:
+            body_parts.extend(["", "## Concerns", ""])
+            body_parts.extend(f"- {c}" for c in concerns)
+    body = "\n".join(body_parts) + "\n"
+    content = frontmatter + body
+
+    if args.dry_run:
+        result = {
+            "status": "dry-run",
+            "confidence": confidence,
+            "caption": caption,
+            "overrides_count": len(parsed.get("overrides") or []) if args.work_schedule else None,
+        }
+        if json_out:
+            emit_json(result)
+        else:
+            emit_human_summary(result)
+        return EXIT_OK
+
+    if not write_raw_source(wiki_root, rel_path, content):
+        result = {"status": "wiki-write-failed"}
+        if json_out:
+            emit_json(result)
+        else:
+            emit_human_summary(result)
+        return EXIT_WIKI_WRITE
+
+    # Decide on apply path.
+    applied = False
+    apply_result: dict | None = None
+
+    if args.work_schedule:
+        if confidence < APPLY_CONFIDENCE_FLOOR:
+            result = {
+                "status": "ok-low-confidence",
+                "raw_source_path": rel_path,
+                "confidence": confidence,
+                "overrides": parsed.get("overrides") or [],
+                "applied": False,
+                "reason": f"confidence below floor ({APPLY_CONFIDENCE_FLOOR})",
+            }
+            if json_out:
+                emit_json(result)
+            else:
+                emit_human_summary(result)
+            # Sidecar still useful; exit 4 communicates "do not auto-apply".
+            return EXIT_LOW_CONFIDENCE
+
+        should_apply = False
+        if args.apply:
+            should_apply = True
+        elif args.no_apply or args.automation:
+            should_apply = False
+        else:
+            # Interactive confirmation (manual mode, no apply flag).
+            print()
+            print(f"Parsed {len(parsed.get('overrides') or [])} override(s) at confidence {confidence:.2f}.")
+            print(f"Sidecar written: {rel_path}")
+            ans = input("Apply to Google Calendar? [y/N] ").strip().lower()
+            if ans not in {"y", "yes"}:
+                result = {
+                    "status": "declined",
+                    "raw_source_path": rel_path,
+                    "confidence": confidence,
+                    "applied": False,
+                }
+                if json_out:
+                    emit_json(result)
+                else:
+                    emit_human_summary(result)
+                return EXIT_DECLINED
+            should_apply = True
+
+        if should_apply:
+            aliases = load_calendar_aliases()
+            apply_result = apply_overrides(parsed, aliases, verbose=verbose)
+            if apply_result.get("error"):
+                result = {
+                    "status": "calendar-write-failed",
+                    "raw_source_path": rel_path,
+                    "confidence": confidence,
+                    "applied": False,
+                    "reason": apply_result["error"],
+                    "overrides": parsed.get("overrides") or [],
+                }
+                if json_out:
+                    emit_json(result)
+                else:
+                    emit_human_summary(result)
+                return EXIT_CALENDAR_FAIL
+            applied = True
+
+    result = {
+        "status": "ok",
+        "raw_source_path": rel_path,
+        "confidence": confidence,
+        "caption": caption,
+        "overrides": parsed.get("overrides") or [] if args.work_schedule else None,
+        "applied": applied,
+    }
+    if apply_result:
+        result["apply_result"] = apply_result
+    if json_out:
+        emit_json(result)
+    else:
+        emit_human_summary(result)
+    return EXIT_OK
+
+
+if __name__ == "__main__":
+    sys.exit(main())

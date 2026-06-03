@@ -15,11 +15,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR / "lib"))
+import raw_source  # noqa: E402
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -28,6 +33,29 @@ DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
 INBOX_SUBDIR = "inbox"
 SCHEMA_FILENAME = "SCHEMA.md"
 HAIKU_MODEL = "claude-haiku-4-5-20251001"
+
+EXTRACT_VIDEO = SCRIPT_DIR / "extract-video-transcript"
+EXTRACT_IMAGE = SCRIPT_DIR / "extract-image-data"
+
+# Compact URL regex; intentionally permissive — yt-dlp will refuse what it can't handle.
+_URL_RE = re.compile(r"https?://\S+")
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".gif"}
+_SCHEDULE_KEYWORDS_RE = re.compile(
+    r"\b(schedule|shift|work\s*week|work\s*schedule)\b", re.IGNORECASE
+)
+
+# MinIO. file_ref values in inbox payloads resolve under homelab/mnemosyne/
+# per the [[Mnemosyne Object Storage (MinIO) Access]] memory.
+MINIO_ALIAS = "homelab"
+MINIO_BUCKET = "mnemosyne"
+_MC_BIN = "mc"
+_MIME_TO_EXT = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/heic": ".heic",
+    "image/gif": ".gif",
+}
 
 _TRIAGE_HEADINGS = frozenset({
     "## Directory Structure",
@@ -108,6 +136,23 @@ inbox item as a stub.
 Do NOT commit, push, delete files, or run shell commands.
 Do NOT read any existing wiki pages or index.md before writing.
 Do NOT modify any file other than the new stub page, index.md, and log.md.
+{attached_section}"""
+
+
+_ATTACHED_HEADER = """
+
+== ATTACHED RAW SOURCES ==
+The triage pipeline pre-fetched raw source material for this item. Each entry
+below corresponds to one URL or attachment that was processed.
+
+When writing the stub body:
+- Mention each attached raw source by name (the file name without ".md")
+- For successful extractions, include a wikilink like [[Title (kind)]] pointing
+  to the raw source file in raw-sources/
+- For failed / pending extractions, mention what was attempted and add the
+  given tag to the stub's frontmatter `tags:` list (in addition to `stub`).
+
+Do NOT modify the raw-sources files themselves — they were already written.
 """
 
 
@@ -142,8 +187,13 @@ def load_triage_schema(wiki_root: Path) -> str:
     return '\n\n---\n\n'.join(kept)
 
 
-def build_prompt(schema: str, item: dict) -> str:
-    """Build the haiku triage prompt for a single inbox item."""
+def build_prompt(schema: str, item: dict, attachments: list[dict] | None = None) -> str:
+    """Build the haiku triage prompt for a single inbox item.
+
+    attachments: optional list of dicts returned by run_extractors(). Each entry
+    has at minimum a 'status' field; successful entries include 'raw_source_path'
+    so haiku can wikilink them in the stub body.
+    """
     text = item.get("text") or ""
     file_ref = item.get("file_ref")
     bucket_hint = item.get("bucket_hint") or "none"
@@ -157,6 +207,15 @@ def build_prompt(schema: str, item: dict) -> str:
 
     log_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    if attachments:
+        lines = [_ATTACHED_HEADER.rstrip()]
+        for n, att in enumerate(attachments, start=1):
+            lines.append(f"\nAttachment {n}:")
+            lines.append(json.dumps(att, indent=2))
+        attached_section = "\n".join(lines) + "\n"
+    else:
+        attached_section = ""
+
     return TRIAGE_PROMPT_TEMPLATE.format(
         schema=schema,
         source=item.get("source", "unknown"),
@@ -165,7 +224,241 @@ def build_prompt(schema: str, item: dict) -> str:
         bucket_hint=bucket_hint,
         text_section=text_section,
         log_timestamp=log_timestamp,
+        attached_section=attached_section,
     )
+
+
+# ── Payload-shape detection + extractor dispatch ─────────────────────────────
+
+def detect_urls(text: str) -> list[str]:
+    """Return all URLs in text, in source order, deduplicated."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for url in _URL_RE.findall(text or ""):
+        # Strip trailing punctuation that the regex grabbed greedily.
+        url = url.rstrip(".,);!?]>")
+        if url and url not in seen:
+            seen.add(url)
+            out.append(url)
+    return out
+
+
+def detect_image(item: dict) -> tuple[bool, str | None]:
+    """Return (is_image_candidate, file_ref).
+
+    Three signals, any one is sufficient. Whether the file_ref actually
+    resolves to an image is confirmed at materialization time via mc stat,
+    so this check is intentionally permissive — false positives cost one
+    mc stat call.
+    """
+    raw_ct = (item.get("raw_content_type") or "").lower()
+    file_ref = item.get("file_ref")
+    if not file_ref:
+        return False, None
+    # Explicit image MIME on the payload.
+    if raw_ct.startswith("image/"):
+        return True, file_ref
+    # Telegram → n8n payload format: raw_content_type == "file_ref" for any
+    # binary attachment, with the actual MIME living in MinIO object metadata.
+    if raw_ct == "file_ref":
+        return True, file_ref
+    # Fallback: extension on the file_ref itself.
+    if Path(str(file_ref)).suffix.lower() in _IMAGE_EXTS:
+        return True, file_ref
+    return False, None
+
+
+def is_schedule_signal(item: dict) -> bool:
+    """True when the payload looks like a work-schedule image."""
+    if (item.get("intent") or "").strip() == "work_schedule":
+        return True
+    text = item.get("text") or ""
+    return bool(_SCHEDULE_KEYWORDS_RE.search(text))
+
+
+def _run_subprocess_json(cmd: list[str], timeout: int) -> dict:
+    """Run a subprocess expected to emit one JSON line on stdout.
+
+    Returns the parsed dict on success, or a synthetic failure dict.
+    """
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return {"status": "timeout", "cmd": cmd}
+    raw = (proc.stdout or "").strip().splitlines()
+    if not raw:
+        return {"status": "no-output", "exit_code": proc.returncode, "stderr": (proc.stderr or "").strip()[-400:]}
+    last = raw[-1]
+    try:
+        result = json.loads(last)
+    except json.JSONDecodeError:
+        return {"status": "non-json", "exit_code": proc.returncode, "stdout_tail": last[-400:]}
+    result.setdefault("exit_code", proc.returncode)
+    return result
+
+
+def run_extractors(item: dict) -> list[dict]:
+    """Detect payload shape; run applicable extractors; return their results."""
+    results: list[dict] = []
+    source = item.get("source") or "manual"
+    if source not in raw_source_valid_sources():
+        source = "manual"
+
+    # URL handler
+    for url in detect_urls(item.get("text") or ""):
+        if not EXTRACT_VIDEO.exists():
+            results.append({"kind": "video", "url": url, "status": "extractor-missing"})
+            continue
+        cmd = [
+            sys.executable, str(EXTRACT_VIDEO),
+            "--automation", "--source", source, url,
+        ]
+        result = _run_subprocess_json(cmd, timeout=900)
+        result.setdefault("kind", "video")
+        result.setdefault("url", url)
+        results.append(result)
+
+    # Image handler
+    is_img, ref = detect_image(item)
+    if is_img and ref:
+        local = _materialize_image(ref)
+        if local is None:
+            results.append({
+                "kind": "image", "file_ref": ref,
+                "status": "image-unavailable",
+                "reason": "file_ref could not be resolved to a local path",
+            })
+        else:
+            base_cmd = [
+                sys.executable, str(EXTRACT_IMAGE),
+                "--automation", "--source", source,
+            ]
+            if is_schedule_signal(item):
+                base_cmd.append("--work-schedule")
+            base_cmd.append(str(local))
+            result = _run_subprocess_json(base_cmd, timeout=120)
+            result.setdefault("kind", "image")
+            result.setdefault("file_ref", ref)
+            results.append(result)
+
+    return results
+
+
+def _materialize_image(file_ref: str) -> Path | None:
+    """Resolve a file_ref to a local path the extractor can read.
+
+    Three resolution paths, in order:
+    1. `local:<path>` prefix → strip prefix, use as local path
+    2. Absolute or home-relative (`/...` or `~/...`) → use directly
+    3. Anything else → treat as a MinIO key under `homelab/mnemosyne/`.
+       Probe content-type via `mc stat --json` to pick the right extension,
+       then `mc cp` to a temp file.
+
+    Returns None on any failure. Image-MIME validation is left to
+    `extract-image-data` (it does its own mime sniff and rejects non-images).
+    """
+    raw = str(file_ref).strip()
+    if raw.startswith("local:"):
+        raw = raw[len("local:"):]
+    if raw.startswith("/") or raw.startswith("~"):
+        p = Path(raw).expanduser()
+        if p.exists() and p.is_file():
+            return p
+        return None
+    return _materialize_from_minio(raw)
+
+
+def _materialize_from_minio(file_ref: str) -> Path | None:
+    """Download a MinIO object to /tmp/ with a content-type-derived extension."""
+    key = file_ref.lstrip("/")
+    remote = f"{MINIO_ALIAS}/{MINIO_BUCKET}/{key}"
+
+    # Probe content-type to choose a file extension. extract-image-data uses
+    # mimetypes.guess_type(path), which inspects the *filename*, so the temp
+    # file needs an extension matching the actual MIME.
+    ext = ".bin"
+    try:
+        stat_proc = subprocess.run(
+            [_MC_BIN, "stat", "--json", remote],
+            capture_output=True, text=True, timeout=10,
+        )
+        if stat_proc.returncode == 0:
+            meta = json.loads(stat_proc.stdout)
+            ct = (meta.get("metadata") or {}).get("Content-Type") or ""
+            ext = _MIME_TO_EXT.get(ct.lower(), ".bin")
+    except (subprocess.TimeoutExpired, json.JSONDecodeError):
+        pass
+
+    # Persist downloads outside /tmp so debugging is easier; treat as
+    # ephemeral but not race-collidable.
+    cache_dir = Path("/tmp/mnemosyne-minio-cache")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    safe_stem = Path(key).stem or "object"
+    dest = cache_dir / f"{safe_stem}-{abs(hash(key)) % 100000:05d}{ext}"
+
+    try:
+        cp_proc = subprocess.run(
+            [_MC_BIN, "cp", remote, str(dest)],
+            capture_output=True, text=True, timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if cp_proc.returncode != 0 or not dest.exists():
+        return None
+    return dest
+
+
+def raw_source_valid_sources() -> set[str]:
+    """Mirror VALID_SOURCES from the extractors so triage filters consistently."""
+    return {
+        "telegram", "email", "web_clipper", "n8n_chat",
+        "claude_code", "manual", "hermes_agent",
+    }
+
+
+# ── Stub-title discovery + linked_from backfill ──────────────────────────────
+
+def read_log_tail(wiki_root: Path, n: int = 5) -> list[str]:
+    log = wiki_root / "log.md"
+    try:
+        lines = log.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return []
+    return lines[-n:]
+
+
+def find_new_stub_title(before_tail: list[str], wiki_root: Path) -> str | None:
+    """Find the title of the most-recently-added log entry not in before_tail."""
+    after = read_log_tail(wiki_root, n=10)
+    new_lines = [line for line in after if line not in before_tail]
+    # Walk back-to-front for the most recent ingest line.
+    for line in reversed(new_lines):
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) >= 4 and parts[1] == "ingest":
+            return parts[3]
+    return None
+
+
+def backfill_linked_from(
+    wiki_root: Path,
+    attachments: list[dict],
+    stub_title: str | None,
+) -> None:
+    """Backfill linked_from: <stub> in each successful raw-source file."""
+    if not stub_title:
+        return
+    for att in attachments:
+        rel = att.get("raw_source_path")
+        if not rel:
+            continue
+        raw_path = wiki_root / rel
+        try:
+            raw_source.set_linked_from(raw_path, stub_title)
+        except (FileNotFoundError, ValueError) as exc:
+            print(
+                f"Warning: could not backfill linked_from on {rel}: {exc}",
+                file=sys.stderr,
+            )
 
 
 def triage_file(
@@ -181,15 +474,40 @@ def triage_file(
         print(f"Error reading {inbox_file.name}: {exc}", file=sys.stderr)
         return False
 
-    prompt = build_prompt(schema, item)
+    # Make MNEME_WIKI_PATH visible to extractor subprocesses.
+    os.environ["MNEME_WIKI_PATH"] = str(wiki_root)
+
+    # Run shape-aware extractors BEFORE Haiku. Failures here are non-fatal —
+    # the stub will still be created; just with a "pending" or "failed" tag.
+    attachments: list[dict] = []
+    if not dry_run:
+        try:
+            attachments = run_extractors(item)
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"Warning: extractor dispatch failed for {inbox_file.name}: {exc}",
+                file=sys.stderr,
+            )
+            attachments = []
+        if attachments:
+            for att in attachments:
+                print(
+                    f"  attached: {att.get('kind')} {att.get('status')}"
+                    f" ({att.get('raw_source_path') or att.get('url') or att.get('file_ref')})",
+                    file=sys.stderr,
+                )
+
+    prompt = build_prompt(schema, item, attachments)
 
     if dry_run:
         print(f"[dry-run] Would triage: {inbox_file.name}")
         print(f"[dry-run] Prompt ({len(prompt)} chars):")
         print("---")
-        print(prompt[:600] + "..." if len(prompt) > 600 else prompt)
+        print(prompt[:1200] + "..." if len(prompt) > 1200 else prompt)
         print("---")
         return True
+
+    log_tail_before = read_log_tail(wiki_root, n=10)
 
     print(f"Triaging: {inbox_file.name}", file=sys.stderr)
     result = subprocess.run(
@@ -210,6 +528,10 @@ def triage_file(
             file=sys.stderr,
         )
         return False
+
+    # Backfill linked_from: on any raw-sources we attached.
+    stub_title = find_new_stub_title(log_tail_before, wiki_root)
+    backfill_linked_from(wiki_root, attachments, stub_title)
 
     try:
         inbox_file.unlink()
