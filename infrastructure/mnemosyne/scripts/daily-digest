@@ -42,6 +42,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+import llm_client  # noqa: E402
 from gcal import fetch_calendar  # noqa: E402
 from weather import fetch_weather  # noqa: E402
 
@@ -49,7 +50,6 @@ from weather import fetch_weather  # noqa: E402
 # ── Constants ────────────────────────────────────────────────────────────────
 
 DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
-GEMINI_MODEL = "gemini-3.5-flash"
 # Per-run token usage is appended here as JSONL — one record per generation.
 # Lives outside the wiki git repo: operational telemetry, not knowledge.
 TOKEN_LOG = Path.home() / "mneme" / "logs" / "digest-tokens.jsonl"
@@ -84,11 +84,9 @@ UNFINISHED_WORD_THRESHOLD = 150
 # echo this token. Keep in sync with prompts/daily-digest-system.md.
 OMIT = "[[OMIT_SECTION]]"
 
-# Gemini credentials. Path resolves from GEMINI_CREDENTIALS env var (set in
-# ~/.bashrc.local for interactive shells and cron) or falls back to the
-# default below. File holds {"api_key": "...", "model": "..."}; the model
-# field is optional and falls back to GEMINI_MODEL above.
-DEFAULT_GEMINI_CREDS_PATH = Path.home() / ".config" / "mnemosyne" / "gemini-creds.json"
+# Text generation runs on Vertex AI via lib/llm_client.py. Creds (project,
+# location, service-account path, default model) load from
+# ~/.config/mnemosyne/vertex-creds.json — see llm_client.load_vertex_creds().
 
 
 # ── Frontmatter & body parsing ───────────────────────────────────────────────
@@ -585,42 +583,6 @@ def build_user_prompt(
     )
 
 
-# ── Credentials ──────────────────────────────────────────────────────────────
-
-def load_gemini_creds() -> tuple[str, str | None]:
-    """Return (api_key, model_or_none) from the Gemini creds JSON.
-
-    Path resolves from GEMINI_CREDENTIALS env var, then DEFAULT_GEMINI_CREDS_PATH.
-    A missing file or missing api_key is fatal. Missing model is fine — the
-    caller falls back to GEMINI_MODEL.
-    """
-    raw_path = os.environ.get("GEMINI_CREDENTIALS", "").strip()
-    creds_path = Path(raw_path) if raw_path else DEFAULT_GEMINI_CREDS_PATH
-    try:
-        creds = json.loads(creds_path.read_text(encoding="utf-8"))
-    except OSError as exc:
-        print(
-            f"Error: cannot read Gemini creds at {creds_path}: {exc}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    except json.JSONDecodeError as exc:
-        print(
-            f"Error: Gemini creds at {creds_path} is not valid JSON: {exc}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    api_key = (creds.get("api_key") or "").strip()
-    if not api_key:
-        print(
-            f"Error: Gemini creds at {creds_path} has no 'api_key' field.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    model = (creds.get("model") or "").strip() or None
-    return api_key, model
-
-
 # ── Output ───────────────────────────────────────────────────────────────────
 
 def write_report(wiki_root: Path, today: date, digest_text: str) -> Path:
@@ -733,6 +695,11 @@ def main() -> None:
         help="Generate the report but skip Telegram delivery",
     )
     parser.add_argument(
+        "--no-write", action="store_true",
+        help="Skip writing the report file and log.md (for A/B testing; "
+             "keeps the vault clean). Implies the digest is printed to stdout.",
+    )
+    parser.add_argument(
         "--no-voice", action="store_true",
         help="Skip the follow-up Telegram voice note after text delivery",
     )
@@ -746,7 +713,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--model", type=str, default=None, metavar="NAME",
-        help="Override Gemini model from creds file (e.g. gemini-3.5-pro)",
+        help="Override the Vertex model from creds (e.g. gemini-2.5-pro)",
     )
     args = parser.parse_args()
 
@@ -808,30 +775,26 @@ def main() -> None:
         lookahead=args.lookahead,
     )
 
-    api_key, creds_model = load_gemini_creds()
-    model = args.model or creds_model or GEMINI_MODEL
-
     try:
-        from google import genai
-        from google.genai import types
-    except ImportError as exc:
-        print(
-            f"Error: google-genai is not installed ({exc}). "
-            "Install with: pip install google-genai",
-            file=sys.stderr,
-        )
+        vertex_creds = llm_client.load_vertex_creds()
+    except llm_client.LLMError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
+    model = args.model or vertex_creds["model"]
 
-    print(f"Generating digest for {today} via {model}...", file=sys.stderr)
+    print(f"Generating digest for {today} via Vertex ({model})...", file=sys.stderr)
     try:
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
+        response = llm_client.call_text(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
             model=model,
-            contents=user_prompt,
-            config=types.GenerateContentConfig(system_instruction=system_prompt),
+            creds=vertex_creds,
         )
+    except llm_client.LLMError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
     except Exception as exc:
-        print(f"Error: Gemini request failed: {exc}", file=sys.stderr)
+        print(f"Error: Vertex request failed: {exc}", file=sys.stderr)
         sys.exit(1)
 
     digest_text = (response.text or "").strip()
@@ -848,6 +811,11 @@ def main() -> None:
             f"total: {getattr(usage_metadata, 'total_token_count', 0)}",
             file=sys.stderr,
         )
+
+    if args.no_write:
+        print("Skipping report write and log append (--no-write).", file=sys.stderr)
+        print(digest_text)
+        return
 
     report_path = write_report(wiki_root, today, digest_text)
     append_log(wiki_root, today)
