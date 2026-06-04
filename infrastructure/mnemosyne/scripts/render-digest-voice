@@ -1,14 +1,20 @@
-#!/home/james/projects/experiments/tts-eval/.venv/bin/python3
-"""Render digest text as a Kokoro voice note and send via Telegram.
+#!/usr/bin/env python3
+"""Render digest text as a Gemini TTS voice note and send via Telegram.
 
-Reads plain text from stdin. Renders using the canonical nicole25/heart75
-blend (speed 0.8, pitch +1.5 semitones) and delivers as a Telegram voice
-note. The caption is the first non-empty line of the input, truncated to
-1024 characters.
+Reads plain text from stdin, renders it with Gemini TTS on Vertex AI using a
+named persona voice (Haley -> Leda by default), encodes to OGG/Opus, and
+delivers it as a Telegram voice note. The caption is the first non-empty line
+of the input, truncated to 1024 characters.
+
+Replaces the prior Kokoro/ONNX renderer. Text generation and voice now share
+the same Vertex stack via lib/llm_client.py.
 
 Usage:
     echo "Good morning..." | render-digest-voice
-    render-digest-voice --dry-run   # render artifact but skip send
+    render-digest-voice --dry-run                 # render artifact, skip send
+    render-digest-voice --persona haley           # select persona voice
+    render-digest-voice --model gemini-2.5-pro-preview-tts   # A/B the TTS model
+    render-digest-voice --out /tmp/v.ogg --dry-run          # keep the OGG
 """
 
 from __future__ import annotations
@@ -18,50 +24,84 @@ import os
 import subprocess
 import sys
 import tempfile
+import wave
 from pathlib import Path
 
-import numpy as np
-import soundfile as sf
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+import llm_client  # noqa: E402
 
 
-TTS_EVAL_DIR = Path.home() / "projects" / "experiments" / "tts-eval"
-MODEL_PATH = TTS_EVAL_DIR / "models" / "kokoro" / "kokoro-v1.0.onnx"
-VOICES_PATH = TTS_EVAL_DIR / "models" / "kokoro" / "voices-v1.0.bin"
+# ── Constants ────────────────────────────────────────────────────────────────
 
-VOICE_A = "af_nicole"
-VOICE_B = "af_heart"
-WEIGHT_A = 0.25
-SPEED = 0.8
-PITCH_SEMITONES = 1.5
+# Persona -> Gemini prebuilt voice. See [[Mnemosyne TTS Voice Personas]].
+PERSONA_VOICES = {
+    "haley": "Leda",
+    "margot": "Zephyr",
+    "quinn": "Achernar",
+}
+DEFAULT_PERSONA = "haley"
+
+# TTS preview model on Vertex. pro-tts is the default — slower, more deliberate
+# delivery that holds up at James's 1.5x playback (A/B-selected 2026-06-03).
+# flash-tts is available for A/B via --model. Both verified on us-central1.
+DEFAULT_TTS_MODEL = "gemini-2.5-pro-preview-tts"
+
+# Gemini TTS PCM output format: 24 kHz, 16-bit, mono, little-endian.
+SAMPLE_RATE = 24000
+
+# Style direction prepended to the spoken text. Biases toward a warm, measured
+# delivery — James listens at 1.5x, so an unhurried source survives the
+# prosody-flattening of fast playback. See voice-playback memory.
+STYLE_PREFIX = (
+    "Read the following morning briefing in a warm, friendly tone at a calm, "
+    "measured, unhurried pace:\n\n"
+)
+
+# Pitch shift applied during OGG encode (semitones). 0 = no shift.
+PITCH_SEMITONES = 0.0
 
 TELEGRAM_SEND = Path.home() / ".local" / "bin" / "telegram-send"
 CAPTION_MAX = 1024
 
 
-def render_blend(text: str, out_wav: Path) -> None:
-    from kokoro_onnx import Kokoro
-    kokoro = Kokoro(str(MODEL_PATH), str(VOICES_PATH))
-    style_a = kokoro.get_voice_style(VOICE_A)
-    style_b = kokoro.get_voice_style(VOICE_B)
-    blended = (WEIGHT_A * style_a + (1.0 - WEIGHT_A) * style_b).astype(np.float32)
-    samples, sample_rate = kokoro.create(text, voice=blended, speed=SPEED, lang="en-us")
-    sf.write(str(out_wav), samples, sample_rate)
+def render_tts(text: str, model: str, voice: str, out_wav: Path) -> None:
+    """Synthesize `text` via Gemini TTS and write a 24kHz mono WAV."""
+    creds = llm_client.load_vertex_creds()
+    client = llm_client.get_client(creds)
+    from google.genai import types
+
+    response = client.models.generate_content(
+        model=model,
+        contents=STYLE_PREFIX + text,
+        config=types.GenerateContentConfig(
+            response_modalities=["AUDIO"],
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice)
+                )
+            ),
+        ),
+    )
+    pcm = response.candidates[0].content.parts[0].inline_data.data
+    with wave.open(str(out_wav), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(SAMPLE_RATE)
+        wf.writeframes(pcm)
 
 
 def wav_to_ogg(wav_path: Path, ogg_path: Path) -> None:
-    factor = 2.0 ** (PITCH_SEMITONES / 12.0)
-    subprocess.run(
-        [
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-i", str(wav_path),
-            "-af", f"rubberband=pitch={factor:.6f}",
-            "-ac", "1", "-ar", "48000",
-            "-c:a", "libopus", "-b:a", "64k",
-            "-application", "audio",
-            str(ogg_path),
-        ],
-        check=True,
-    )
+    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav_path)]
+    if abs(PITCH_SEMITONES) > 1e-6:
+        factor = 2.0 ** (PITCH_SEMITONES / 12.0)
+        cmd += ["-af", f"rubberband=pitch={factor:.6f}"]
+    cmd += [
+        "-ac", "1", "-ar", "48000",
+        "-c:a", "libopus", "-b:a", "64k",
+        "-application", "audio",
+        str(ogg_path),
+    ]
+    subprocess.run(cmd, check=True)
 
 
 def extract_caption(text: str) -> str:
@@ -75,10 +115,24 @@ def extract_caption(text: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--persona", choices=sorted(PERSONA_VOICES), default=DEFAULT_PERSONA,
+        help=f"Persona voice to render (default: {DEFAULT_PERSONA})",
+    )
+    parser.add_argument(
+        "--model", default=DEFAULT_TTS_MODEL, metavar="NAME",
+        help=f"Gemini TTS model (default: {DEFAULT_TTS_MODEL})",
+    )
+    parser.add_argument(
+        "--out", type=Path, default=None, metavar="PATH",
+        help="Write the final OGG to PATH (kept after exit; default: temp file)",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true",
         help="Render artifact but do not send via Telegram",
     )
     args = parser.parse_args()
+
+    voice = PERSONA_VOICES[args.persona]
 
     text = sys.stdin.read().strip()
     if not text:
@@ -98,15 +152,31 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         wav_path = tmp_path / "digest.wav"
-        ogg_path = tmp_path / "digest.ogg"
+        ogg_path = args.out if args.out is not None else tmp_path / "digest.ogg"
+        if args.out is not None:
+            args.out.parent.mkdir(parents=True, exist_ok=True)
 
-        print("render-digest-voice: rendering voice note...", file=sys.stderr)
-        render_blend(text, wav_path)
+        print(
+            f"render-digest-voice: rendering via {args.model} "
+            f"({args.persona} -> {voice})...",
+            file=sys.stderr,
+        )
+        try:
+            render_tts(text, args.model, voice, wav_path)
+        except llm_client.LLMError as exc:
+            print(f"render-digest-voice: {exc}", file=sys.stderr)
+            return 1
+        except Exception as exc:
+            print(f"render-digest-voice: TTS failed: {exc}", file=sys.stderr)
+            return 1
         wav_to_ogg(wav_path, ogg_path)
         print(f"render-digest-voice: encoded {ogg_path.stat().st_size} bytes", file=sys.stderr)
 
         if args.dry_run:
-            print("render-digest-voice: dry-run complete, not sent", file=sys.stderr)
+            if args.out is not None:
+                print(f"render-digest-voice: dry-run, wrote {ogg_path}", file=sys.stderr)
+            else:
+                print("render-digest-voice: dry-run complete, not sent", file=sys.stderr)
             return 0
 
         result = subprocess.run(
