@@ -412,7 +412,7 @@ def raw_source_valid_sources() -> set[str]:
     """Mirror VALID_SOURCES from the extractors so triage filters consistently."""
     return {
         "telegram", "email", "web_clipper", "n8n_chat",
-        "claude_code", "manual", "hermes_agent",
+        "claude_code", "manual", "hermes_agent", "google_keep",
     }
 
 

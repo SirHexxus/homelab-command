@@ -1,0 +1,594 @@
+#!/usr/bin/env python3
+"""Emit Google Keep Takeout notes as Mnemosyne Inbox ingestItems (or raw-sources).
+
+Primary mode (--emit inbox, default): converts each Keep note from a Takeout
+export into an Inbox ingestItem JSON staged under inbox/keep-backfill/ — a
+subdirectory that watch-inbox and the hourly triage-inbox cron BOTH ignore
+(they are non-recursive), so the items do not trigger the live per-item triage.
+The companion `triage-keep-batch` is the only consumer of that subdir and
+drains it in batches. Each item matches the n8n ingest payload shape:
+
+    {raw_content_type, source, text, file_ref, capture_ts, bucket_hint, metadata}
+
+Keep-specific handling (see lib/keep_notes.py for the gotchas):
+- text notes vs checklists; microsecond timestamps; trashed/empty filtering
+- annotation URLs are kept OUT of `text` (in metadata.annotation_urls) so the
+  downstream triage URL-detector never fires extract-video-transcript
+- attachments (images/audio) are uploaded to MinIO and referenced by file_ref;
+  audio has no triage path, so it is flagged for the review task
+- a single ADMIN task lists every note needing a follow-up media/link pass
+  (image OCR, audio Whisper, saved-link transcription)
+
+Fallback mode (--emit raw-source): writes verbatim raw-source markdown directly
+(the original behavior), copying attachments into the wiki. No MinIO, no triage.
+
+Usage:
+    extract-keep-note [--emit inbox|raw-source] [options] <zip-or-dir> ...
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import zipfile
+from datetime import date, datetime, timezone
+from pathlib import Path
+
+LIB_DIR = Path(__file__).resolve().parent / "lib"
+sys.path.insert(0, str(LIB_DIR))
+import raw_source  # noqa: E402
+import keep_notes  # noqa: E402
+
+
+# Exit codes
+EXIT_OK = 0
+EXIT_USAGE = 1
+EXIT_NO_INPUT = 2
+EXIT_PARTIAL = 6
+
+SCRIPT_VERSION = "extract-keep-note@2.0"
+STAGING_SUBDIR = "inbox/keep-backfill"
+RAW_SUBDIR = "raw-sources/keep"
+ATTACH_SUBDIR = "attachments"
+ADMIN_TASK_REL = "admin/Google Keep import - media and links to process.md"
+
+VALID_SOURCES = {
+    "telegram", "email", "web_clipper", "n8n_chat",
+    "claude_code", "manual", "hermes_agent", "google_keep",
+}
+
+# MinIO target: homelab/mnemosyne/google_keep/YYYY/MM/<slug>.<ext>
+MINIO_ALIAS = "homelab"
+MINIO_BUCKET = "mnemosyne"
+MINIO_PREFIX = "google_keep"
+_MC_BIN = "mc"
+
+_MIME_EXT = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/heic": ".heic",
+    "audio/3gp": ".3gp",
+    "audio/3gpp": ".3gp",
+    "audio/mp4": ".m4a",
+    "audio/amr": ".amr",
+    "audio/aac": ".aac",
+}
+
+WRITE_SCRIPT = (
+    Path.home()
+    / "projects/homelab-command/apps/hermes/skills/mneme_wiki/scripts/write_wiki_page.py"
+)
+
+
+# ── Source loading ───────────────────────────────────────────────────────────
+
+def iter_keep_dirs(sources: list[str], tmp_root: Path, verbose: bool) -> list[Path]:
+    """Resolve each input (zip or dir) to a directory of Keep *.json files."""
+    keep_dirs: list[Path] = []
+    for i, src in enumerate(sources):
+        p = Path(src).expanduser().resolve()
+        if not p.exists():
+            print(f"warning: input not found, skipping: {p}", file=sys.stderr)
+            continue
+        if p.is_dir():
+            kd = _find_keep_dir(p)
+        elif zipfile.is_zipfile(p):
+            dest = tmp_root / f"src{i}"
+            if verbose:
+                print(f"[extract] {p.name} -> {dest}", file=sys.stderr)
+            with zipfile.ZipFile(p) as zf:
+                zf.extractall(dest)
+            kd = _find_keep_dir(dest)
+        else:
+            print(f"warning: not a zip or directory, skipping: {p}", file=sys.stderr)
+            continue
+        if kd:
+            keep_dirs.append(kd)
+        else:
+            print(f"warning: no Keep/*.json under {p}, skipping", file=sys.stderr)
+    return keep_dirs
+
+
+def _find_keep_dir(root: Path) -> Path | None:
+    candidate = root / "Takeout" / "Keep"
+    if candidate.is_dir():
+        return candidate
+    if root.is_dir() and any(root.glob("*.json")):
+        return root
+    for sub in root.rglob("Keep"):
+        if sub.is_dir() and any(sub.glob("*.json")):
+            return sub
+    return None
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def slugify(text: str, limit: int = 40) -> str:
+    """Lowercase hyphenated slug for filenames / object keys."""
+    s = raw_source.sanitize_title(text).lower()
+    s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+    return (s[:limit].rstrip("-")) or "note"
+
+
+def ext_for_mime(mime: str, fallback_name: str) -> str:
+    if mime in _MIME_EXT:
+        return _MIME_EXT[mime]
+    suffix = Path(fallback_name).suffix
+    return suffix if suffix else ".bin"
+
+
+def minio_key(note: keep_notes.KeepNote, ext: str, disambiguator: str) -> str:
+    d = note.updated
+    # Hash the disambiguator (note fp + attachment path) so multiple
+    # attachments on one note get distinct keys instead of colliding.
+    h = hashlib.md5(disambiguator.encode("utf-8")).hexdigest()[:10]
+    return f"{MINIO_PREFIX}/{d.year:04d}/{d.month:02d}/{d.isoformat()}-{slugify(note.title)}-{h}{ext}"
+
+
+def upload_minio(local: Path, key: str, *, dry: bool, verbose: bool) -> bool:
+    """Upload a local file to homelab/mnemosyne/<key>. Returns success."""
+    if dry:
+        return True
+    remote = f"{MINIO_ALIAS}/{MINIO_BUCKET}/{key}"
+    try:
+        proc = subprocess.run(
+            [_MC_BIN, "cp", str(local), remote],
+            capture_output=not verbose, text=True, timeout=120,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        print(f"warning: mc cp failed for {key}: {exc}", file=sys.stderr)
+        return False
+    return proc.returncode == 0
+
+
+def note_fingerprint(note: keep_notes.KeepNote) -> str:
+    payload = json.dumps(
+        [note.title, note.text, note.checklist,
+         [(a.file_path, a.mimetype) for a in note.attachments]],
+        sort_keys=True, ensure_ascii=False,
+    )
+    return hashlib.md5(payload.encode("utf-8")).hexdigest()
+
+
+def write_text_file(wiki_root: Path, rel_path: str, content: str) -> bool:
+    """Write a UTF-8 file inside the wiki root (traversal-guarded)."""
+    try:
+        target = raw_source.safe_target(wiki_root, rel_path)
+    except PermissionError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    return True
+
+
+# ── Inbox emit ───────────────────────────────────────────────────────────────
+
+def emit_inbox(
+    notes: list[tuple[keep_notes.KeepNote, Path]],
+    wiki_root: Path,
+    args: argparse.Namespace,
+    summary: dict,
+) -> None:
+    review = {"images": [], "audio": [], "urls": []}
+
+    for note, keep_dir in notes:
+        fp = note_fingerprint(note)
+        image_refs: list[str] = []
+        audio_refs: list[str] = []
+
+        for att in note.attachments:
+            src = keep_dir / att.file_path
+            if not src.exists():
+                print(f"warning: attachment missing on disk: {att.file_path}", file=sys.stderr)
+                continue
+            ext = ext_for_mime(att.mimetype, att.file_path)
+            key = minio_key(note, ext, fp + att.file_path)
+            ok = upload_minio(src, key, dry=args.minio_dry_run or args.dry_run, verbose=False)
+            if not ok:
+                summary["errors"] += 1
+                continue
+            summary["attachments_uploaded"] += 1
+            if att.is_audio:
+                audio_refs.append(key)
+            elif att.is_image:
+                image_refs.append(key)
+
+        file_ref = image_refs[0] if image_refs else None
+        raw_content_type = "file_ref" if file_ref else "text"
+
+        payload = {
+            "raw_content_type": raw_content_type,
+            "source": args.source,
+            "text": note.render_text(),
+            "file_ref": file_ref,
+            "capture_ts": f"{note.updated.isoformat()}T00:00:00Z",
+            "bucket_hint": None,
+            "metadata": {
+                "origin": "google_keep",
+                "keep_title": note.title,
+                "keep_labels": note.labels,
+                "keep_color": note.color,
+                "keep_pinned": note.pinned,
+                "keep_archived": note.archived,
+                "annotation_urls": note.annotation_urls,
+                "image_refs": image_refs,
+                "audio_refs": audio_refs,
+                "audio_pending": bool(audio_refs),
+                "extracted_by": SCRIPT_VERSION,
+            },
+        }
+
+        rel = f"{STAGING_SUBDIR}/keep-{fp[:12]}.json"
+        if not args.dry_run:
+            if not write_text_file(wiki_root, rel, json.dumps(payload, indent=2) + "\n"):
+                summary["errors"] += 1
+                continue
+        summary["emitted"] += 1
+
+        # Collect follow-up review items.
+        for key in image_refs:
+            review["images"].append((note.title, key))
+        for key in audio_refs:
+            review["audio"].append((note.title, key))
+        for url in note.annotation_urls:
+            review["urls"].append((note.title, url))
+
+    summary["review_images"] = len(review["images"])
+    summary["review_audio"] = len(review["audio"])
+    summary["review_urls"] = len(review["urls"])
+
+    if not args.dry_run and (review["images"] or review["audio"] or review["urls"]):
+        if write_admin_task(wiki_root, review):
+            summary["admin_task"] = ADMIN_TASK_REL
+        else:
+            summary["errors"] += 1
+
+
+def write_admin_task(wiki_root: Path, review: dict) -> bool:
+    today = date.today().isoformat()
+    n_img, n_aud, n_url = len(review["images"]), len(review["audio"]), len(review["urls"])
+
+    lines = [
+        "---",
+        "bucket: ADMIN",
+        f"created: {today}",
+        f"updated: {today}",
+        "source: google_keep",
+        "due: null",
+        "status: Pending",
+        "recurrence: null",
+        "task_type: maintenance",
+        "tags: [google-keep, import, transcription, backlog]",
+        'title: "Google Keep import - media and links to process"',
+        "---",
+        "",
+        "# Google Keep import — media and links to process",
+        "",
+        "Follow-up backlog from the Google Keep Takeout bulk import. The note text and "
+        "checklists were ingested directly; the media and saved links below still need a "
+        "processing pass. All `file_ref` values resolve under `homelab/mnemosyne/`.",
+        "",
+        "## Brief Delivery Requirement",
+        "",
+        "On completion, send James a Telegram/Email brief covering: items processed, OCR/"
+        "transcription highlights, anything unreadable or skipped, and where the outputs landed.",
+        "",
+        f"## Images to OCR ({n_img})",
+        "",
+        "Run `extract-image-data --source google_keep <file_ref>` (resolve via MinIO) for each:",
+        "",
+    ]
+    lines += [f"- [ ] {title} — `{key}`" for title, key in review["images"]] or ["- (none)"]
+    lines += [
+        "",
+        f"## Audio to transcribe via Whisper ({n_aud})",
+        "",
+        "Download from MinIO and POST to the Whisper endpoint (10.0.50.12:9000):",
+        "",
+    ]
+    lines += [f"- [ ] {title} — `{key}`" for title, key in review["audio"]] or ["- (none)"]
+    lines += [
+        "",
+        f"## Saved links to review for transcription ({n_url})",
+        "",
+        "Check each saved link; transcribe via `extract-video-transcript` where it resolves:",
+        "",
+    ]
+    lines += [f"- [ ] {title} — {url}" for title, url in review["urls"]] or ["- (none)"]
+    lines.append("")
+    content = "\n".join(lines)
+
+    if not write_text_file(wiki_root, ADMIN_TASK_REL, content):
+        return False
+
+    # Index + log entries (deterministic; append-or-create).
+    summary_line = f"{n_url} links + {n_aud} audio + {n_img} images need a processing pass"
+    index_line = (
+        f"- [[Google Keep import - media and links to process]] | ADMIN | "
+        f"[Maintenance] due null — {summary_line}"
+    )
+    append_index(wiki_root, "ADMIN", index_line)
+    log_line = (
+        f"{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')} | create | ADMIN | "
+        f"Google Keep import - media and links to process | google_keep"
+    )
+    append_log(wiki_root, log_line)
+    return True
+
+
+def append_log(wiki_root: Path, line: str) -> None:
+    log_path = wiki_root / "log.md"
+    with log_path.open("a", encoding="utf-8") as fh:
+        fh.write(line.rstrip("\n") + "\n")
+
+
+# index.md section headers are title-case plural; map the enum bucket to them.
+_BUCKET_INDEX_HEADER = {
+    "IDEA": "Ideas", "ADMIN": "Admin", "REFERENCE": "Reference", "JOURNAL": "Journal",
+    "PERSON": "People", "PROJECT": "Projects", "PURSUIT": "Pursuits",
+}
+
+
+def append_index(wiki_root: Path, bucket: str, line: str) -> None:
+    """Append an entry under the bucket's section in index.md (best-effort).
+
+    Falls back to appending at EOF if the section header is not found.
+    """
+    index_path = wiki_root / "index.md"
+    if not index_path.exists():
+        with index_path.open("a", encoding="utf-8") as fh:
+            fh.write(line.rstrip("\n") + "\n")
+        return
+    text = index_path.read_text(encoding="utf-8")
+    header = _BUCKET_INDEX_HEADER.get(bucket, bucket)
+    header_re = re.compile(rf"(?mi)^#{{1,6}}\s+{re.escape(header)}\s*$")
+    m = header_re.search(text)
+    if not m:
+        index_path.write_text(text.rstrip("\n") + "\n" + line + "\n", encoding="utf-8")
+        return
+    insert_at = text.find("\n", m.end())
+    insert_at = len(text) if insert_at == -1 else insert_at + 1
+    new_text = text[:insert_at] + line + "\n" + text[insert_at:]
+    index_path.write_text(new_text, encoding="utf-8")
+
+
+# ── Raw-source emit (fallback / legacy) ──────────────────────────────────────
+
+def emit_raw_source(
+    notes: list[tuple[keep_notes.KeepNote, Path]],
+    wiki_root: Path,
+    args: argparse.Namespace,
+    summary: dict,
+) -> None:
+    used_names: set[str] = set()
+    for note, keep_dir in notes:
+        copied: list[tuple[str, str]] = []
+        if not args.dry_run:
+            for att in note.attachments:
+                src = keep_dir / att.file_path
+                if not src.exists():
+                    continue
+                rel = f"{RAW_SUBDIR}/{ATTACH_SUBDIR}/{Path(att.file_path).name}"
+                try:
+                    target = raw_source.safe_target(wiki_root, rel)
+                except PermissionError:
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(src, target)
+                copied.append((f"{ATTACH_SUBDIR}/{Path(att.file_path).name}", att.mimetype))
+                summary["attachments_uploaded"] += 1
+
+        frontmatter = raw_source.build_keep_frontmatter(
+            title=note.title,
+            created=note.created,
+            updated=note.updated,
+            captured_via=args.source,
+            extracted_by=SCRIPT_VERSION,
+            extraction_mode="manual",
+            color=note.color,
+            pinned=note.pinned,
+            archived=note.archived,
+            labels=note.labels,
+            annotation_count=len(note.annotations),
+            attachment_count=len(note.attachments),
+            audio_pending=note.has_audio,
+        )
+        body_parts = [f"# {note.title}", "", note.render_text(), ""]
+        links = note.render_links_block()
+        if links:
+            body_parts += [links, ""]
+        if copied:
+            body_parts += ["## Attachments", ""]
+            for ref, mime in copied:
+                if mime.startswith("image/"):
+                    body_parts.append(f"![{mime}]({ref})")
+                else:
+                    body_parts.append(f"- [{ref}]({ref}) ({mime})")
+            body_parts.append("")
+        body = "\n".join(body_parts).rstrip("\n") + "\n"
+
+        fname = raw_source.raw_source_filename(note.updated, note.title, "Keep note")
+        rel = f"{RAW_SUBDIR}/{fname}"
+        if rel in used_names:
+            suffix = hashlib.md5((frontmatter + body).encode("utf-8")).hexdigest()[:6]
+            rel = f"{RAW_SUBDIR}/{fname[:-3]} [{suffix}].md"
+        used_names.add(rel)
+        if not args.dry_run:
+            if not write_text_file(wiki_root, rel, frontmatter + body):
+                summary["errors"] += 1
+                continue
+        summary["emitted"] += 1
+
+
+# ── Output ───────────────────────────────────────────────────────────────────
+
+def emit_summary(summary: dict, *, json_out: bool) -> None:
+    if json_out:
+        print(json.dumps(summary), flush=True)
+        return
+    print(f"Status:          {summary['status']}")
+    print(f"Mode:            {summary['mode']}")
+    print(f"Notes emitted:   {summary['emitted']}")
+    print(f"Skipped (trashed): {summary['skipped_trashed']}")
+    print(f"Skipped (empty):   {summary['skipped_empty']}")
+    print(f"Skipped (dup):     {summary['skipped_dup']}")
+    print(f"Attachments uploaded: {summary['attachments_uploaded']}")
+    if summary["mode"] == "inbox":
+        print(f"Review backlog: {summary['review_images']} images, "
+              f"{summary['review_audio']} audio, {summary['review_urls']} links")
+        if summary.get("admin_task"):
+            print(f"Admin task: {summary['admin_task']}")
+    if summary["errors"]:
+        print(f"Errors: {summary['errors']}")
+
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Emit Google Keep Takeout notes as Inbox ingestItems or raw-sources.",
+    )
+    parser.add_argument("sources", nargs="+", help="Takeout .zip files and/or Keep dirs.")
+    parser.add_argument(
+        "--emit", choices=["inbox", "raw-source"], default="inbox",
+        help="Output mode (default: inbox).",
+    )
+    parser.add_argument(
+        "--source", default="google_keep",
+        help="SCHEMA source enum value (default: google_keep).",
+    )
+    parser.add_argument(
+        "--include-trashed", action="store_true",
+        help="Also emit notes flagged isTrashed (skipped by default).",
+    )
+    parser.add_argument(
+        "--no-dedup", action="store_true",
+        help="Do not skip notes with identical content within this run.",
+    )
+    parser.add_argument("--limit", type=int, default=0, help="Process at most N notes (0=all).")
+    parser.add_argument("--wiki-root", default=None, help="Wiki root override.")
+    parser.add_argument(
+        "--minio-dry-run", action="store_true",
+        help="Inbox mode: write items + admin task but skip actual MinIO uploads.",
+    )
+    parser.add_argument("--automation", action="store_true", help="JSON-only summary on stdout.")
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Parse and report counts; write nothing, upload nothing.",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    verbose = not args.automation
+    json_out = args.automation
+
+    if args.source not in VALID_SOURCES:
+        print(f"error: --source must be one of {sorted(VALID_SOURCES)}", file=sys.stderr)
+        return EXIT_USAGE
+
+    if args.wiki_root:
+        os.environ["MNEME_WIKI_PATH"] = args.wiki_root
+    try:
+        wiki_root = raw_source.resolve_wiki_root()
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+
+    summary = {
+        "status": "ok",
+        "mode": args.emit,
+        "emitted": 0,
+        "skipped_trashed": 0,
+        "skipped_empty": 0,
+        "skipped_dup": 0,
+        "attachments_uploaded": 0,
+        "errors": 0,
+    }
+    seen: set[str] = set()
+
+    with tempfile.TemporaryDirectory(prefix="extract-keep-") as tmp:
+        keep_dirs = iter_keep_dirs(args.sources, Path(tmp), verbose)
+        if not keep_dirs:
+            print("error: no usable Keep notes found in any input", file=sys.stderr)
+            return EXIT_NO_INPUT
+
+        json_files: list[Path] = []
+        for kd in keep_dirs:
+            json_files.extend(sorted(kd.glob("*.json")))
+        if verbose:
+            print(f"Found {len(json_files)} note file(s) across {len(keep_dirs)} export(s).",
+                  file=sys.stderr)
+
+        notes: list[tuple[keep_notes.KeepNote, Path]] = []
+        for jf in json_files:
+            if args.limit and len(notes) >= args.limit:
+                break
+            try:
+                raw = json.loads(jf.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                print(f"warning: unreadable note {jf.name}: {exc}", file=sys.stderr)
+                summary["errors"] += 1
+                continue
+            parsed = keep_notes.parse_note(raw, include_trashed=args.include_trashed)
+            if parsed is keep_notes.SkipReason.TRASHED:
+                summary["skipped_trashed"] += 1
+                continue
+            if parsed is keep_notes.SkipReason.EMPTY:
+                summary["skipped_empty"] += 1
+                continue
+            if not args.no_dedup:
+                fp = note_fingerprint(parsed)
+                if fp in seen:
+                    summary["skipped_dup"] += 1
+                    continue
+                seen.add(fp)
+            notes.append((parsed, jf.parent))
+
+        if args.emit == "inbox":
+            emit_inbox(notes, wiki_root, args, summary)
+        else:
+            emit_raw_source(notes, wiki_root, args, summary)
+
+    if args.dry_run:
+        summary["status"] = "dry-run"
+    elif summary["errors"]:
+        summary["status"] = "partial"
+
+    emit_summary(summary, json_out=json_out)
+    return EXIT_PARTIAL if summary["errors"] else EXIT_OK
+
+
+if __name__ == "__main__":
+    sys.exit(main())

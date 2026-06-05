@@ -1,0 +1,371 @@
+#!/usr/bin/env python3
+"""Batch-classify staged Google Keep ingestItems into wiki stub pages.
+
+A backfill-only sibling of triage-inbox, NOT wired into watch-inbox. It drains
+inbox/keep-backfill/*.json (the staging subdir the live pipeline ignores) in
+batches: ONE Haiku call classifies up to --batch notes at a time and returns a
+JSON array of {idx, bucket, title, summary, tags}. A deterministic Python writer
+then creates each stub page, appends its `[STUB]` index.md entry (the contract
+enrich-stubs discovers work by) and a log.md line, and moves the consumed
+staging file to inbox/keep-backfill/done/ for idempotent re-runs.
+
+This cuts ~279 per-item `claude` spawns down to ~14 Haiku calls without touching
+the live triage path, and never lets the model write files directly (so a bad
+batch can't half-mutate the wiki — Python writes one note at a time).
+
+Image OCR / audio Whisper / saved-link transcription are intentionally NOT done
+here; the emitter's ADMIN review task tracks that follow-up. Stubs for image
+notes carry the file_ref so the later OCR pass can find them.
+
+Usage:
+    triage-keep-batch [--batch N] [--max-batches K] [--dry-run] [--wiki-root DIR]
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import date, datetime, timezone
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR / "lib"))
+import raw_source  # noqa: E402
+
+EXIT_OK = 0
+EXIT_USAGE = 1
+EXIT_EMPTY = 0
+EXIT_PARTIAL = 6
+
+CLAUDE_BIN = Path.home() / ".local" / "bin" / "claude"
+HAIKU_MODEL = "claude-haiku-4-5-20251001"
+STAGING_SUBDIR = "inbox/keep-backfill"
+DONE_SUBDIR = "inbox/keep-backfill/done"
+DEFAULT_BATCH = 20
+
+BUCKET_DIR = {
+    "IDEA": "ideas",
+    "ADMIN": "admin",
+    "REFERENCE": "reference",
+    "JOURNAL": "journal",
+    "PERSON": "people",
+    "PROJECT": "projects",
+    "PURSUIT": "pursuits",
+}
+
+# index.md section headers are title-case plural; map the enum bucket to them.
+BUCKET_INDEX_HEADER = {
+    "IDEA": "Ideas",
+    "ADMIN": "Admin",
+    "REFERENCE": "Reference",
+    "JOURNAL": "Journal",
+    "PERSON": "People",
+    "PROJECT": "Projects",
+    "PURSUIT": "Pursuits",
+}
+
+CLASSIFY_PROMPT = """\
+You are the Mnemosyne bulk-import classifier. Classify these {n} historical Google Keep
+notes (authored 2016–2024) into wiki buckets. These are a personal note dump: MOST are
+knowledge, references, or stray thoughts — NOT live tasks. Bias strongly toward IDEA and
+REFERENCE. Use ADMIN / PROJECT / PURSUIT only when a note is clearly an actionable or
+ongoing item the user would still track today. Use PERSON for a note primarily about a
+specific person, JOURNAL for a dated personal log/diary entry.
+
+Buckets:
+- IDEA: a thought, insight, concept, plan-fragment, recipe, list of ideas. Default choice.
+- REFERENCE: factual/lookup material — links, specs, instructions, account info, equipment.
+- ADMIN: a concrete actionable task the user still needs to do or track.
+- JOURNAL: a dated personal log / diary-style entry.
+- PERSON: primarily about one person (bio, contact, relationship).
+- PROJECT: a defined ongoing project with an outcome.
+- PURSUIT: a long-running area of interest / life pursuit.
+
+For EACH note return one JSON object:
+  {{"idx": <int>, "bucket": "<BUCKET>", "title": "<concise page title, <=80 chars>",
+    "summary": "<one line, <=120 chars>", "tags": ["lowercase","tags"]}}
+
+Return ONLY a JSON array of these objects, no prose, no code fence.
+
+Notes:
+{notes}
+"""
+
+
+# ── Staging I/O ──────────────────────────────────────────────────────────────
+
+def load_staged(wiki_root: Path) -> list[tuple[Path, dict]]:
+    staging = wiki_root / STAGING_SUBDIR
+    if not staging.is_dir():
+        return []
+    items: list[tuple[Path, dict]] = []
+    for f in sorted(staging.glob("*.json")):
+        try:
+            items.append((f, json.loads(f.read_text(encoding="utf-8"))))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"warning: skipping unreadable staged item {f.name}: {exc}", file=sys.stderr)
+    return items
+
+
+def format_note_for_prompt(idx: int, payload: dict) -> str:
+    meta = payload.get("metadata") or {}
+    title = meta.get("keep_title") or "(untitled)"
+    labels = meta.get("keep_labels") or []
+    has_img = bool(meta.get("image_refs"))
+    has_aud = bool(meta.get("audio_refs"))
+    cap = (payload.get("capture_ts") or "")[:10]
+    text = (payload.get("text") or "").strip().replace("\r", "")
+    if len(text) > 600:
+        text = text[:600] + " …"
+    flags = []
+    if has_img:
+        flags.append("has image (OCR pending)")
+    if has_aud:
+        flags.append("has audio (transcription pending)")
+    flag_str = f" | {', '.join(flags)}" if flags else ""
+    lbl = f" | labels: {labels}" if labels else ""
+    body = text or "(no text body)"
+    return f"[{idx}] title: {title!r} | date: {cap}{lbl}{flag_str}\n    {body}"
+
+
+# ── Claude classification ────────────────────────────────────────────────────
+
+def strip_fence(text: str) -> str:
+    m = re.match(r"^```(?:json)?\s*\n(.*)\n```\s*$", text.strip(), re.DOTALL)
+    return m.group(1).strip() if m else text.strip()
+
+
+def classify_batch(batch: list[tuple[Path, dict]], *, verbose: bool) -> list[dict] | None:
+    notes_block = "\n\n".join(
+        format_note_for_prompt(i, payload) for i, (_, payload) in enumerate(batch)
+    )
+    prompt = CLASSIFY_PROMPT.format(n=len(batch), notes=notes_block)
+    try:
+        proc = subprocess.run(
+            [str(CLAUDE_BIN), "--model", HAIKU_MODEL, "-p", prompt],
+            capture_output=True, text=True, timeout=180,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        print(f"error: claude classify call failed: {exc}", file=sys.stderr)
+        return None
+    if proc.returncode != 0:
+        print(f"error: claude exited {proc.returncode}: {proc.stderr.strip()[:300]}", file=sys.stderr)
+        return None
+    try:
+        parsed = json.loads(strip_fence(proc.stdout))
+    except json.JSONDecodeError as exc:
+        print(f"error: classifier did not return JSON: {exc}\n{proc.stdout[:400]}", file=sys.stderr)
+        return None
+    if not isinstance(parsed, list):
+        print("error: classifier JSON is not an array", file=sys.stderr)
+        return None
+    return parsed
+
+
+# ── Stub writing ─────────────────────────────────────────────────────────────
+
+def build_stub_frontmatter(
+    bucket: str, title: str, created: date, tags: list[str], file_ref: str | None,
+    store_original: bool,
+) -> str:
+    iso = created.isoformat()
+    lines = [
+        "---",
+        f"bucket: {bucket}",
+        f"created: {iso}",
+        f"updated: {date.today().isoformat()}",
+        "source: google_keep",
+    ]
+    # Bucket-specific required fields with safe historical defaults.
+    if bucket == "REFERENCE":
+        lines.append("source_url: null")
+        if file_ref:
+            lines.append(f"file_ref: {file_ref}")
+    elif bucket == "ADMIN":
+        lines += ["due: null", "status: Pending", "recurrence: null", "task_type: user"]
+    elif bucket == "PERSON":
+        lines += ["relationship: acquaintance", "last_contact: null",
+                  "follow_up_needed: false", "follow_up_date: null"]
+    elif bucket == "PROJECT":
+        lines += ["status: Not Started", 'next_action: null', "deadline: null"]
+    elif bucket == "PURSUIT":
+        lines += ["current_milestone: null", "next_milestone: null", f"last_active: {iso}"]
+    elif bucket == "JOURNAL":
+        lines += ["mood: null", "weather: null"]
+    if bucket != "REFERENCE" and file_ref:
+        lines.append(f"file_ref: {file_ref}")
+    tag_list = ", ".join(sorted(set(["keep-import"] + [t for t in tags if t])))
+    lines.append(f"tags: [{tag_list}]")
+    if store_original:
+        safe = title.replace('"', '\\"')
+        lines.append(f'title: "{safe}"')
+    lines += ["---", ""]
+    return "\n".join(lines)
+
+
+def write_stub(wiki_root: Path, bucket: str, cls: dict, payload: dict) -> tuple[str, str] | None:
+    """Write one stub page. Returns (rel_path, page_title) or None on failure."""
+    meta = payload.get("metadata") or {}
+    title = (cls.get("title") or meta.get("keep_title") or "Untitled Keep note").strip()
+    safe_title = raw_source.sanitize_title(title)
+    created = _date_from_capture(payload.get("capture_ts"))
+    tags = list(meta.get("keep_labels") or []) + list(cls.get("tags") or [])
+    file_ref = payload.get("file_ref")
+
+    rel = f"{BUCKET_DIR[bucket]}/{safe_title}.md"
+    target = raw_source.safe_target(wiki_root, rel)
+    if target.exists():
+        # Never clobber an existing page — disambiguate this import.
+        rel = f"{BUCKET_DIR[bucket]}/{safe_title} [keep-import].md"
+        target = raw_source.safe_target(wiki_root, rel)
+        if target.exists():
+            h = hashlib.md5(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:6]
+            rel = f"{BUCKET_DIR[bucket]}/{safe_title} [keep-{h}].md"
+            target = raw_source.safe_target(wiki_root, rel)
+
+    # The page identity (filename stem) is the canonical title used in the H1
+    # and the index wikilink, so they always resolve. The original (possibly
+    # containing wikilink-breaking chars like # or /) is preserved in title:.
+    page_title = Path(rel).stem
+    store_original = page_title != title
+    frontmatter = build_stub_frontmatter(bucket, title, created, tags, file_ref, store_original)
+    body_parts = [f"# {page_title}", ""]
+    text = (payload.get("text") or "").strip()
+    if text:
+        body_parts += [text, ""]
+    body_parts += ["## Source", "",
+                   f"Imported from Google Keep ({created.isoformat()})."]
+    if file_ref:
+        body_parts.append(f"Image attachment (OCR pending): `{file_ref}`")
+    if meta.get("audio_refs"):
+        body_parts.append(f"Audio attachment (transcription pending): `{meta['audio_refs'][0]}`")
+    if meta.get("annotation_urls"):
+        body_parts += ["", "## Links", ""] + [f"- {u}" for u in meta["annotation_urls"]]
+    body = "\n".join(body_parts).rstrip("\n") + "\n"
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(frontmatter + body, encoding="utf-8")
+    return rel, page_title
+
+
+def _date_from_capture(capture_ts: str | None) -> date:
+    if capture_ts:
+        try:
+            return datetime.fromisoformat(capture_ts.replace("Z", "+00:00")).date()
+        except ValueError:
+            pass
+    return date.today()
+
+
+def append_index_stub(wiki_root: Path, bucket: str, title: str, summary: str) -> None:
+    line = f"- [[{title}]] | {bucket} | [STUB] {summary}".rstrip()
+    index_path = wiki_root / "index.md"
+    if not index_path.exists():
+        index_path.write_text(line + "\n", encoding="utf-8")
+        return
+    text = index_path.read_text(encoding="utf-8")
+    header = BUCKET_INDEX_HEADER.get(bucket, bucket)
+    m = re.search(rf"(?mi)^#{{1,6}}\s+{re.escape(header)}\s*$", text)
+    if not m:
+        index_path.write_text(text.rstrip("\n") + "\n" + line + "\n", encoding="utf-8")
+        return
+    nl = text.find("\n", m.end())
+    nl = len(text) if nl == -1 else nl + 1
+    index_path.write_text(text[:nl] + line + "\n" + text[nl:], encoding="utf-8")
+
+
+def append_log(wiki_root: Path, bucket: str, title: str) -> None:
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    line = f"{stamp} | create | {bucket} | {title} | google_keep\n"
+    with (wiki_root / "log.md").open("a", encoding="utf-8") as fh:
+        fh.write(line)
+
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--batch", type=int, default=DEFAULT_BATCH,
+                        help=f"Notes per Haiku call (default {DEFAULT_BATCH}).")
+    parser.add_argument("--max-batches", type=int, default=0,
+                        help="Process at most K batches (0 = all).")
+    parser.add_argument("--wiki-root", default=None, help="Wiki root override.")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Classify and print results; write no pages, move no files.")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    if args.wiki_root:
+        os.environ["MNEME_WIKI_PATH"] = args.wiki_root
+    try:
+        wiki_root = raw_source.resolve_wiki_root()
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+
+    staged = load_staged(wiki_root)
+    if not staged:
+        print(f"No staged items in {STAGING_SUBDIR}/.", file=sys.stderr)
+        return EXIT_EMPTY
+
+    done_dir = wiki_root / DONE_SUBDIR
+    print(f"Found {len(staged)} staged item(s); batch size {args.batch}.", file=sys.stderr)
+
+    written = errors = batches = 0
+    for start in range(0, len(staged), args.batch):
+        if args.max_batches and batches >= args.max_batches:
+            break
+        batch = staged[start:start + args.batch]
+        batches += 1
+        print(f"Batch {batches}: classifying {len(batch)} note(s) ...", file=sys.stderr)
+        results = classify_batch(batch, verbose=True)
+        if results is None:
+            errors += len(batch)
+            print("  classification failed — leaving this batch staged", file=sys.stderr)
+            continue
+        by_idx = {r.get("idx"): r for r in results if isinstance(r, dict)}
+
+        for i, (path, payload) in enumerate(batch):
+            cls = by_idx.get(i)
+            if cls is None:
+                print(f"  note {i}: no classification returned — left staged", file=sys.stderr)
+                errors += 1
+                continue
+            bucket = str(cls.get("bucket", "IDEA")).upper()
+            if bucket not in BUCKET_DIR:
+                bucket = "IDEA"
+            summary = (cls.get("summary") or "").strip()[:120]
+
+            if args.dry_run:
+                print(f"  [{i}] {bucket}: {cls.get('title')}  — {summary}")
+                continue
+            try:
+                res = write_stub(wiki_root, bucket, cls, payload)
+            except (OSError, PermissionError) as exc:
+                print(f"  note {i}: stub write failed: {exc}", file=sys.stderr)
+                errors += 1
+                continue
+            if not res:
+                errors += 1
+                continue
+            _, title = res
+            append_index_stub(wiki_root, bucket, title, summary)
+            append_log(wiki_root, bucket, title)
+            done_dir.mkdir(parents=True, exist_ok=True)
+            path.rename(done_dir / path.name)
+            written += 1
+
+    print(f"\nDone. Stubs written: {written}, batches: {batches}, errors: {errors}",
+          file=sys.stderr)
+    return EXIT_PARTIAL if errors else EXIT_OK
+
+
+if __name__ == "__main__":
+    sys.exit(main())
