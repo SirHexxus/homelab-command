@@ -51,7 +51,7 @@ APPLY_CONFIDENCE_FLOOR = 0.7
 
 VALID_SOURCES = {
     "telegram", "email", "web_clipper", "n8n_chat",
-    "claude_code", "manual", "hermes_agent",
+    "claude_code", "manual", "hermes_agent", "google_keep",
 }
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"

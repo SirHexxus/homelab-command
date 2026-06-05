@@ -198,6 +198,67 @@ def build_image_frontmatter(
     return "\n".join(lines)
 
 
+def build_keep_frontmatter(
+    *,
+    title: str,
+    created: _date,
+    updated: _date,
+    captured_via: str,
+    extracted_by: str,
+    extraction_mode: str,
+    color: str | None = None,
+    pinned: bool = False,
+    archived: bool = False,
+    labels: list[str] | None = None,
+    annotation_count: int = 0,
+    attachment_count: int = 0,
+    audio_pending: bool = False,
+    extra_tags: list[str] | None = None,
+    stub_title: str | None = None,
+) -> str:
+    """Assemble YAML frontmatter for a Google Keep note raw-source.
+
+    `source` is fixed to google_keep (the transport); `captured_via` carries
+    the SCHEMA source enum value of the bulk import (default manual). Keep
+    metadata that has no IDEA-bucket equivalent — color, pinned/archived,
+    labels — is preserved here so the downstream enrich stage can use it for
+    bucket mapping. `audio_pending` marks notes whose audio attachments still
+    need a Whisper pass via extract-video-transcript.
+    """
+    iso_now = _iso_utc_now()
+    tags = ["keep", "raw-source"]
+    if archived:
+        tags.append("archived")
+    if pinned:
+        tags.append("pinned")
+    tags += (extra_tags or [])
+
+    lines = [
+        "---",
+        "bucket: RAW",
+        f"created: {created.isoformat()}",
+        f"updated: {updated.isoformat()}",
+        "source: google_keep",
+        f"captured_via: {_yaml_str(captured_via)}",
+        f"source_title: {_yaml_str(title)}",
+        f"keep_color: {_yaml_str(color)}",
+        f"keep_pinned: {str(pinned).lower()}",
+        f"keep_archived: {str(archived).lower()}",
+        f"keep_labels: {_yaml_list(labels or [])}",
+        f"annotation_count: {annotation_count}",
+        f"attachment_count: {attachment_count}",
+        f"audio_pending_transcription: {str(audio_pending).lower()}",
+        f"extracted_by: {_yaml_str(extracted_by)}",
+        f"extraction_mode: {_yaml_str(extraction_mode)}",
+        f"extracted_at: {iso_now}",
+        f"tags: {_yaml_list(tags)}",
+        f"linked_from: {_linked_from_value(stub_title)}",
+        "---",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def set_linked_from(raw_source_path: Path, stub_title: str | None) -> None:
     """Rewrite the linked_from: line in an existing raw-source file's frontmatter.
 
