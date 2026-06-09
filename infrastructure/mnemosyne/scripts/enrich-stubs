@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -30,7 +31,26 @@ INDEX_FILENAME = "index.md"
 SONNET_MODEL = "claude-sonnet-4-6"
 DEFAULT_FACT_CHECK_AGE = 730
 
+# Throttle: cap how many stubs a single run / a single UTC day may enrich, so the
+# cron can never spike the subscription session budget it shares with James's
+# interactive use. 0 = unlimited. See the cap justification in DRIVE-INGEST-PLAN.
+DEFAULT_MAX_PER_RUN = 3
+DEFAULT_MAX_PER_DAY = 20
+USAGE_STATE_PATH = Path.home() / ".cache" / "mnemosyne" / "enrich-usage.json"
+
 _STUB_LINE_RE = re.compile(r'^\s*-\s+\[\[([^\]]+)\]\]\s+\|[^|]+\|\s+\[STUB\]')
+
+# Raw photo / image captures awaiting OCR are NOT Sonnet-enrichable — they belong
+# in the Vertex/Gemini OCR path, not here. Skip them so they don't burn the cap
+# budget on guaranteed failures. (Wiring the OCR route is separate work.)
+_SKIP_TITLE_RE = re.compile(
+    r'(telegram photo|photo from telegram|pending ocr|image pending)', re.I
+)
+
+# The subscription session/usage-limit message claude prints when the rolling
+# window is exhausted. Detect it to abort the whole run instead of hammering
+# every remaining stub with calls that are guaranteed to fail.
+_LIMIT_RE = re.compile(r'(session|usage) limit|hit your .*limit', re.I)
 
 ENRICH_PROMPT_TEMPLATE = """\
 You are the Mnemosyne Enrichment Agent. Enrich the stub wiki page described below.
@@ -170,11 +190,15 @@ def enrich_stub(
     schema: str,
     fact_check_age: int,
     dry_run: bool,
-) -> bool:
-    """Enrich a single stub. Returns True on success."""
+) -> str:
+    """Enrich a single stub. Returns 'ok', 'fail', or 'limit'.
+
+    'limit' means claude reported a session/usage-limit; the caller must stop the
+    whole run rather than try the next stub.
+    """
     if dry_run:
         print(f"[dry-run] Would enrich: {title}")
-        return True
+        return "ok"
 
     prompt = build_prompt(schema, title, fact_check_age)
 
@@ -186,16 +210,47 @@ def enrich_stub(
             "-p", prompt,
             "--allowedTools", "Read,Edit,Write",
         ],
-        capture_output=False,
+        capture_output=True,
+        text=True,
         cwd=str(wiki_root),
     )
 
+    # Forward claude's output so cron logs keep full detail (we now capture it so
+    # we can inspect it for the limit message).
+    if result.stdout:
+        sys.stderr.write(result.stdout)
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+    combined = f"{result.stdout or ''}\n{result.stderr or ''}"
+
+    if _LIMIT_RE.search(combined):
+        print(f"Session/usage limit reached during '{title}' — aborting run.",
+              file=sys.stderr)
+        return "limit"
     if result.returncode != 0:
         print(f"Error: claude exited {result.returncode} for '{title}'", file=sys.stderr)
-        return False
+        return "fail"
 
     print(f"Done: {title}", file=sys.stderr)
-    return True
+    return "ok"
+
+
+def load_usage_today() -> int:
+    """Stubs already enriched in the current UTC day (0 if new day / no state)."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    try:
+        data = json.loads(USAGE_STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return 0
+    return int(data.get("count", 0)) if data.get("date") == today else 0
+
+
+def save_usage_today(count: int) -> None:
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    USAGE_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    USAGE_STATE_PATH.write_text(
+        json.dumps({"date": today, "count": count}), encoding="utf-8"
+    )
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -218,6 +273,14 @@ def main() -> None:
         "--fact-check-age", type=int, default=DEFAULT_FACT_CHECK_AGE, metavar="N",
         help=f"Days threshold for stale REFERENCE content (default: {DEFAULT_FACT_CHECK_AGE})",
     )
+    parser.add_argument(
+        "--max-per-run", type=int, default=DEFAULT_MAX_PER_RUN, metavar="N",
+        help=f"Max stubs to enrich this run, 0=unlimited (default: {DEFAULT_MAX_PER_RUN})",
+    )
+    parser.add_argument(
+        "--max-per-day", type=int, default=DEFAULT_MAX_PER_DAY, metavar="N",
+        help=f"Max stubs to enrich per UTC day, 0=unlimited (default: {DEFAULT_MAX_PER_DAY})",
+    )
     args = parser.parse_args()
 
     wiki_root: Path = args.wiki_root
@@ -235,27 +298,58 @@ def main() -> None:
                 file=sys.stderr,
             )
             sys.exit(1)
-        ok = enrich_stub(args.page, wiki_root, schema, args.fact_check_age, args.dry_run)
-        sys.exit(0 if ok else 1)
+        status = enrich_stub(args.page, wiki_root, schema, args.fact_check_age, args.dry_run)
+        sys.exit(0 if status == "ok" else 1)
 
-    stubs = find_stubs(wiki_root)
-    if not stubs:
+    all_stubs = find_stubs(wiki_root)
+    if not all_stubs:
         print("No stubs found in index.md.", file=sys.stderr)
         sys.exit(0)
 
-    print(
-        f"Found {len(stubs)} stub(s): {', '.join(stubs)}",
-        file=sys.stderr,
-    )
+    # Set aside un-enrichable photo/OCR-pending stubs so they don't waste budget.
+    skipped = [t for t in all_stubs if _SKIP_TITLE_RE.search(t)]
+    stubs = [t for t in all_stubs if not _SKIP_TITLE_RE.search(t)]
+    if skipped:
+        print(f"Skipping {len(skipped)} photo/OCR-pending stub(s) (need the OCR path, "
+              f"not Sonnet enrichment).", file=sys.stderr)
+    if not stubs:
+        print("No enrichable stubs after the OCR-pending skip.", file=sys.stderr)
+        sys.exit(0)
 
-    failed = 0
-    for title in stubs:
-        ok = enrich_stub(title, wiki_root, schema, args.fact_check_age, args.dry_run)
-        if not ok:
+    # Apply the per-day then per-run caps.
+    used_today = load_usage_today()
+    day_remaining = (args.max_per_day - used_today) if args.max_per_day > 0 else len(stubs)
+    if day_remaining <= 0:
+        print(f"Daily enrich cap reached ({used_today}/{args.max_per_day}); skipping run.",
+              file=sys.stderr)
+        sys.exit(0)
+    run_cap = args.max_per_run if args.max_per_run > 0 else len(stubs)
+    budget = min(run_cap, day_remaining, len(stubs))
+    batch = stubs[:budget]
+
+    print(f"Found {len(stubs)} enrichable stub(s); processing {len(batch)} this run "
+          f"(run cap {run_cap or '∞'}, day {used_today}/{args.max_per_day or '∞'}).",
+          file=sys.stderr)
+
+    processed = failed = 0
+    aborted = False
+    for title in batch:
+        status = enrich_stub(title, wiki_root, schema, args.fact_check_age, args.dry_run)
+        if status == "limit":
+            print("Aborting run — remaining stubs left for the next run.", file=sys.stderr)
+            aborted = True
+            break
+        processed += 1  # consumed usage (ok or fail), counts against the daily cap
+        if status == "fail":
             failed += 1
 
-    if failed:
-        print(f"{failed} stub(s) failed.", file=sys.stderr)
+    if not args.dry_run and processed:
+        save_usage_today(used_today + processed)
+
+    print(f"Run complete: {processed} processed ({failed} failed), "
+          f"day total {used_today + processed}/{args.max_per_day or '∞'}"
+          f"{' — limit-aborted' if aborted else ''}.", file=sys.stderr)
+    if failed or aborted:
         sys.exit(1)
 
 
