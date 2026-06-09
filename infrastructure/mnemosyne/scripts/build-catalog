@@ -13,6 +13,8 @@ Optimized for the cheapest possible read, not human readability:
 
 Lean (default): pages[<code>] = ["Stem", ...]
 Rich (--rich):  pages[<code>] = [["Stem", ["tag", ...], "YYYY-MM-DD"], ...]
+Both carry a top-level "stubs": ["Stem", ...] of unenriched pages (from index.md's
+[STUB] markers) — the enrich worklist, and pages the agent must not merge INTO.
 
 The page set mirrors embed-wiki's BUCKET_DIRS exactly, so the catalog and the
 pgvector cache always describe the same pages. Output is derived — regenerate it
@@ -30,12 +32,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from datetime import date
 from pathlib import Path
 
 DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
 DEFAULT_OUT = Path.home() / ".cache" / "mnemosyne" / "catalog.json"
+INDEX_FILENAME = "index.md"
+
+# A page is a stub iff index.md carries a [STUB] entry for it. The marker lives
+# in index.md (not the page), so the catalog derives stub-status from there —
+# making the catalog a single source for "every page + which are stubs".
+_STUB_LINE_RE = re.compile(r'^\s*-\s+\[\[([^\]]+)\]\]\s+\|[^|]+\|\s+\[STUB\]')
 
 # Directory -> single-char bucket code. Mirrors embed-wiki's BUCKET_DIRS so the
 # catalog and the embedding cache cover the same page set. The legend in the
@@ -82,6 +91,15 @@ def parse_tags(raw: str) -> list[str]:
     return [t.strip().strip('"\'') for t in raw.split(",") if t.strip()]
 
 
+def find_stub_titles(wiki_root: Path) -> list[str]:
+    """Titles with a [STUB] entry in index.md, in index order."""
+    try:
+        lines = (wiki_root / INDEX_FILENAME).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    return [m.group(1) for line in lines if (m := _STUB_LINE_RE.match(line))]
+
+
 def build(wiki_root: Path, rich: bool) -> dict:
     pages: dict[str, list] = {}
     for dir_name, code in DIR_CODE.items():
@@ -110,6 +128,7 @@ def build(wiki_root: Path, rich: bool) -> dict:
         "rich": rich,
         "b": legend,  # code -> directory (file lives at <dir>/<stem>.md)
         "pages": pages,
+        "stubs": find_stub_titles(wiki_root),  # unenriched — never a merge target
     }
 
 
@@ -134,12 +153,13 @@ def main() -> int:
     blob = json.dumps(catalog, ensure_ascii=False, separators=(",", ":"))
 
     total = sum(len(v) for v in catalog["pages"].values())
+    n_stubs = len(catalog["stubs"])
     if args.stdout:
         print(blob)
     else:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(blob + "\n", encoding="utf-8")
-        print(f"Wrote {args.out}: {total} pages, {len(blob)} bytes "
+        print(f"Wrote {args.out}: {total} pages ({n_stubs} stubs), {len(blob)} bytes "
               f"(~{len(blob) // 4} tokens, {'rich' if args.rich else 'lean'}).",
               file=sys.stderr)
     return 0
