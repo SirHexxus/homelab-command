@@ -1,7 +1,9 @@
 # Mnemosyne: Project Task Tracker
 
 **PM:** Mnemosyne Project  
-**Last Updated:** 2026-05-20
+**Last Updated:** 2026-05-20 (Layer 3 work tracked separately — see below)
+
+> ⚠️ **Active session pickup:** see `LAYER-3-PICKUP.md` for the Layer 3 ingest evaluation work in progress. Phase 0 (Gemini bridge for image OCR/VLM + URL extraction in `Mnemosyne Ingest v1` n8n workflow) is awaiting James's approval to start.
 **Status:** Phase 0 mostly done; Phase 1 complete; Phase 2 complete via interim path
 (inbox-receiver); Phase 4 Daily Digest live; target-path migration (Phase 2T) and
 Phase 3 retrieval queued at the 2026-06-01 Decide gate
