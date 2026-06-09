@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""Embed the Mnemosyne wiki into the pgvector sidecar cache.
+
+Walks the vault's knowledge buckets, embeds each page with nomic-embed-text
+(via Ollama), and upserts the vector into Postgres (LXC 105). The cache is a
+derived, regenerable index — the wiki stays canonical. Drop the table and run
+`embed-wiki --full` to rebuild from scratch.
+
+Sync is incremental: a page is re-embedded only when its content hash changes.
+Rows for deleted pages are pruned. Safe to run repeatedly; intended for a cron
+a few minutes before the 07:00 daily digest so it reflects overnight captures.
+
+Usage:
+  embed-wiki                 # incremental sync (embed changed/new, prune gone)
+  embed-wiki --full          # re-embed every page regardless of hash
+  embed-wiki --dry-run       # report adds/updates/prunes without writing
+  embed-wiki --wiki-root DIR # vault root (default: ~/mneme/wiki)
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+import embeddings  # noqa: E402
+
+
+DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+
+# Directory -> default bucket label. Only knowledge buckets are indexed;
+# reports/ (the digests themselves) and inbox/ (unprocessed staging) are
+# deliberately excluded to keep the semantic cache clean.
+BUCKET_DIRS = {
+    "ideas": "IDEA",
+    "admin": "ADMIN",
+    "reference": "REFERENCE",
+    "journal": "JOURNAL",
+    "people": "PERSON",
+    "projects": "PROJECT",
+    "pursuits": "PURSUIT",
+    "raw-sources": "RAW",
+    "synthesis": "SYNTHESIS",
+}
+
+MAX_EMBED_CHARS = 8000
+
+
+def split_frontmatter(path: Path) -> tuple[dict[str, str], str]:
+    """Return (frontmatter_dict, body). Mirrors daily-digest's parser."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}, ""
+    if not text.startswith("---"):
+        return {}, text
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return {}, text
+    fm: dict[str, str] = {}
+    for line in parts[1].splitlines():
+        if ":" not in line:
+            continue
+        key, _, val = line.partition(":")
+        fm[key.strip()] = val.strip()
+    return fm, parts[2]
+
+
+def content_hash(title: str, body: str) -> str:
+    """Stable hash of the embeddable content; drives incremental sync."""
+    return hashlib.sha256(f"{title}\n{body}".encode("utf-8")).hexdigest()
+
+
+def iter_pages(wiki_root: Path):
+    """Yield (rel_path, bucket, title, updated, body) for each indexable page."""
+    for dir_name, default_bucket in BUCKET_DIRS.items():
+        bucket_dir = wiki_root / dir_name
+        if not bucket_dir.is_dir():
+            continue
+        for md_file in sorted(bucket_dir.glob("*.md")):
+            fm, body = split_frontmatter(md_file)
+            bucket = (fm.get("bucket") or default_bucket).strip() or default_bucket
+            title = (fm.get("title") or "").strip() or md_file.stem
+            updated = (fm.get("updated") or "").strip()
+            if updated in ("", "null"):
+                updated = None
+            rel = md_file.relative_to(wiki_root).as_posix()
+            yield rel, bucket, title, updated, body
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--wiki-root", type=Path, default=DEFAULT_WIKI_ROOT, metavar="DIR",
+        help=f"Vault root directory (default: {DEFAULT_WIKI_ROOT})",
+    )
+    parser.add_argument(
+        "--full", action="store_true",
+        help="Re-embed every page regardless of content hash",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Report what would change without embedding or writing",
+    )
+    args = parser.parse_args()
+
+    wiki_root: Path = args.wiki_root
+    if not wiki_root.exists():
+        print(f"Error: wiki root not found: {wiki_root}", file=sys.stderr)
+        sys.exit(1)
+
+    pages = list(iter_pages(wiki_root))
+    present_paths = {rel for rel, *_ in pages}
+
+    try:
+        conn = embeddings.get_conn()
+    except embeddings.DBError as exc:
+        if args.dry_run:
+            print(f"[dry-run] Postgres unavailable ({exc}); treating all "
+                  f"{len(pages)} pages as new.", file=sys.stderr)
+            print(f"[dry-run] Would embed: {len(pages)} | prune: ? | total pages: "
+                  f"{len(pages)}")
+            return
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        embeddings.ensure_schema(conn)
+        existing = embeddings.fetch_hashes(conn)
+
+        embedded = skipped = 0
+        for rel, bucket, title, updated, body in pages:
+            chash = content_hash(title, body)
+            if not args.full and existing.get(rel) == chash:
+                skipped += 1
+                continue
+
+            if args.dry_run:
+                embedded += 1
+                continue
+
+            text = f"{title}\n\n{body}".strip()[:MAX_EMBED_CHARS]
+            try:
+                vector = embeddings.embed_text(text)
+            except embeddings.EmbeddingError as exc:
+                print(f"Warning: skipping {rel}: {exc}", file=sys.stderr)
+                continue
+            embeddings.upsert_page(
+                conn,
+                path=rel, bucket=bucket, title=title, updated=updated,
+                content_hash=chash, embedding=vector,
+            )
+            embedded += 1
+
+        if args.dry_run:
+            would_prune = len(set(existing) - present_paths)
+            print(f"[dry-run] Would embed: {embedded} | skip (unchanged): "
+                  f"{skipped} | prune: {would_prune} | total pages: {len(pages)}")
+            return
+
+        pruned = embeddings.prune_missing(conn, present_paths)
+        conn.commit()
+        print(f"Embedded {embedded}, skipped {skipped} unchanged, pruned "
+              f"{pruned}. Total pages: {len(pages)}.", file=sys.stderr)
+    except embeddings.DBError as exc:
+        conn.rollback()
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    main()

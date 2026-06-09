@@ -42,6 +42,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+import embeddings  # noqa: E402
 import llm_client  # noqa: E402
 from gcal import fetch_calendar  # noqa: E402
 from weather import fetch_weather  # noqa: E402
@@ -78,6 +79,18 @@ CLOSED_STATUSES = {"Done", "Completed", "Closed", "Cancelled", "Skipped"}
 # Unfinished-thought detection thresholds (see Daily Digest Design Spec).
 UNFINISHED_AGE_DAYS = 7
 UNFINISHED_WORD_THRESHOLD = 150
+
+# Stale-but-now-relevant (Section 5) detection — backed by the pgvector
+# sidecar (see lib/embeddings.py and the embed-wiki indexer). A page counts as
+# "stale" if it is one of STALE_BUCKETS and was last updated > STALE_AGE_DAYS
+# ago; it surfaces only if its nearest page updated within STALE_RECENT_DAYS is
+# within STALE_MAX_DISTANCE cosine distance. Tune STALE_MAX_DISTANCE against
+# real runs — smaller is stricter (less, higher-confidence signal).
+STALE_BUCKETS = ("IDEA", "PROJECT", "PURSUIT")
+STALE_AGE_DAYS = 60
+STALE_RECENT_DAYS = 7
+STALE_MAX_DISTANCE = 0.35
+MAX_STALE_ITEMS = 3
 
 # Sentinel passed to the LLM prompt for empty sections; explicit instruction
 # in the system prompt tells the model to drop the section silently and never
@@ -356,16 +369,33 @@ def collect_unfinished_thoughts(wiki_root: Path, today: date) -> list[dict[str, 
     return matches
 
 
-# ── Collectors — stubs (deferred to later builds) ────────────────────────────
+# ── Collectors — stale-but-now-relevant ──────────────────────────────────────
 
-def collect_stale_relevant() -> None:
-    """Stale-but-now-relevant detection.
+def collect_stale_relevant(today: date) -> list[dict[str, str]]:
+    """Dormant pages that have re-aligned with recent activity.
 
-    Requires Layer 3 (nomic-embed-text) semantic overlap. Deferred. See ADMIN
-    task `Wire Stale-But-Now-Relevant Detection into Daily Digest`. Returns
-    None so the formatter renders OMIT and the prompt drops the section.
+    Queries the pgvector sidecar (lib/embeddings.py) for IDEA/PROJECT/PURSUIT
+    pages last updated > STALE_AGE_DAYS ago whose nearest recently-updated page
+    is within STALE_MAX_DISTANCE cosine distance. Returns up to MAX_STALE_ITEMS
+    items {title, updated, why_now}, or [] when nothing qualifies.
+
+    Graceful degradation: any backend failure (Ollama down, Postgres down,
+    psycopg2 missing, index never built) logs a warning and returns [], so the
+    section omits silently and the digest still generates — mirroring the
+    weather/calendar collectors' no-filler behaviour.
     """
-    return None
+    try:
+        return embeddings.stale_relevant(
+            today=today,
+            buckets=STALE_BUCKETS,
+            stale_age_days=STALE_AGE_DAYS,
+            recent_days=STALE_RECENT_DAYS,
+            max_distance=STALE_MAX_DISTANCE,
+            limit=MAX_STALE_ITEMS,
+        )
+    except embeddings.DBError as exc:
+        print(f"Warning: stale-relevant unavailable: {exc}", file=sys.stderr)
+        return []
 
 
 def fetch_calendar_block(today: date) -> list[dict] | None:
@@ -519,12 +549,15 @@ def format_unfinished(items: list[dict[str, str]]) -> str:
     return "\n".join(lines)
 
 
-def format_stale_relevant(items: None) -> str:
-    """Section 5 — stale-but-now-relevant. CONDITIONAL — empty → OMIT.
-
-    Currently always OMIT until Layer 3 detection is wired.
-    """
-    return OMIT
+def format_stale_relevant(items: list[dict[str, str]]) -> str:
+    """Section 5 — stale-but-now-relevant. CONDITIONAL — empty → OMIT."""
+    if not items:
+        return OMIT
+    return "\n".join(
+        f"- {item['title']} — last updated {item['updated']}; "
+        f"relevant now via recent activity on {item['why_now']}"
+        for item in items
+    )
 
 
 def format_yesterday_log(lines: list[str]) -> str:
@@ -567,6 +600,7 @@ def build_user_prompt(
     follow_ups: list[dict[str, str]],
     upcoming: list[dict[str, str]],
     unfinished: list[dict[str, str]],
+    stale: list[dict[str, str]],
     yesterday_log: list[str],
     lookahead: int,
 ) -> str:
@@ -577,7 +611,7 @@ def build_user_prompt(
         obligations=format_obligations(overdue, due_today, follow_ups),
         forward_prep=format_forward_prep(upcoming, lookahead),
         unfinished=format_unfinished(unfinished),
-        stale_relevant=format_stale_relevant(None),
+        stale_relevant=format_stale_relevant(stale),
         yesterday_log=format_yesterday_log(yesterday_log),
         yesterday=yesterday.isoformat(),
     )
@@ -704,6 +738,10 @@ def main() -> None:
         help="Skip the follow-up Telegram voice note after text delivery",
     )
     parser.add_argument(
+        "--no-stale", action="store_true",
+        help="Skip the stale-but-now-relevant section (no pgvector query)",
+    )
+    parser.add_argument(
         "--system-prompt", type=Path, default=DEFAULT_SYSTEM_PROMPT_PATH, metavar="PATH",
         help=f"System prompt file (default: {DEFAULT_SYSTEM_PROMPT_PATH})",
     )
@@ -730,6 +768,7 @@ def main() -> None:
     follow_ups = collect_follow_ups(wiki_root, today)
     birthdays = collect_birthdays(wiki_root, today)
     unfinished = collect_unfinished_thoughts(wiki_root, today)
+    stale = [] if args.no_stale else collect_stale_relevant(today)
     weather = fetch_weather_block()
     calendar = fetch_calendar_block(today)
     yesterday_log = collect_yesterday_log(wiki_root, yesterday)
@@ -752,6 +791,9 @@ def main() -> None:
         print(f"[dry-run] Unfinished thoughts ({len(unfinished)}):")
         for u in unfinished:
             print(f"  - {u['title']} | {u['reason']}")
+        print(f"[dry-run] Stale-relevant ({len(stale)}):")
+        for s in stale:
+            print(f"  - {s['title']} | updated {s['updated']} | why: {s['why_now']}")
         print(f"[dry-run] Yesterday log lines ({len(yesterday_log)}):")
         for line in yesterday_log:
             print(f"  {line}")
@@ -771,6 +813,7 @@ def main() -> None:
         follow_ups=follow_ups,
         upcoming=tasks["upcoming"],
         unfinished=unfinished,
+        stale=stale,
         yesterday_log=yesterday_log,
         lookahead=args.lookahead,
     )
