@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""Build a token-minimal machine catalog of the Mnemosyne wiki.
+
+A derived, regenerable JSON table-of-contents for when an LLM needs the WHOLE
+wiki at a glance (routing, "does a page like this exist", global synthesis,
+merge-candidate guessing) without reading 678 files or the verbose index.md.
+
+Optimized for the cheapest possible read, not human readability:
+  - grouped by bucket so the bucket token is never repeated per page
+  - the page's filename stem IS the entry (it's the [[wikilink]] identity AND
+    the locator: the file is <dir>/<stem>.md)
+  - no prose, no summaries, no markdown
+
+Lean (default): pages[<code>] = ["Stem", ...]
+Rich (--rich):  pages[<code>] = [["Stem", ["tag", ...], "YYYY-MM-DD"], ...]
+
+The page set mirrors embed-wiki's BUCKET_DIRS exactly, so the catalog and the
+pgvector cache always describe the same pages. Output is derived — regenerate it
+anytime; it is written outside the vault so obsidian-git never commits it.
+
+Usage:
+  build-catalog                 # write ~/.cache/mnemosyne/catalog.json (lean)
+  build-catalog --rich          # add tags + updated date per page
+  build-catalog --stdout        # print to stdout instead of the cache file
+  build-catalog --out PATH      # custom output path
+  build-catalog --wiki-root DIR # vault root (default: ~/mneme/wiki)
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from datetime import date
+from pathlib import Path
+
+DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+DEFAULT_OUT = Path.home() / ".cache" / "mnemosyne" / "catalog.json"
+
+# Directory -> single-char bucket code. Mirrors embed-wiki's BUCKET_DIRS so the
+# catalog and the embedding cache cover the same page set. The legend in the
+# output maps each code back to its directory (which is also the file locator).
+DIR_CODE = {
+    "ideas": "I",
+    "admin": "A",
+    "reference": "R",
+    "journal": "J",
+    "people": "P",
+    "projects": "X",
+    "pursuits": "U",
+    "raw-sources": "W",
+    "synthesis": "S",
+}
+
+
+def read_frontmatter(path: Path) -> dict[str, str]:
+    """Return the frontmatter dict for a page (mirrors embed-wiki's parser)."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    if not text.startswith("---"):
+        return {}
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return {}
+    fm: dict[str, str] = {}
+    for line in parts[1].splitlines():
+        if ":" not in line:
+            continue
+        key, _, val = line.partition(":")
+        fm[key.strip()] = val.strip()
+    return fm
+
+
+def parse_tags(raw: str) -> list[str]:
+    """Parse a `tags: [a, b, c]` frontmatter value into a list."""
+    raw = raw.strip()
+    if not raw or raw == "null":
+        return []
+    raw = raw.removeprefix("[").removesuffix("]")
+    return [t.strip().strip('"\'') for t in raw.split(",") if t.strip()]
+
+
+def build(wiki_root: Path, rich: bool) -> dict:
+    pages: dict[str, list] = {}
+    for dir_name, code in DIR_CODE.items():
+        bucket_dir = wiki_root / dir_name
+        if not bucket_dir.is_dir():
+            continue
+        entries: list = []
+        for md_file in sorted(bucket_dir.glob("*.md")):
+            stem = md_file.stem
+            if rich:
+                fm = read_frontmatter(md_file)
+                tags = parse_tags(fm.get("tags", ""))
+                updated = fm.get("updated", "").strip()
+                if updated in ("", "null"):
+                    updated = None
+                entries.append([stem, tags, updated])
+            else:
+                entries.append(stem)
+        if entries:
+            pages[code] = entries
+
+    legend = {code: dir_name for dir_name, code in DIR_CODE.items() if code in pages}
+    return {
+        "v": 1,
+        "generated": date.today().isoformat(),
+        "rich": rich,
+        "b": legend,  # code -> directory (file lives at <dir>/<stem>.md)
+        "pages": pages,
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--wiki-root", type=Path, default=DEFAULT_WIKI_ROOT, metavar="DIR",
+                        help=f"Vault root (default: {DEFAULT_WIKI_ROOT})")
+    parser.add_argument("--out", type=Path, default=DEFAULT_OUT, metavar="PATH",
+                        help=f"Output path (default: {DEFAULT_OUT})")
+    parser.add_argument("--rich", action="store_true",
+                        help="Add tags + updated date per page (still no prose)")
+    parser.add_argument("--stdout", action="store_true",
+                        help="Print to stdout instead of writing the cache file")
+    args = parser.parse_args()
+
+    if not args.wiki_root.is_dir():
+        print(f"Error: wiki root not found: {args.wiki_root}", file=sys.stderr)
+        return 1
+
+    catalog = build(args.wiki_root, args.rich)
+    # Compact separators = fewest tokens.
+    blob = json.dumps(catalog, ensure_ascii=False, separators=(",", ":"))
+
+    total = sum(len(v) for v in catalog["pages"].values())
+    if args.stdout:
+        print(blob)
+    else:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(blob + "\n", encoding="utf-8")
+        print(f"Wrote {args.out}: {total} pages, {len(blob)} bytes "
+              f"(~{len(blob) // 4} tokens, {'rich' if args.rich else 'lean'}).",
+              file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
