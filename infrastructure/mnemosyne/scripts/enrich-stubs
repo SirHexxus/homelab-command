@@ -1,13 +1,23 @@
 #!/usr/bin/env python3
 """Enrich stub wiki pages: merge candidates, expand content, add wikilinks, flag issues.
 
-Finds all [STUB] entries in index.md and processes each with claude sonnet.
-Run on a periodic schedule (every 6 hours via cron).
+Drains the [STUB] worklist with claude sonnet, capped per run/day so the cron
+never spikes the shared subscription session budget.
+
+Division of labor (token-frugal):
+  - One compact CATALOG (build-catalog) is the single source for the worklist
+    (its "stubs" list), merge-candidate discovery, and locators. The agent reads
+    the catalog instead of the whole index.md, and writes ONLY page-body files.
+  - This wrapper owns ALL index.md / log.md mutations, applied deterministically
+    from a small JSON manifest the agent returns. The agent never reads index.md,
+    which is the bulk of the per-enrich token cost.
 
 Usage:
-  enrich-stubs                        # process all [STUB] entries in index.md
+  enrich-stubs                        # process [STUB] entries (capped per run/day)
   enrich-stubs --page "Page Title"    # enrich a single stub by title
   enrich-stubs --dry-run              # list stubs found, do not call claude
+  enrich-stubs --max-per-run N        # 0 = unlimited (default: 3)
+  enrich-stubs --max-per-day N        # 0 = unlimited (default: 20)
   enrich-stubs --fact-check-age N     # stale REFERENCE threshold in days (default: 730)
   enrich-stubs --wiki-root DIR        # wiki root directory (default: ~/mneme/wiki)
 """
@@ -28,8 +38,10 @@ from pathlib import Path
 DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
 SCHEMA_FILENAME = "SCHEMA.md"
 INDEX_FILENAME = "index.md"
+LOG_FILENAME = "log.md"
 SONNET_MODEL = "claude-sonnet-4-6"
 DEFAULT_FACT_CHECK_AGE = 730
+CATALOG_BIN = Path(__file__).resolve().parent / "build-catalog"
 
 # Throttle: cap how many stubs a single run / a single UTC day may enrich, so the
 # cron can never spike the subscription session budget it shares with James's
@@ -39,6 +51,19 @@ DEFAULT_MAX_PER_DAY = 20
 USAGE_STATE_PATH = Path.home() / ".cache" / "mnemosyne" / "enrich-usage.json"
 
 _STUB_LINE_RE = re.compile(r'^\s*-\s+\[\[([^\]]+)\]\]\s+\|[^|]+\|\s+\[STUB\]')
+
+# Bucket -> directory and -> index.md section header (title-case plural). Mirrors
+# triage-keep-batch so the wrapper's index/log writes match the live pipeline.
+BUCKET_DIRS = {
+    "IDEA": "ideas", "ADMIN": "admin", "REFERENCE": "reference", "JOURNAL": "journal",
+    "PERSON": "people", "PROJECT": "projects", "PURSUIT": "pursuits",
+    "RAW": "raw-sources", "SYNTHESIS": "synthesis",
+}
+BUCKET_INDEX_HEADER = {
+    "IDEA": "Ideas", "ADMIN": "Admin", "REFERENCE": "Reference", "JOURNAL": "Journal",
+    "PERSON": "People", "PROJECT": "Projects", "PURSUIT": "Pursuits",
+    "RAW": "Raw", "SYNTHESIS": "Synthesis",
+}
 
 # Raw photo / image captures awaiting OCR are NOT Sonnet-enrichable — they belong
 # in the Vertex/Gemini OCR path, not here. Skip them so they don't burn the cap
@@ -52,8 +77,10 @@ _SKIP_TITLE_RE = re.compile(
 # every remaining stub with calls that are guaranteed to fail.
 _LIMIT_RE = re.compile(r'(session|usage) limit|hit your .*limit', re.I)
 
+MANIFEST_MARKER = "===MANIFEST==="
+
 ENRICH_PROMPT_TEMPLATE = """\
-You are the Mnemosyne Enrichment Agent. Enrich the stub wiki page described below.
+You are the Mnemosyne Enrichment Agent. Enrich one stub wiki page.
 
 == FULL SCHEMA ==
 {schema}
@@ -61,87 +88,62 @@ You are the Mnemosyne Enrichment Agent. Enrich the stub wiki page described belo
 == TODAY'S DATE ==
 {today}
 
+== WIKI CATALOG (complete page list — use THIS for merge-candidate discovery) ==
+Compact JSON listing every existing page, grouped by a bucket code. "b" maps each
+code to its directory, so a page titled "X" under code "I" lives at ideas/X.md. Use
+the catalog to find merge candidates — do NOT read index.md to discover them. Titles
+in the "stubs" array are themselves unenriched: prefer a non-stub page as a merge
+target and NEVER merge into a stub.
+{catalog}
+
 == STUB TO ENRICH ==
 Title: {title}
 Fact-check age threshold: {fact_check_age} days
 
-== INSTRUCTIONS ==
+== WHAT TO DO ==
+1. Read the stub page for [[{title}]] (locate it from the catalog: <dir>/<title>.md).
+2. Using the CATALOG (not index.md), find an existing non-stub page covering the same
+   topic, entity, or theme where this stub belongs. Per the schema, IDEA insights on the
+   same theme should EXTEND the existing page. If a candidate looks likely, read that ONE
+   page to confirm.
+3a. IF a merge target exists:
+    - Extend it with the stub's content (never duplicate); set its `updated:` to {today}.
+    - Do NOT delete the stub file; do NOT touch index.md/log.md — the wrapper does that.
+3b. IF no merge target:
+    - Rewrite the stub body: expand into structured Markdown with bucket-appropriate
+      headings; add [[wikilinks]] for named people/projects/pursuits; remove 'stub' from
+      tags; set `updated:` to {today}.
+    - UNFINISHED-FLAGGING (every bucket EXCEPT ADMIN): if the enriched body is under 150
+      words OR substantively incomplete, set `status: draft` and add `unfinished` to tags;
+      otherwise remove any `status: draft` line and the `unfinished` tag. Never apply this
+      to ADMIN pages (their status vocabulary is controlled).
+4. Optionally create ADMIN task pages by WRITING the page file only (never index/log):
+   a. USER CLARIFICATION NEEDED → admin/User Clarification - {title}.md
+      frontmatter: bucket: ADMIN, task_type: user, status: Pending, due: null,
+                   created: {today}, updated: {today}, source: triage-enrich, tags: []
+   b. FACT-CHECK (a REFERENCE page created > {fact_check_age} days ago AND time-sensitive)
+      → admin/Fact-Check {title}.md
+      frontmatter: bucket: ADMIN, task_type: maintenance, status: Pending, due: null,
+                   created: {today}, updated: {today}, source: triage-enrich, tags: []
 
-1. Read the stub page for [[{title}]]. Locate it by searching the bucket directories
-   if the path is not immediately obvious from the title.
+IMPORTANT: You may ONLY Read/Edit/Write page files under the bucket directories. Do NOT
+read, edit, or create index.md or log.md — the wrapper applies all index/log changes from
+the manifest you return. Do NOT commit, push, or run shell commands.
 
-2. Read index.md. Look for existing pages covering the same topic, entity, or theme
-   where the stub content logically belongs or should be merged.
-   Pay particular attention to IDEA pages — the schema requires new insights on the
-   same theme to extend the existing page rather than create a new one.
+== MANIFEST (REQUIRED) ==
+After the file writes, output the marker below on its own line, then ONE JSON object and
+nothing after it (no comments, valid JSON):
+{marker}
+{{"action": "enrich", "bucket": "IDEA", "prefix": "", "summary": "<=120 chars", "merge_target": null, "admin_tasks": []}}
 
-3a. IF a merge candidate exists:
-    - Read the candidate page
-    - Merge the stub content into it (extend, never duplicate)
-    - Update the candidate's `updated` frontmatter field to {today}
-    - Update the candidate's index.md summary if stale
-    - Delete the stub page file
-    - Remove the stub's index.md entry entirely
-    - Add to the END of log.md (after all existing entries):
-      {log_timestamp} | update | BUCKET | <candidate title> | triage-enrich
-
-3b. IF no merge candidate:
-    - Enrich the body: expand the raw text into structured Markdown with
-      bucket-appropriate headings and formatting
-    - Add [[wikilinks]] wherever named people, projects, or pursuits are mentioned
-    - Remove 'stub' from the tags list; set `updated` to {today}
-    - Update the stub's index.md entry: replace [STUB] with the correct prefix:
-        - ADMIN stubs: replace [STUB] with [User] (task_type: user) or [Maintenance]
-          (task_type: maintenance), per the schema's ADMIN index convention
-        - All other buckets: remove [STUB] entirely (no replacement prefix)
-      Refresh the summary text if stale.
-    - Add to the END of log.md (after all existing entries):
-      {log_timestamp} | update | BUCKET | {title} | triage-enrich
-
-    - UNFINISHED-FLAGGING (applies to all buckets):
-      After writing the enriched body, count its words. If the body is under 150
-      words OR the content remains substantively incomplete (placeholder text,
-      single-sentence assertions without elaboration, no resolution of the
-      obvious questions the stub raised), then in frontmatter:
-        - set `status: draft`
-        - add `unfinished` to the `tags:` list (if not already present)
-      Otherwise:
-        - if `status: draft` was present, REMOVE it (do not set to null;
-          delete the line)
-        - if `unfinished` was in `tags:`, REMOVE it
-      The 150-word threshold and the substance check apply uniformly across
-      all buckets. The daily-digest currently consumes this signal only for
-      IDEA pages, but other tooling (audits, future digests, future surfaces)
-      will read it from any bucket.
-
-      ADMIN exception: do NOT apply unfinished-flagging to ADMIN pages.
-      ADMIN's `status:` field already has a controlled vocabulary
-      (Pending / Done / Completed / etc.) and must not be overwritten with
-      `draft`. Leave ADMIN status untouched.
-
-4. Assess whether any ADMIN task is warranted. Create a task page for each that applies.
-   Apply filename sanitization rules (from the schema) to the task title if needed.
-
-   a. USER CLARIFICATION NEEDED — content intent is unclear, classification may be
-      wrong, or key context only the user can supply is missing:
-      → Create admin/User Clarification - {title}.md
-        frontmatter: bucket: ADMIN, task_type: user, status: Pending, due: null,
-                     created: {today}, updated: {today}, source: triage-enrich, tags: []
-        index.md:    [[User Clarification - {title}]] | ADMIN | [User] Pending — clarification needed for [[{title}]]
-        log.md (END): {log_timestamp} | ingest | ADMIN | User Clarification - {title} | triage-enrich
-
-   b. FACT-CHECK — this is a REFERENCE page AND the `created` date is more than
-      {fact_check_age} days before {today} AND the content is time-sensitive
-      (technology versions, software documentation, AI model specs, statistics,
-      dated factual claims):
-      → Create admin/Fact-Check {title}.md
-        frontmatter: bucket: ADMIN, task_type: maintenance, status: Pending, due: null,
-                     created: {today}, updated: {today}, source: triage-enrich, tags: []
-        index.md:    [[Fact-Check {title}]] | ADMIN | [Maintenance] Pending — fact-check [[{title}]]
-        log.md (END): {log_timestamp} | ingest | ADMIN | Fact-Check {title} | triage-enrich
-
-Do NOT commit, push, or run shell commands.
-Do NOT modify any file other than those explicitly described above.
+Field rules:
+- "action": "enrich" for case 3b, "merge" for case 3a.
+- "bucket": the final BUCKET of the stub (3b) or of the merge target (3a).
+- "prefix": for an ADMIN enrich use "[User]" (task_type user) or "[Maintenance]"
+  (task_type maintenance); for every other bucket use "" (the [STUB] marker is removed).
+- "merge_target": the candidate page title for a merge, else null.
+- "admin_tasks": [] unless you created task pages in step 4; each item is
+  {{"title": "User Clarification - {title}", "prefix": "[User]", "summary": "..."}}.
 """
 
 
@@ -156,52 +158,199 @@ def load_schema(wiki_root: Path) -> str:
         sys.exit(1)
 
 
+def get_catalog(wiki_root: Path) -> str:
+    """Regenerate and return the compact wiki catalog (lean, with "stubs").
+
+    Empty string on failure — callers fall back to reading index.md directly.
+    """
+    try:
+        result = subprocess.run(
+            [str(CATALOG_BIN), "--stdout", "--wiki-root", str(wiki_root)],
+            capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+        print(f"Warning: build-catalog returned nothing: {result.stderr.strip()[:200]}",
+              file=sys.stderr)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"Warning: build-catalog failed ({exc}); enrich falls back to index.md.",
+              file=sys.stderr)
+    return ""
+
+
+def stubs_from_catalog(catalog_json: str) -> list[str]:
+    """The worklist: titles in the catalog's "stubs" list. [] if unparseable."""
+    if not catalog_json:
+        return []
+    try:
+        data = json.loads(catalog_json)
+    except json.JSONDecodeError:
+        return []
+    stubs = data.get("stubs")
+    return [str(t) for t in stubs] if isinstance(stubs, list) else []
+
+
 def find_stubs(wiki_root: Path) -> list[str]:
-    """Return page titles with [STUB] in index.md, in index order."""
+    """Fallback worklist: page titles with [STUB] in index.md, in index order."""
     index_path = wiki_root / INDEX_FILENAME
     try:
         lines = index_path.read_text(encoding="utf-8").splitlines()
     except FileNotFoundError:
         print(f"Error: {INDEX_FILENAME} not found at {index_path}", file=sys.stderr)
         sys.exit(1)
-
-    return [
-        m.group(1)
-        for line in lines
-        if (m := _STUB_LINE_RE.match(line))
-    ]
+    return [m.group(1) for line in lines if (m := _STUB_LINE_RE.match(line))]
 
 
-def build_prompt(schema: str, title: str, fact_check_age: int) -> str:
+def find_stub_file(wiki_root: Path, title: str) -> Path | None:
+    for d in BUCKET_DIRS.values():
+        candidate = wiki_root / d / f"{title}.md"
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def build_prompt(schema: str, catalog: str, title: str, fact_check_age: int) -> str:
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    log_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    cat = catalog or "(catalog unavailable — you MAY read index.md to find merge candidates)"
     return ENRICH_PROMPT_TEMPLATE.format(
-        schema=schema,
-        today=today,
-        title=title,
-        fact_check_age=fact_check_age,
-        log_timestamp=log_timestamp,
+        schema=schema, today=today, catalog=cat, title=title,
+        fact_check_age=fact_check_age, marker=MANIFEST_MARKER,
     )
 
+
+# ── index.md / log.md writers (wrapper-owned) ─────────────────────────────────
+
+def _read_index(wiki_root: Path) -> str:
+    return (wiki_root / INDEX_FILENAME).read_text(encoding="utf-8")
+
+
+def _write_index(wiki_root: Path, lines: list[str], trailing_nl: bool) -> None:
+    text = "\n".join(lines) + ("\n" if trailing_nl else "")
+    (wiki_root / INDEX_FILENAME).write_text(text, encoding="utf-8")
+
+
+def set_stub_index_line(wiki_root: Path, title: str, bucket: str,
+                        prefix: str, summary: str) -> bool:
+    """Replace the [STUB] index line for `title` with the enriched line. Idempotent."""
+    text = _read_index(wiki_root)
+    lines = text.splitlines()
+    needle = f"[[{title}]]"
+    pfx = f"{prefix} " if prefix else ""
+    new_line = f"- [[{title}]] | {bucket} | {pfx}{summary}".rstrip()
+    for i, ln in enumerate(lines):
+        if needle in ln and "[STUB]" in ln:
+            lines[i] = new_line
+            _write_index(wiki_root, lines, text.endswith("\n"))
+            return True
+    return False  # already non-stub / not found — idempotent no-op
+
+
+def remove_stub_index_line(wiki_root: Path, title: str) -> bool:
+    text = _read_index(wiki_root)
+    lines = text.splitlines()
+    needle = f"[[{title}]]"
+    for i, ln in enumerate(lines):
+        if needle in ln and "[STUB]" in ln:
+            del lines[i]
+            _write_index(wiki_root, lines, text.endswith("\n"))
+            return True
+    return False
+
+
+def append_admin_index_line(wiki_root: Path, title: str, prefix: str, summary: str) -> None:
+    text = _read_index(wiki_root)
+    pfx = f"{prefix} " if prefix else ""
+    line = f"- [[{title}]] | ADMIN | {pfx}{summary}".rstrip()
+    header = BUCKET_INDEX_HEADER["ADMIN"]
+    m = re.search(rf"(?mi)^#{{1,6}}\s+{re.escape(header)}\s*$", text)
+    if not m:
+        (wiki_root / INDEX_FILENAME).write_text(
+            text.rstrip("\n") + "\n" + line + "\n", encoding="utf-8")
+        return
+    nl = text.find("\n", m.end())
+    nl = len(text) if nl == -1 else nl + 1
+    (wiki_root / INDEX_FILENAME).write_text(text[:nl] + line + "\n" + text[nl:],
+                                            encoding="utf-8")
+
+
+def append_log(wiki_root: Path, action: str, bucket: str, title: str) -> None:
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with (wiki_root / LOG_FILENAME).open("a", encoding="utf-8") as fh:
+        fh.write(f"{stamp} | {action} | {bucket} | {title} | triage-enrich\n")
+
+
+# ── Manifest parsing + application ────────────────────────────────────────────
+
+def extract_manifest(output: str) -> dict | None:
+    """Pull the JSON object that follows the last MANIFEST marker. None if absent/bad."""
+    idx = output.rfind(MANIFEST_MARKER)
+    if idx == -1:
+        return None
+    blob = output[idx + len(MANIFEST_MARKER):].strip()
+    fence = re.match(r"^```(?:json)?\s*(.*?)\s*```", blob, re.DOTALL)
+    if fence:
+        blob = fence.group(1).strip()
+    start, end = blob.find("{"), blob.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        return None
+    try:
+        parsed = json.loads(blob[start:end + 1])
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def apply_manifest(wiki_root: Path, stub_title: str, manifest: dict) -> bool:
+    """Apply the agent's index/log directives deterministically. Returns success."""
+    action = str(manifest.get("action", "")).lower()
+    bucket = str(manifest.get("bucket", "IDEA")).upper()
+    if bucket not in BUCKET_DIRS:
+        bucket = "IDEA"
+    summary = (manifest.get("summary") or "").strip()[:120]
+
+    if action == "merge":
+        target = (manifest.get("merge_target") or "").strip()
+        remove_stub_index_line(wiki_root, stub_title)
+        stub_file = find_stub_file(wiki_root, stub_title)
+        if stub_file and stub_file.exists():
+            stub_file.unlink()
+        append_log(wiki_root, "update", bucket, target or stub_title)
+    elif action == "enrich":
+        prefix = (manifest.get("prefix") or "").strip()
+        set_stub_index_line(wiki_root, stub_title, bucket, prefix, summary)
+        append_log(wiki_root, "update", bucket, stub_title)
+    else:
+        return False  # unknown/skip — leave the stub untouched
+
+    for task in manifest.get("admin_tasks") or []:
+        at_title = (task.get("title") or "").strip()
+        if not at_title:
+            continue
+        append_admin_index_line(
+            wiki_root, at_title,
+            (task.get("prefix") or "").strip(),
+            (task.get("summary") or "").strip()[:120],
+        )
+        append_log(wiki_root, "ingest", "ADMIN", at_title)
+    return True
+
+
+# ── Enrichment ────────────────────────────────────────────────────────────────
 
 def enrich_stub(
     title: str,
     wiki_root: Path,
     schema: str,
+    catalog: str,
     fact_check_age: int,
     dry_run: bool,
 ) -> str:
-    """Enrich a single stub. Returns 'ok', 'fail', or 'limit'.
-
-    'limit' means claude reported a session/usage-limit; the caller must stop the
-    whole run rather than try the next stub.
-    """
+    """Enrich a single stub. Returns 'ok', 'fail', or 'limit'."""
     if dry_run:
         print(f"[dry-run] Would enrich: {title}")
         return "ok"
 
-    prompt = build_prompt(schema, title, fact_check_age)
-
+    prompt = build_prompt(schema, catalog, title, fact_check_age)
     print(f"Enriching: {title}", file=sys.stderr)
     result = subprocess.run(
         [
@@ -215,8 +364,6 @@ def enrich_stub(
         cwd=str(wiki_root),
     )
 
-    # Forward claude's output so cron logs keep full detail (we now capture it so
-    # we can inspect it for the limit message).
     if result.stdout:
         sys.stderr.write(result.stdout)
     if result.stderr:
@@ -224,11 +371,24 @@ def enrich_stub(
     combined = f"{result.stdout or ''}\n{result.stderr or ''}"
 
     if _LIMIT_RE.search(combined):
-        print(f"Session/usage limit reached during '{title}' — aborting run.",
-              file=sys.stderr)
+        print(f"Session/usage limit reached during '{title}' — aborting run.", file=sys.stderr)
         return "limit"
     if result.returncode != 0:
         print(f"Error: claude exited {result.returncode} for '{title}'", file=sys.stderr)
+        return "fail"
+
+    manifest = extract_manifest(result.stdout or "")
+    if manifest is None:
+        print(f"Error: no parseable manifest for '{title}' — index.md left unchanged.",
+              file=sys.stderr)
+        return "fail"
+    try:
+        if not apply_manifest(wiki_root, title, manifest):
+            print(f"Manifest action {manifest.get('action')!r} for '{title}' did nothing.",
+                  file=sys.stderr)
+            return "fail"
+    except OSError as exc:
+        print(f"Error applying manifest for '{title}': {exc}", file=sys.stderr)
         return "fail"
 
     print(f"Done: {title}", file=sys.stderr)
@@ -257,30 +417,17 @@ def save_usage_today(count: int) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--page", metavar="TITLE",
-        help="Enrich a single stub by page title",
-    )
-    parser.add_argument(
-        "--wiki-root", type=Path, default=DEFAULT_WIKI_ROOT, metavar="DIR",
-        help=f"Wiki root directory (default: {DEFAULT_WIKI_ROOT})",
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true",
-        help="List stubs found without calling claude",
-    )
-    parser.add_argument(
-        "--fact-check-age", type=int, default=DEFAULT_FACT_CHECK_AGE, metavar="N",
-        help=f"Days threshold for stale REFERENCE content (default: {DEFAULT_FACT_CHECK_AGE})",
-    )
-    parser.add_argument(
-        "--max-per-run", type=int, default=DEFAULT_MAX_PER_RUN, metavar="N",
-        help=f"Max stubs to enrich this run, 0=unlimited (default: {DEFAULT_MAX_PER_RUN})",
-    )
-    parser.add_argument(
-        "--max-per-day", type=int, default=DEFAULT_MAX_PER_DAY, metavar="N",
-        help=f"Max stubs to enrich per UTC day, 0=unlimited (default: {DEFAULT_MAX_PER_DAY})",
-    )
+    parser.add_argument("--page", metavar="TITLE", help="Enrich a single stub by page title")
+    parser.add_argument("--wiki-root", type=Path, default=DEFAULT_WIKI_ROOT, metavar="DIR",
+                        help=f"Wiki root directory (default: {DEFAULT_WIKI_ROOT})")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="List stubs found without calling claude")
+    parser.add_argument("--fact-check-age", type=int, default=DEFAULT_FACT_CHECK_AGE, metavar="N",
+                        help=f"Days threshold for stale REFERENCE content (default: {DEFAULT_FACT_CHECK_AGE})")
+    parser.add_argument("--max-per-run", type=int, default=DEFAULT_MAX_PER_RUN, metavar="N",
+                        help=f"Max stubs to enrich this run, 0=unlimited (default: {DEFAULT_MAX_PER_RUN})")
+    parser.add_argument("--max-per-day", type=int, default=DEFAULT_MAX_PER_DAY, metavar="N",
+                        help=f"Max stubs to enrich per UTC day, 0=unlimited (default: {DEFAULT_MAX_PER_DAY})")
     args = parser.parse_args()
 
     wiki_root: Path = args.wiki_root
@@ -289,21 +436,21 @@ def main() -> None:
         sys.exit(1)
 
     schema = load_schema(wiki_root)
+    # The catalog is the single source for the worklist + agent discovery. Skip
+    # regenerating it for a dry-run (no agent calls) and fall back to index.md.
+    catalog = "" if args.dry_run else get_catalog(wiki_root)
 
     if args.page:
-        stubs = find_stubs(wiki_root)
-        if args.page not in stubs:
-            print(
-                f"Error: '{args.page}' not found as a [STUB] in index.md",
-                file=sys.stderr,
-            )
+        if args.page not in find_stubs(wiki_root):
+            print(f"Error: '{args.page}' not found as a [STUB] in index.md", file=sys.stderr)
             sys.exit(1)
-        status = enrich_stub(args.page, wiki_root, schema, args.fact_check_age, args.dry_run)
+        status = enrich_stub(args.page, wiki_root, schema, catalog, args.fact_check_age,
+                             args.dry_run)
         sys.exit(0 if status == "ok" else 1)
 
-    all_stubs = find_stubs(wiki_root)
+    all_stubs = stubs_from_catalog(catalog) or find_stubs(wiki_root)
     if not all_stubs:
-        print("No stubs found in index.md.", file=sys.stderr)
+        print("No stubs found.", file=sys.stderr)
         sys.exit(0)
 
     # Set aside un-enrichable photo/OCR-pending stubs so they don't waste budget.
@@ -334,7 +481,8 @@ def main() -> None:
     processed = failed = 0
     aborted = False
     for title in batch:
-        status = enrich_stub(title, wiki_root, schema, args.fact_check_age, args.dry_run)
+        status = enrich_stub(title, wiki_root, schema, catalog, args.fact_check_age,
+                             args.dry_run)
         if status == "limit":
             print("Aborting run — remaining stubs left for the next run.", file=sys.stderr)
             aborted = True
