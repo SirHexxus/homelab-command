@@ -45,7 +45,25 @@ BUCKET_DIRS = {
     "synthesis": "SYNTHESIS",
 }
 
-MAX_EMBED_CHARS = 8000
+MAX_EMBED_CHARS = 6000
+
+
+def embed_with_fallback(text: str) -> list[float]:
+    """Embed text, halving the length on an Ollama 500 and retrying.
+
+    nomic-embed-text caps around 2048 tokens; an over-long page makes Ollama
+    return HTTP 500 rather than truncating. Halving on a 500 lets a long page
+    shrink to fit (embedded on its leading chars) instead of being skipped.
+    """
+    size = MAX_EMBED_CHARS
+    while True:
+        try:
+            return embeddings.embed_text(text[:size])
+        except embeddings.EmbeddingError as exc:
+            if "500" in str(exc) and size > 750:
+                size //= 2
+                continue
+            raise
 
 
 def split_frontmatter(path: Path) -> tuple[dict[str, str], str]:
@@ -141,9 +159,8 @@ def main() -> None:
                 embedded += 1
                 continue
 
-            text = f"{title}\n\n{body}".strip()[:MAX_EMBED_CHARS]
             try:
-                vector = embeddings.embed_text(text)
+                vector = embed_with_fallback(f"{title}\n\n{body}".strip())
             except embeddings.EmbeddingError as exc:
                 print(f"Warning: skipping {rel}: {exc}", file=sys.stderr)
                 continue
