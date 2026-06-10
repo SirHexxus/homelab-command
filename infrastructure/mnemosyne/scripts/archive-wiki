@@ -1,0 +1,211 @@
+#!/usr/bin/env python3
+"""Identify (and optionally move) wiki pages eligible for archiving.
+
+Four streams, per the cleanup decisions of 2026-06:
+  - admin-closed   : ADMIN pages with status Done/Completed/Skipped
+  - journal-aged   : JOURNAL pages older than --journal-days, UNLESS a recent
+                     (within --journal-days) non-archived page still wikilinks them
+  - machine-report : reports/*.md that are not daily-digest-* (regenerable tool output)
+  - digest-aged    : daily-digest-*.md older than --digest-days
+
+Default is --dry-run: nothing is moved, a full candidate report is printed.
+With --apply, eligible pages are moved under archive/<stream>/, stamped with
+`archived:` / `archived_reason:` frontmatter. Index cleanup is reported, not
+performed (regenerate index entries separately).
+"""
+
+import argparse
+import re
+import sys
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+TODAY = date.today()
+DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+WIKILINK_RE = re.compile(r"\[\[([^\]]+?)\]\]")
+CLOSED_STATUSES = {"done", "completed", "skipped"}
+
+
+def parse_date_from_name(name: str) -> date | None:
+    m = DATE_RE.search(name)
+    if not m:
+        return None
+    try:
+        return date(int(m[1]), int(m[2]), int(m[3]))
+    except ValueError:
+        return None
+
+
+def read_frontmatter(path: Path) -> dict[str, str]:
+    """Minimal YAML-frontmatter scalar reader (key: value lines only)."""
+    fm: dict[str, str] = {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return fm
+    if not text.startswith("---"):
+        return fm
+    end = text.find("\n---", 3)
+    if end == -1:
+        return fm
+    for line in text[3:end].splitlines():
+        if ":" in line:
+            key, _, val = line.partition(":")
+            fm[key.strip()] = val.strip().strip('"').strip("'")
+    return fm
+
+
+def page_updated(path: Path) -> date | None:
+    fm = read_frontmatter(path)
+    for field in ("updated", "created"):
+        if field in fm:
+            d = parse_date_from_name(fm[field])
+            if d:
+                return d
+    return None
+
+
+def title_of(path: Path) -> str:
+    return path.stem
+
+
+def collect_admin_closed(wiki: Path) -> list[Path]:
+    out = []
+    for p in sorted((wiki / "admin").glob("*.md")):
+        status = read_frontmatter(p).get("status", "").lower()
+        if status in CLOSED_STATUSES:
+            out.append(p)
+    return out
+
+
+def report_family(path: Path) -> str:
+    """Report family = filename stem with the trailing -YYYY-MM-DD stripped."""
+    return re.sub(r"-\d{4}-\d{2}-\d{2}$", "", path.stem)
+
+
+def newest_per_family(paths: list[Path]) -> set[Path]:
+    """The single most-recent file of each report family (kept in the wiki)."""
+    newest: dict[str, tuple[Path, date]] = {}
+    for p in paths:
+        fam = report_family(p)
+        d = parse_date_from_name(p.name) or date.min
+        if fam not in newest or d > newest[fam][1]:
+            newest[fam] = (p, d)
+    return {v[0] for v in newest.values()}
+
+
+def collect_machine_reports(wiki: Path) -> list[Path]:
+    reports = [p for p in (wiki / "reports").glob("*.md")
+               if not p.name.startswith("daily-digest-")]
+    keep = newest_per_family(reports)  # caveat: keep newest of each type
+    return sorted(p for p in reports if p not in keep)
+
+
+def collect_aged_digests(wiki: Path, cutoff: date) -> list[Path]:
+    digests = sorted((wiki / "reports").glob("daily-digest-*.md"))
+    keep = newest_per_family(digests)  # always keep the single newest digest
+    out = []
+    for p in digests:
+        if p in keep:
+            continue
+        d = parse_date_from_name(p.name)
+        if d and d < cutoff:
+            out.append(p)
+    return out
+
+
+def collect_aged_journal(wiki: Path, cutoff: date) -> tuple[list[Path], list[Path]]:
+    """Return (archivable, protected) journal pages.
+
+    A page older than cutoff is protected if any non-archived page whose own
+    `updated` date is >= cutoff still wikilinks its title.
+    """
+    journal = sorted((wiki / "journal").glob("*.md"))
+    old = [p for p in journal if (parse_date_from_name(p.name) or TODAY) < cutoff]
+    old_titles = {title_of(p): p for p in old}
+
+    # Build the set of titles referenced by any recent (>= cutoff) page.
+    recently_linked: set[str] = set()
+    bucket_dirs = ["ideas", "admin", "reference", "journal", "people",
+                   "projects", "pursuits", "raw-sources"]
+    for bdir in bucket_dirs:
+        for p in (wiki / bdir).glob("*.md"):
+            updated = page_updated(p) or parse_date_from_name(p.name)
+            if not updated or updated < cutoff:
+                continue
+            try:
+                body = p.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            for target in WIKILINK_RE.findall(body):
+                target = target.split("|", 1)[0].split("#", 1)[0].strip()
+                if target in old_titles and target != title_of(p):
+                    recently_linked.add(target)
+
+    archivable = [p for t, p in old_titles.items() if t not in recently_linked]
+    protected = [p for t, p in old_titles.items() if t in recently_linked]
+    return sorted(archivable), sorted(protected)
+
+
+def stamp_and_move(path: Path, dest_dir: Path, reason: str) -> None:
+    text = path.read_text(encoding="utf-8")
+    stamp = f"archived: {TODAY.isoformat()}\narchived_reason: {reason}\n"
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        text = text[: end + 1] + stamp + text[end + 1 :]
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    path.rename(dest_dir / path.name)
+    (dest_dir / path.name).write_text(text, encoding="utf-8")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--wiki-root", type=Path, default=DEFAULT_WIKI_ROOT)
+    ap.add_argument("--journal-days", type=int, default=60)
+    ap.add_argument("--digest-days", type=int, default=6)
+    ap.add_argument("--apply", action="store_true",
+                    help="actually move files (default: dry-run report only)")
+    args = ap.parse_args()
+
+    wiki = args.wiki_root
+    journal_cutoff = TODAY - timedelta(days=args.journal_days)
+    digest_cutoff = TODAY - timedelta(days=args.digest_days)
+
+    admin_closed = collect_admin_closed(wiki)
+    machine_reports = collect_machine_reports(wiki)
+    aged_digests = collect_aged_digests(wiki, digest_cutoff)
+    journal_archivable, journal_protected = collect_aged_journal(wiki, journal_cutoff)
+
+    streams = [
+        ("admin-closed", "closed", admin_closed),
+        ("journal-aged", "aged", journal_archivable),
+        ("machine-report", "machine-report", machine_reports),
+        ("digest-aged", "machine-report", aged_digests),
+    ]
+
+    mode = "APPLY" if args.apply else "DRY-RUN"
+    print(f"=== archive-wiki [{mode}] · {TODAY} ===")
+    print(f"journal cutoff < {journal_cutoff} · digest cutoff < {digest_cutoff}\n")
+    total = 0
+    for name, reason, paths in streams:
+        print(f"## {name} ({len(paths)})")
+        for p in paths:
+            print(f"  {p.relative_to(wiki)}")
+            if args.apply:
+                stamp_and_move(p, wiki / "archive" / name, reason)
+        total += len(paths)
+        print()
+
+    print(f"## journal-protected ({len(journal_protected)}) — kept (recent inbound link)")
+    for p in journal_protected:
+        print(f"  {p.relative_to(wiki)}")
+
+    print(f"\nTOTAL eligible: {total}")
+    if not args.apply:
+        print("(dry-run — nothing moved; index.md cleanup not performed)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
