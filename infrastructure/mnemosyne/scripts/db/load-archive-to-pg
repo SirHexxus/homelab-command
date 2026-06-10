@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""Load archived wiki pages (wiki/archive/<stream>/) into mneme_archived_pages.
+
+DORMANT until the mnemosyne db has the table (see schema.sql). UTF-8-forced via
+mneme_pg (the cluster is SQL_ASCII). Idempotent: ON CONFLICT (bucket,title,
+page_date) DO NOTHING. Default is dry-run; pass --apply to insert.
+"""
+
+import argparse
+import json
+import re
+import sys
+from datetime import date
+from pathlib import Path
+
+DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+# stream dir -> (bucket, orig bucket dir, archived_reason)
+STREAMS = {
+    "admin-closed": ("ADMIN", "admin", "closed"),
+    "journal-aged": ("JOURNAL", "journal", "aged"),
+    "machine-report": ("REPORT", "reports", "machine-report"),
+    "digest-aged": ("REPORT", "reports", "machine-report"),
+}
+
+
+def parse_frontmatter(text: str) -> tuple[dict, str]:
+    if not text.startswith("---"):
+        return {}, text
+    end = text.find("\n---", 3)
+    if end == -1:
+        return {}, text
+    fm: dict[str, str] = {}
+    for line in text[3:end].splitlines():
+        if ":" in line and not line.lstrip().startswith("-"):
+            k, _, v = line.partition(":")
+            fm[k.strip()] = v.strip().strip('"').strip("'")
+    body = text[end + 4:].lstrip("\n")
+    return fm, body
+
+
+def parse_date_from(name: str, fm: dict) -> date | None:
+    for src in (name, fm.get("page_date", ""), fm.get("created", "")):
+        m = DATE_RE.search(src or "")
+        if m:
+            try:
+                return date(int(m[1]), int(m[2]), int(m[3]))
+            except ValueError:
+                continue
+    return None
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--wiki-root", type=Path, default=DEFAULT_WIKI_ROOT)
+    ap.add_argument("--apply", action="store_true",
+                    help="insert rows (default: dry-run count)")
+    args = ap.parse_args()
+
+    archive = args.wiki_root / "archive"
+    rows = []
+    for stream, (default_bucket, orig_dir, reason) in STREAMS.items():
+        for path in sorted((archive / stream).glob("*.md")):
+            text = path.read_text(encoding="utf-8")
+            fm, body = parse_frontmatter(text)
+            rows.append((
+                fm.get("bucket", default_bucket),
+                path.stem,
+                f"{orig_dir}/{path.name}",
+                fm.get("archived", str(date.today())),
+                fm.get("archived_reason", reason) or reason,
+                parse_date_from(path.name, fm),
+                fm.get("status"),
+                json.dumps(fm),
+                body,
+            ))
+
+    print(f"{'inserting' if args.apply else 'would insert'} {len(rows)} archived pages")
+    by_stream = {}
+    for r in rows:
+        by_stream[r[4] or "?"] = by_stream.get(r[4] or "?", 0) + 1
+    for reason, n in sorted(by_stream.items()):
+        print(f"  {reason}: {n}")
+
+    if not args.apply:
+        print("(dry-run — nothing inserted; pass --apply)")
+        return 0
+
+    import mneme_pg
+    conn = mneme_pg.connect()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.executemany(
+                "INSERT INTO mneme_archived_pages "
+                "(bucket, title, orig_path, archived_on, archived_reason, "
+                " page_date, status, frontmatter, body) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT (bucket, title, page_date) DO NOTHING",
+                rows,
+            )
+    finally:
+        conn.close()
+    print(f"loaded {len(rows)} rows into mneme_archived_pages")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

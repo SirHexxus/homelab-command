@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""Migrate wiki/log.md into the mneme_log Postgres table.
+
+DORMANT: requires the mnemosyne Postgres role/db (same standup as the embeddings
+sidecar). Until then, run with --dry-run to validate parsing against the real log.
+
+Parses each `{ts} | {op} | {bucket} | {title} | {source}` line, sorts by ts
+(the on-disk order is not chronological), and bulk-inserts. Idempotent inserts
+are the caller's concern — run against a freshly-created table.
+
+Usage:
+    migrate-log-to-pg --dry-run            # parse + validate, no DB, print stats
+    migrate-log-to-pg --dsn "$MNEME_DSN"   # insert into mneme_log
+"""
+
+import argparse
+import sys
+from collections import Counter
+from datetime import datetime
+from pathlib import Path
+
+DEFAULT_LOG = Path.home() / "mneme" / "wiki" / "log.md"
+VALID_OPS = {"ingest", "create", "update", "merge", "rename",
+             "delete", "report", "lint"}
+
+
+def parse_log(log_path: Path) -> tuple[list[tuple], list[tuple[int, str]]]:
+    """Return (rows, errors). rows = (ts, op, bucket, title, source)."""
+    rows: list[tuple] = []
+    errors: list[tuple[int, str]] = []
+    for n, raw in enumerate(log_path.read_text(encoding="utf-8").splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith("---"):
+            continue
+        if line.startswith(("Format:", "Operations:", "Append-only", "Entries are")):
+            continue
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) != 5:
+            errors.append((n, f"expected 5 fields, got {len(parts)}: {line[:80]}"))
+            continue
+        ts_str, op, bucket, title, source = parts
+        try:
+            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        except ValueError:
+            errors.append((n, f"bad timestamp: {ts_str}"))
+            continue
+        if op not in VALID_OPS:
+            errors.append((n, f"unknown operation: {op}"))
+            # keep it anyway — surfaced for review
+        rows.append((ts, op, bucket, title, source))
+    rows.sort(key=lambda r: r[0])
+    return rows, errors
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--log", type=Path, default=DEFAULT_LOG)
+    ap.add_argument("--apply", action="store_true",
+                    help="insert into mneme_log (default: dry-run, parse only)")
+    args = ap.parse_args()
+    dry_run = not args.apply
+
+    rows, errors = parse_log(args.log)
+    ops = Counter(r[1] for r in rows)
+    print(f"parsed {len(rows)} rows · {len(errors)} errors")
+    print("operations: " + ", ".join(f"{k}={v}" for k, v in ops.most_common()))
+    if rows:
+        print(f"ts range: {rows[0][0].date()} .. {rows[-1][0].date()}")
+    for n, msg in errors[:20]:
+        print(f"  line {n}: {msg}", file=sys.stderr)
+
+    if dry_run:
+        print("(dry-run — no rows inserted; pass --apply to load)")
+        return 1 if errors else 0
+
+    import mneme_pg
+    conn = mneme_pg.connect()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.executemany(
+                "INSERT INTO mneme_log (ts, operation, bucket, page_title, source) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                rows,
+            )
+    finally:
+        conn.close()
+    print(f"inserted {len(rows)} rows into mneme_log")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
