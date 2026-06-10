@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Remove index.md entries whose wikilink target no longer exists in an active bucket.
+
+After archiving/merging, index.md still lists moved or deleted pages. This drops
+any `- [[Title]] | ...` line whose `Title.md` is not present in an active bucket
+dir (archive/ is intentionally excluded). Headers and blank lines are preserved.
+Default is --dry-run; pass --apply to rewrite index.md.
+"""
+
+import argparse
+import re
+import sys
+from pathlib import Path
+
+DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+BUCKET_DIRS = ["ideas", "admin", "reference", "journal", "people",
+               "projects", "pursuits", "raw-sources"]
+ENTRY_RE = re.compile(r"^- \[\[([^\]]+?)\]\]")
+
+
+def active_titles(wiki: Path) -> set[str]:
+    titles: set[str] = set()
+    for bdir in BUCKET_DIRS:
+        for p in (wiki / bdir).glob("*.md"):
+            titles.add(p.stem)
+    return titles
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--wiki-root", type=Path, default=DEFAULT_WIKI_ROOT)
+    ap.add_argument("--apply", action="store_true")
+    args = ap.parse_args()
+
+    index = args.wiki_root / "index.md"
+    titles = active_titles(args.wiki_root)
+    kept, dropped = [], []
+    for line in index.read_text(encoding="utf-8").splitlines():
+        m = ENTRY_RE.match(line)
+        if m and m.group(1).split("|", 1)[0].split("#", 1)[0].strip() not in titles:
+            dropped.append(m.group(1))
+        else:
+            kept.append(line)
+
+    print(f"{'removing' if args.apply else 'would remove'} {len(dropped)} stale entries")
+    for t in dropped:
+        print(f"  - {t}")
+    if args.apply:
+        index.write_text("\n".join(kept) + "\n", encoding="utf-8")
+        print(f"index.md rewritten: {len(kept)} lines")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
