@@ -16,8 +16,8 @@ Usage:
   enrich-stubs                        # process [STUB] entries (capped per run/day)
   enrich-stubs --page "Page Title"    # enrich a single stub by title
   enrich-stubs --dry-run              # list stubs found, do not call claude
-  enrich-stubs --max-per-run N        # 0 = unlimited (default: 3)
-  enrich-stubs --max-per-day N        # 0 = unlimited (default: 20)
+  enrich-stubs --max-per-run N        # 0 = unlimited (default: 5)
+  enrich-stubs --max-per-day N        # 0 = unlimited (default: 30)
   enrich-stubs --fact-check-age N     # stale REFERENCE threshold in days (default: 730)
   enrich-stubs --wiki-root DIR        # wiki root directory (default: ~/mneme/wiki)
 """
@@ -50,8 +50,8 @@ CATALOG_BIN = Path(__file__).resolve().parent / "build-catalog"
 # Throttle: cap how many stubs a single run / a single UTC day may enrich, so the
 # cron can never spike the subscription session budget it shares with James's
 # interactive use. 0 = unlimited. See the cap justification in DRIVE-INGEST-PLAN.
-DEFAULT_MAX_PER_RUN = 3
-DEFAULT_MAX_PER_DAY = 20
+DEFAULT_MAX_PER_RUN = 5
+DEFAULT_MAX_PER_DAY = 30
 USAGE_STATE_PATH = Path.home() / ".cache" / "mnemosyne" / "enrich-usage.json"
 
 _STUB_LINE_RE = re.compile(r'^\s*-\s+\[\[([^\]]+)\]\]\s+\|[^|]+\|\s+\[STUB\]')
