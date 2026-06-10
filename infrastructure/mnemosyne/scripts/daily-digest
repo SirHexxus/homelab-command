@@ -46,6 +46,7 @@ import embeddings  # noqa: E402
 import llm_client  # noqa: E402
 from gcal import fetch_calendar  # noqa: E402
 from weather import fetch_weather  # noqa: E402
+import mneme_log  # noqa: E402
 
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -643,6 +644,8 @@ def append_log(wiki_root: Path, today: date) -> None:
             fh.write(entry)
     except OSError as exc:
         print(f"Warning: could not append to log.md: {exc}", file=sys.stderr)
+    # dual-write to the authoritative Postgres log (fail-soft)
+    mneme_log.log_event("report", "—", f"Daily Digest — {today.isoformat()}", "daily-digest")
 
 
 def log_token_usage(today: date, model: str, usage_metadata) -> None:

@@ -34,6 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 import embeddings  # noqa: E402
+import mneme_log  # noqa: E402
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -337,9 +338,12 @@ def append_admin_index_line(wiki_root: Path, title: str, prefix: str, summary: s
 
 
 def append_log(wiki_root: Path, action: str, bucket: str, title: str) -> None:
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = datetime.now(timezone.utc)
+    stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     with (wiki_root / LOG_FILENAME).open("a", encoding="utf-8") as fh:
         fh.write(f"{stamp} | {action} | {bucket} | {title} | triage-enrich\n")
+    # dual-write to the authoritative Postgres log (fail-soft)
+    mneme_log.log_event(action, bucket, title, "triage-enrich", now)
 
 
 # ── Manifest parsing + application ────────────────────────────────────────────
