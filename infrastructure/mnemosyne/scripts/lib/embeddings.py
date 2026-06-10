@@ -148,7 +148,12 @@ def get_conn():
         ) from exc
     params = load_pg_params()
     try:
-        return psycopg2.connect(**params)
+        conn = psycopg2.connect(**params)
+        # The target cluster is SQL_ASCII; force UTF-8 on the wire so page
+        # titles/paths with non-ASCII (em dashes, accents) round-trip cleanly
+        # instead of tripping psycopg2's ascii codec.
+        conn.set_client_encoding("UTF8")
+        return conn
     except Exception as exc:  # psycopg2.OperationalError and friends
         raise DBError(
             f"cannot connect to Postgres at {params['host']}:{params['port']}: {exc}"
