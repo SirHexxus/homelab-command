@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Generate wiki/SCHEMA.md from the atomic section files in wiki/schema/.
+
+The ingestion pipeline (enrich-stubs, triage-inbox) reads the full SCHEMA.md into
+its prompts, so the monolith must keep existing. This script makes schema/ the
+editable source of truth and regenerates the monolith deterministically.
+
+Concatenates schema/[0-9]*.md in filename order (00-preamble .. 99-footer),
+prepends a static DO-NOT-EDIT banner, and writes wiki/SCHEMA.md.
+
+Usage:
+    build-schema                 # write wiki/SCHEMA.md
+    build-schema --stdout        # print to stdout, write nothing
+    build-schema --check         # exit non-zero if SCHEMA.md is out of sync
+    build-schema --wiki-root DIR # operate on a wiki root other than the default
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+SCHEMA_DIRNAME = "schema"
+OUTPUT_FILENAME = "SCHEMA.md"
+
+BANNER = (
+    "<!-- GENERATED FILE — DO NOT EDIT.\n"
+    "     Source of truth: schema/ (atomic section files).\n"
+    "     Regenerate with: build-schema  (see schema/README.md). -->\n\n"
+)
+
+
+def build_schema_text(schema_dir: Path) -> str:
+    """Concatenate the numbered section files into the monolith body."""
+    section_files = sorted(schema_dir.glob("[0-9]*.md"))
+    if not section_files:
+        raise FileNotFoundError(f"no section files (NN-*.md) found in {schema_dir}")
+    parts: list[str] = []
+    for path in section_files:
+        text = path.read_text(encoding="utf-8").rstrip("\n")
+        parts.append(text)
+    # One blank line between sections; trailing newline at EOF.
+    return BANNER + "\n\n".join(parts) + "\n"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--wiki-root",
+        type=Path,
+        default=DEFAULT_WIKI_ROOT,
+        help=f"wiki root containing {SCHEMA_DIRNAME}/ (default: {DEFAULT_WIKI_ROOT})",
+    )
+    parser.add_argument(
+        "--stdout",
+        action="store_true",
+        help="print generated schema to stdout instead of writing the file",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="verify SCHEMA.md is in sync with schema/; exit 1 if stale",
+    )
+    args = parser.parse_args()
+
+    schema_dir = args.wiki_root / SCHEMA_DIRNAME
+    output_path = args.wiki_root / OUTPUT_FILENAME
+
+    if not schema_dir.is_dir():
+        print(f"Error: schema dir not found: {schema_dir}", file=sys.stderr)
+        return 2
+
+    try:
+        generated = build_schema_text(schema_dir)
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.stdout:
+        sys.stdout.write(generated)
+        return 0
+
+    if args.check:
+        current = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+        if current == generated:
+            print(f"{OUTPUT_FILENAME} is in sync with {SCHEMA_DIRNAME}/")
+            return 0
+        print(
+            f"{OUTPUT_FILENAME} is OUT OF SYNC with {SCHEMA_DIRNAME}/ — run build-schema",
+            file=sys.stderr,
+        )
+        return 1
+
+    output_path.write_text(generated, encoding="utf-8")
+    n_sections = len(sorted(schema_dir.glob("[0-9]*.md")))
+    print(f"Wrote {output_path}: {n_sections} sections, {len(generated)} bytes.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
