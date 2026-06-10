@@ -127,5 +127,10 @@ write_report() {
 		"$timestamp" "$title" "$report_date" \
 		>> "$LOG_FILE"
 
+	# dual-write to the authoritative Postgres log (fail-soft; never blocks)
+	python3 "${BASH_SOURCE%/*}/mneme_log.py" \
+		--op report --bucket "—" --title "$title — $report_date" \
+		--source maintenance-script 2>/dev/null || true
+
 	log_info "Report written: $filename"
 }
