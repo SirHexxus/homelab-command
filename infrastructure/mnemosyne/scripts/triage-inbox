@@ -25,6 +25,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR / "lib"))
 import raw_source  # noqa: E402
+import mneme_log  # noqa: E402
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -32,7 +33,17 @@ import raw_source  # noqa: E402
 DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
 INBOX_SUBDIR = "inbox"
 SCHEMA_FILENAME = "SCHEMA.md"
+INDEX_FILENAME = "index.md"
 HAIKU_MODEL = "claude-haiku-4-5-20251001"
+
+MANIFEST_MARKER = "===MANIFEST==="
+
+# Bucket -> index.md section header (title-case). Mirrors enrich-stubs so the
+# wrapper's index writes land under the same headers as the rest of the pipeline.
+BUCKET_INDEX_HEADER = {
+    "IDEA": "Ideas", "ADMIN": "Admin", "REFERENCE": "Reference", "JOURNAL": "Journal",
+    "PERSON": "People", "PROJECT": "Projects", "PURSUIT": "Pursuits", "RAW": "Raw",
+}
 
 EXTRACT_VIDEO = SCRIPT_DIR / "extract-video-transcript"
 EXTRACT_IMAGE = SCRIPT_DIR / "extract-image-data"
@@ -122,20 +133,18 @@ inbox item as a stub.
    - One blank line after the closing ---
    - Body: the inbox text VERBATIM, unchanged
 
-4. Append one entry to index.md under the correct bucket section (most-recent-first):
-   - [[<sanitized_title>]] | BUCKET | [STUB] brief one-line summary (max 120 chars)
+4. Output the manifest. After writing the stub file, print the marker below on its OWN line,
+   then ONE JSON object and nothing after it (valid JSON, no comments, no code fence):
+   {marker}
+   {{"bucket": "IDEA", "title": "<your chosen sanitized title, without .md>", "summary": "<one-line summary, max 120 chars>"}}
 
-   IMPORTANT: Always use [STUB] — even for ADMIN items. Do NOT use [User], [Maintenance],
-   or any other prefix. The schema's ADMIN index conventions ([User]/[Maintenance]) are
-   applied by the enrichment agent after it assesses the task. Your job is only to stage
-   the item as a stub.
+   - "bucket": the BUCKET you classified (IDEA, ADMIN, REFERENCE, JOURNAL, PERSON, PROJECT, PURSUIT, RAW).
+   - "title": the EXACT sanitized title you used for the filename (no directory, no .md).
+   - "summary": a brief one-line summary (max 120 chars). Do NOT add a [STUB] prefix — the wrapper adds it.
 
-5. Add one line to the END of log.md (after all existing entries):
-   {log_timestamp} | ingest | BUCKET | <your chosen sanitized title> | {source}
-
-Do NOT commit, push, delete files, or run shell commands.
-Do NOT read any existing wiki pages or index.md before writing.
-Do NOT modify any file other than the new stub page, index.md, and log.md.
+IMPORTANT: Write ONLY the new stub page file. Do NOT read, create, or modify index.md or
+log.md — the wrapper applies all index and log changes from your manifest. Do NOT commit,
+push, delete files, or run shell commands. Do NOT read any existing wiki pages or index.md.
 {attached_section}"""
 
 
@@ -205,8 +214,6 @@ def build_prompt(schema: str, item: dict, attachments: list[dict] | None = None)
         text_parts.append(f"File reference: {file_ref}")
     text_section = "\n".join(text_parts) if text_parts else "(no text content)"
 
-    log_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
     if attachments:
         lines = [_ATTACHED_HEADER.rstrip()]
         for n, att in enumerate(attachments, start=1):
@@ -223,7 +230,7 @@ def build_prompt(schema: str, item: dict, attachments: list[dict] | None = None)
         capture_ts=item.get("capture_ts", "unknown"),
         bucket_hint=bucket_hint,
         text_section=text_section,
-        log_timestamp=log_timestamp,
+        marker=MANIFEST_MARKER,
         attached_section=attached_section,
     )
 
@@ -416,27 +423,68 @@ def raw_source_valid_sources() -> set[str]:
     }
 
 
-# ── Stub-title discovery + linked_from backfill ──────────────────────────────
+# ── Manifest parsing + index/log application + linked_from backfill ──────────
 
-def read_log_tail(wiki_root: Path, n: int = 5) -> list[str]:
-    log = wiki_root / "log.md"
+def extract_manifest(output: str) -> dict | None:
+    """Pull the JSON object that follows the last MANIFEST marker. None if absent/bad."""
+    idx = output.rfind(MANIFEST_MARKER)
+    if idx == -1:
+        return None
+    blob = output[idx + len(MANIFEST_MARKER):].strip()
+    fence = re.match(r"^```(?:json)?\s*(.*?)\s*```", blob, re.DOTALL)
+    if fence:
+        blob = fence.group(1).strip()
+    start, end = blob.find("{"), blob.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        return None
     try:
-        lines = log.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeDecodeError):
-        return []
-    return lines[-n:]
+        parsed = json.loads(blob[start:end + 1])
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
-def find_new_stub_title(before_tail: list[str], wiki_root: Path) -> str | None:
-    """Find the title of the most-recently-added log entry not in before_tail."""
-    after = read_log_tail(wiki_root, n=10)
-    new_lines = [line for line in after if line not in before_tail]
-    # Walk back-to-front for the most recent ingest line.
-    for line in reversed(new_lines):
-        parts = [p.strip() for p in line.split("|")]
-        if len(parts) >= 4 and parts[1] == "ingest":
-            return parts[3]
-    return None
+def _read_index(wiki_root: Path) -> str:
+    return (wiki_root / INDEX_FILENAME).read_text(encoding="utf-8")
+
+
+def append_index_line(wiki_root: Path, title: str, bucket: str, summary: str) -> None:
+    """Insert a [STUB] index entry under the bucket's section header (most-recent-first)."""
+    text = _read_index(wiki_root)
+    header = BUCKET_INDEX_HEADER.get(bucket, "Ideas")
+    line = f"- [[{title}]] | {bucket} | [STUB] {summary}".rstrip()
+    m = re.search(rf"(?mi)^#{{1,6}}\s+{re.escape(header)}\s*$", text)
+    if not m:  # header missing — append at EOF rather than lose the entry
+        (wiki_root / INDEX_FILENAME).write_text(
+            text.rstrip("\n") + "\n" + line + "\n", encoding="utf-8")
+        return
+    nl = text.find("\n", m.end())
+    nl = len(text) if nl == -1 else nl + 1
+    (wiki_root / INDEX_FILENAME).write_text(
+        text[:nl] + line + "\n" + text[nl:], encoding="utf-8")
+
+
+def apply_triage_manifest(wiki_root: Path, manifest: dict, source: str) -> str | None:
+    """Apply the agent's index/log directives from its manifest. Returns the title."""
+    bucket = str(manifest.get("bucket", "IDEA")).upper()
+    if bucket not in BUCKET_INDEX_HEADER:
+        bucket = "IDEA"
+    title = (manifest.get("title") or "").strip()
+    if not title:
+        return None
+    summary = (manifest.get("summary") or "").strip()[:120]
+    append_index_line(wiki_root, title, bucket, summary)
+    _append_log(wiki_root, "ingest", bucket, title, source)
+    return title
+
+
+def _append_log(wiki_root: Path, op: str, bucket: str, title: str, source: str) -> None:
+    """Dual-write the event: append log.md (Obsidian view) + INSERT mneme_log (fail-soft)."""
+    now = datetime.now(timezone.utc)
+    stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    with (wiki_root / "log.md").open("a", encoding="utf-8") as fh:
+        fh.write(f"{stamp} | {op} | {bucket} | {title} | {source}\n")
+    mneme_log.log_event(op, bucket, title, source, now)
 
 
 def backfill_linked_from(
@@ -507,8 +555,6 @@ def triage_file(
         print("---")
         return True
 
-    log_tail_before = read_log_tail(wiki_root, n=10)
-
     print(f"Triaging: {inbox_file.name}", file=sys.stderr)
     result = subprocess.run(
         [
@@ -517,9 +563,14 @@ def triage_file(
             "-p", prompt,
             "--allowedTools", "Read,Edit,Write",
         ],
-        capture_output=False,
+        capture_output=True,
+        text=True,
         cwd=str(wiki_root),
     )
+    if result.stdout:
+        sys.stderr.write(result.stdout)
+    if result.stderr:
+        sys.stderr.write(result.stderr)
 
     if result.returncode != 0:
         print(
@@ -529,8 +580,19 @@ def triage_file(
         )
         return False
 
+    # The agent wrote only the stub body; the wrapper owns index.md + log via the manifest.
+    manifest = extract_manifest(result.stdout or "")
+    if manifest is None:
+        print(
+            f"Warning: no parseable manifest for {inbox_file.name} — stub created but not "
+            "indexed; check-index-completeness will flag it.",
+            file=sys.stderr,
+        )
+        stub_title = None
+    else:
+        stub_title = apply_triage_manifest(wiki_root, manifest, item.get("source", "unknown"))
+
     # Backfill linked_from: on any raw-sources we attached.
-    stub_title = find_new_stub_title(log_tail_before, wiki_root)
     backfill_linked_from(wiki_root, attachments, stub_title)
 
     try:
