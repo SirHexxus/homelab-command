@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""Normalize YAML-frontmatter tags across the wiki to the controlled vocabulary.
+
+Rules (see wiki/schema/14-tag-vocabulary.md):
+  - lowercase every tag
+  - apply synonym merges (currently only d&d -> dnd)
+  - de-duplicate while preserving first-seen order
+Only the `tags:` field is touched. Handles inline (`tags: [a, b]`) and block
+(`tags:\n  - a`) styles. Default is --dry-run; pass --apply to write.
+"""
+
+import argparse
+import re
+import sys
+from pathlib import Path
+
+DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+BUCKET_DIRS = ["ideas", "admin", "reference", "journal", "people",
+               "projects", "pursuits", "raw-sources"]
+SYNONYMS = {"d&d": "dnd"}
+INLINE_RE = re.compile(r"^tags:\s*\[(.*)\]\s*$")
+
+
+def canonical(tag: str) -> str:
+    low = tag.strip().strip('"').strip("'").lower()
+    return SYNONYMS.get(low, low)
+
+
+def dedupe(tags: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in tags:
+        if t and t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
+def normalize_file(path: Path) -> tuple[list[str], list[str]] | None:
+    """Return (before, after) tag lists if a change is needed, else None."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    try:
+        fm_end = next(i for i in range(1, len(lines)) if lines[i].strip() == "---")
+    except StopIteration:
+        return None
+
+    for i in range(1, fm_end):
+        m = INLINE_RE.match(lines[i])
+        if m:
+            raw = [t.strip() for t in m.group(1).split(",") if t.strip()]
+            before = [t.strip().strip('"').strip("'") for t in raw]
+            after = dedupe([canonical(t) for t in raw])
+            if before != after:
+                lines[i] = f"tags: [{', '.join(after)}]"
+                path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                return before, after
+            return None
+        if lines[i].strip() in ("tags:",):
+            # block style: collect following "  - x" lines
+            j = i + 1
+            items = []
+            while j < fm_end and re.match(r"\s*-\s+", lines[j]):
+                items.append(re.sub(r"^\s*-\s+", "", lines[j]).strip())
+                j += 1
+            before = [t.strip().strip('"').strip("'") for t in items]
+            after = dedupe([canonical(t) for t in items])
+            if before != after:
+                indent = re.match(r"(\s*)-", lines[i + 1]).group(1)
+                lines[i + 1:j] = [f"{indent}- {t}" for t in after]
+                path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                return before, after
+            return None
+    return None
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--wiki-root", type=Path, default=DEFAULT_WIKI_ROOT)
+    ap.add_argument("--apply", action="store_true",
+                    help="write changes (default: dry-run preview)")
+    args = ap.parse_args()
+
+    changed = 0
+    for bdir in BUCKET_DIRS:
+        for path in sorted((args.wiki_root / bdir).glob("*.md")):
+            if args.apply:
+                result = normalize_file(path)
+            else:
+                # dry-run: compute without writing
+                result = _preview(path)
+            if result:
+                before, after = result
+                added = sorted(set(after) - set(before))
+                removed = sorted(set(before) - set(after))
+                delta = f"+{added} -{removed}" if (added or removed) else "case/dedupe"
+                print(f"  {path.relative_to(args.wiki_root)}: {delta}")
+                changed += 1
+
+    verb = "changed" if args.apply else "would change"
+    print(f"\n{verb} {changed} files" + ("" if args.apply else " (dry-run)"))
+    return 0
+
+
+def _preview(path: Path) -> tuple[list[str], list[str]] | None:
+    """Non-writing version of normalize_file for dry-run."""
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    try:
+        fm_end = next(i for i in range(1, len(lines)) if lines[i].strip() == "---")
+    except StopIteration:
+        return None
+    for i in range(1, fm_end):
+        m = INLINE_RE.match(lines[i])
+        if m:
+            raw = [t.strip() for t in m.group(1).split(",") if t.strip()]
+            before = [t.strip('"').strip("'") for t in raw]
+            after = dedupe([canonical(t) for t in raw])
+            return (before, after) if before != after else None
+        if lines[i].strip() == "tags:":
+            j = i + 1
+            items = []
+            while j < fm_end and re.match(r"\s*-\s+", lines[j]):
+                items.append(re.sub(r"^\s*-\s+", "", lines[j]).strip())
+                j += 1
+            before = [t.strip('"').strip("'") for t in items]
+            after = dedupe([canonical(t) for t in items])
+            return (before, after) if before != after else None
+    return None
+
+
+if __name__ == "__main__":
+    sys.exit(main())
