@@ -73,6 +73,7 @@ def main() -> int:
         print("(dry-run — no rows inserted; pass --apply to load)")
         return 1 if errors else 0
 
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
     import mneme_pg
     conn = mneme_pg.connect()
     try:
