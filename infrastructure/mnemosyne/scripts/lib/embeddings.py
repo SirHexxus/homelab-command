@@ -249,6 +249,70 @@ def prune_missing(conn, present_paths: set[str]) -> int:
     return len(stale)
 
 
+# ── Nearest-neighbour query (generic semantic shortlist) ──────────────────────
+
+def nearest_pages(
+    query_embedding: list[float],
+    *,
+    k: int,
+    exclude_paths: tuple[str, ...] = (),
+    exclude_titles: tuple[str, ...] = (),
+) -> list[dict]:
+    """Return the `k` existing pages nearest `query_embedding` by cosine distance.
+
+    A generic semantic shortlist used for merge-candidate discovery (enrich-stubs):
+    instead of title-scanning the whole catalog, the caller embeds a stub and asks
+    for the closest real pages. `exclude_paths` drops the query's own page; titles
+    in `exclude_titles` (e.g. other stubs) are filtered in Python so a stub can
+    never be offered as a merge target.
+
+    Over-fetches (k + len(exclude_titles) + buffer) so the title filter still
+    leaves `k` rows. Returns up to `k` dicts {path, title, bucket, distance}
+    ordered nearest-first. Raises DBError on any backend failure — callers degrade.
+    """
+    over_fetch = k + len(exclude_titles) + 10
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT path, title, bucket,
+                       (embedding <=> %(qvec)s::vector) AS distance
+                FROM {EMBEDDINGS_TABLE}
+                WHERE path <> ALL(%(exclude)s)
+                ORDER BY embedding <=> %(qvec)s::vector
+                LIMIT %(limit)s;
+                """,
+                {
+                    "qvec": to_vector_literal(query_embedding),
+                    "exclude": list(exclude_paths),
+                    "limit": over_fetch,
+                },
+            )
+            rows = cur.fetchall()
+    except DBError:
+        raise
+    except Exception as exc:
+        raise DBError(f"nearest-pages query failed: {exc}") from exc
+    finally:
+        conn.close()
+
+    excluded = set(exclude_titles)
+    results: list[dict] = []
+    for path, title, bucket, distance in rows:
+        if title in excluded:
+            continue
+        results.append({
+            "path": path,
+            "title": title,
+            "bucket": bucket,
+            "distance": float(distance),
+        })
+        if len(results) >= k:
+            break
+    return results
+
+
 # ── Stale-but-now-relevant query ──────────────────────────────────────────────
 
 def stale_relevant(
