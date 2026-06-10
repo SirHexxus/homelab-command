@@ -32,6 +32,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+import embeddings  # noqa: E402
+
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -88,13 +91,7 @@ You are the Mnemosyne Enrichment Agent. Enrich one stub wiki page.
 == TODAY'S DATE ==
 {today}
 
-== WIKI CATALOG (complete page list — use THIS for merge-candidate discovery) ==
-Compact JSON listing every existing page, grouped by a bucket code. "b" maps each
-code to its directory, so a page titled "X" under code "I" lives at ideas/X.md. Use
-the catalog to find merge candidates — do NOT read index.md to discover them. Titles
-in the "stubs" array are themselves unenriched: prefer a non-stub page as a merge
-target and NEVER merge into a stub.
-{catalog}
+{discovery}
 
 == STUB TO ENRICH ==
 Title: {title}
@@ -102,10 +99,10 @@ Fact-check age threshold: {fact_check_age} days
 
 == WHAT TO DO ==
 1. Read the stub page for [[{title}]] (locate it from the catalog: <dir>/<title>.md).
-2. Using the CATALOG (not index.md), find an existing non-stub page covering the same
-   topic, entity, or theme where this stub belongs. Per the schema, IDEA insights on the
-   same theme should EXTEND the existing page. If a candidate looks likely, read that ONE
-   page to confirm.
+2. Using the candidate list above (not index.md), find an existing non-stub page covering
+   the same topic, entity, or theme where this stub belongs. Per the schema, IDEA insights
+   on the same theme should EXTEND the existing page. If a candidate looks likely, read that
+   ONE page to confirm.
 3a. IF a merge target exists:
     - Extend it with the stub's content (never duplicate); set its `updated:` to {today}.
     - Do NOT delete the stub file; do NOT touch index.md/log.md — the wrapper does that.
@@ -209,11 +206,77 @@ def find_stub_file(wiki_root: Path, title: str) -> Path | None:
     return None
 
 
-def build_prompt(schema: str, catalog: str, title: str, fact_check_age: int) -> str:
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+def _strip_frontmatter(text: str) -> str:
+    """Return a page body, dropping a leading YAML frontmatter block if present."""
+    if not text.startswith("---"):
+        return text
+    parts = text.split("---", 2)
+    return parts[2] if len(parts) >= 3 else text
+
+
+def merge_candidates(
+    wiki_root: Path, stub_title: str, stub_titles: list[str], k: int = 5
+) -> list[dict] | None:
+    """Semantic nearest non-stub pages for a stub, via the embeddings sidecar.
+
+    Locates the stub, embeds its body on-demand (robust to stubs not yet in the
+    nightly index), and asks pgvector for the k closest real pages — excluding the
+    stub's own page and every other stub title (so a stub can't be a merge target).
+    Returns None on any failure so the caller falls back to the full catalog.
+    """
+    stub_file = find_stub_file(wiki_root, stub_title)
+    if stub_file is None:
+        return None
+    try:
+        body = _strip_frontmatter(stub_file.read_text(encoding="utf-8")).strip()
+        rel = stub_file.relative_to(wiki_root).as_posix()
+        vec = embeddings.embed_text(f"{stub_title}\n\n{body}".strip())
+        return embeddings.nearest_pages(
+            vec, k=k, exclude_paths=(rel,), exclude_titles=tuple(stub_titles),
+        )
+    except (embeddings.EmbeddingError, embeddings.DBError, OSError):
+        return None
+
+
+def _candidates_block(candidates: list[dict]) -> str:
+    """Render the semantic shortlist the agent should check before enriching."""
+    lines = [
+        "== MERGE CANDIDATES (semantic nearest non-stub pages — check these FIRST) ==",
+        "The existing pages most semantically similar to this stub, nearest first. Prefer",
+        "ONE of these as a merge target (per the schema, EXTEND don't duplicate); read a",
+        "likely candidate's ONE page to confirm before merging. If none truly fit, enrich",
+        "the stub in place. These are all non-stub pages — safe as merge targets.",
+    ]
+    for c in candidates:
+        d = BUCKET_DIRS.get(str(c["bucket"]).upper(), "?")
+        lines.append(
+            f"- [{c['bucket']}] {c['title']}  ({d}/{c['title']}.md, dist {c['distance']:.2f})"
+        )
+    return "\n".join(lines)
+
+
+_CATALOG_BLOCK_HEADER = """\
+== WIKI CATALOG (complete page list — use THIS for merge-candidate discovery) ==
+Compact JSON listing every existing page, grouped by a bucket code. "b" maps each
+code to its directory, so a page titled "X" under code "I" lives at ideas/X.md. Use
+the catalog to find merge candidates — do NOT read index.md to discover them. Titles
+in the "stubs" array are themselves unenriched: prefer a non-stub page as a merge
+target and NEVER merge into a stub."""
+
+
+def _catalog_block(catalog: str) -> str:
     cat = catalog or "(catalog unavailable — you MAY read index.md to find merge candidates)"
+    return f"{_CATALOG_BLOCK_HEADER}\n{cat}"
+
+
+def build_prompt(schema: str, catalog: str, title: str, fact_check_age: int,
+                 candidates: list[dict] | None) -> str:
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # Prefer the precise semantic shortlist; fall back to the full catalog when the
+    # sidecar is unreachable (candidates is None) so enrich still works without it.
+    discovery = _candidates_block(candidates) if candidates else _catalog_block(catalog)
     return ENRICH_PROMPT_TEMPLATE.format(
-        schema=schema, today=today, catalog=cat, title=title,
+        schema=schema, today=today, discovery=discovery, title=title,
         fact_check_age=fact_check_age, marker=MANIFEST_MARKER,
     )
 
@@ -342,6 +405,7 @@ def enrich_stub(
     wiki_root: Path,
     schema: str,
     catalog: str,
+    stub_titles: list[str],
     fact_check_age: int,
     dry_run: bool,
 ) -> str:
@@ -350,7 +414,11 @@ def enrich_stub(
         print(f"[dry-run] Would enrich: {title}")
         return "ok"
 
-    prompt = build_prompt(schema, catalog, title, fact_check_age)
+    candidates = merge_candidates(wiki_root, title, stub_titles)
+    if candidates is None:
+        print(f"  (sidecar unavailable — falling back to full catalog for '{title}')",
+              file=sys.stderr)
+    prompt = build_prompt(schema, catalog, title, fact_check_age, candidates)
     print(f"Enriching: {title}", file=sys.stderr)
     result = subprocess.run(
         [
@@ -440,15 +508,16 @@ def main() -> None:
     # regenerating it for a dry-run (no agent calls) and fall back to index.md.
     catalog = "" if args.dry_run else get_catalog(wiki_root)
 
+    all_stubs = stubs_from_catalog(catalog) or find_stubs(wiki_root)
+
     if args.page:
-        if args.page not in find_stubs(wiki_root):
+        if args.page not in all_stubs:
             print(f"Error: '{args.page}' not found as a [STUB] in index.md", file=sys.stderr)
             sys.exit(1)
-        status = enrich_stub(args.page, wiki_root, schema, catalog, args.fact_check_age,
-                             args.dry_run)
+        status = enrich_stub(args.page, wiki_root, schema, catalog, all_stubs,
+                             args.fact_check_age, args.dry_run)
         sys.exit(0 if status == "ok" else 1)
 
-    all_stubs = stubs_from_catalog(catalog) or find_stubs(wiki_root)
     if not all_stubs:
         print("No stubs found.", file=sys.stderr)
         sys.exit(0)
@@ -481,8 +550,8 @@ def main() -> None:
     processed = failed = 0
     aborted = False
     for title in batch:
-        status = enrich_stub(title, wiki_root, schema, catalog, args.fact_check_age,
-                             args.dry_run)
+        status = enrich_stub(title, wiki_root, schema, catalog, all_stubs,
+                             args.fact_check_age, args.dry_run)
         if status == "limit":
             print("Aborting run — remaining stubs left for the next run.", file=sys.stderr)
             aborted = True
