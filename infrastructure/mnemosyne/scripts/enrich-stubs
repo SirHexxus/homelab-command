@@ -338,12 +338,8 @@ def append_admin_index_line(wiki_root: Path, title: str, prefix: str, summary: s
 
 
 def append_log(wiki_root: Path, action: str, bucket: str, title: str) -> None:
-    now = datetime.now(timezone.utc)
-    stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-    with (wiki_root / LOG_FILENAME).open("a", encoding="utf-8") as fh:
-        fh.write(f"{stamp} | {action} | {bucket} | {title} | triage-enrich\n")
-    # dual-write to the authoritative Postgres log (fail-soft)
-    mneme_log.log_event(action, bucket, title, "triage-enrich", now)
+    # mneme_log is authoritative; log.md is regenerated from it by render-log.
+    mneme_log.log_event(action, bucket, title, "triage-enrich")
 
 
 # ── Manifest parsing + application ────────────────────────────────────────────
