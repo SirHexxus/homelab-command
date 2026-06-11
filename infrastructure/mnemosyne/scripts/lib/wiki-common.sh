@@ -123,11 +123,7 @@ write_report() {
 		printf '%s\n' "$body"
 	} > "$filepath"
 
-	printf '%s | report | — | %s — %s | maintenance-script\n' \
-		"$timestamp" "$title" "$report_date" \
-		>> "$LOG_FILE"
-
-	# dual-write to the authoritative Postgres log (fail-soft; never blocks)
+	# mneme_log is authoritative; log.md is regenerated from it by render-log.
 	python3 "${BASH_SOURCE%/*}/mneme_log.py" \
 		--op report --bucket "—" --title "$title — $report_date" \
 		--source maintenance-script 2>/dev/null || true

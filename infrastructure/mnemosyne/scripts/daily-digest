@@ -290,21 +290,38 @@ def fetch_weather_block() -> dict | None:
 # ── Collectors — yesterday's captures ────────────────────────────────────────
 
 def collect_yesterday_log(wiki_root: Path, yesterday: date) -> list[str]:
-    """log.md lines for yesterday — real captures only.
+    """Yesterday's real captures from mneme_log — `report` rows dropped, deduped.
 
-    `report` rows (maintenance-script output and the digest's own
-    self-referential entries) are dropped, and identical lines are
-    de-duplicated, so the model weaves genuine activity rather than noise.
+    mneme_log is authoritative; falls back to reading log.md if Postgres is
+    unreachable so the digest still generates. Output format matches the
+    `ts | op | bucket | title | source` lines the model weaves downstream.
     """
-    log_path = wiki_root / "log.md"
-    prefix = yesterday.isoformat()
-    try:
-        lines = log_path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return []
-
     captures: list[str] = []
     seen: set[str] = set()
+
+    rows = None
+    try:
+        rows = mneme_log.events_on_date(yesterday)
+    except Exception as exc:  # noqa: BLE001 — degrade to log.md
+        print(f"Warning: mneme_log unavailable ({exc}); reading log.md", file=sys.stderr)
+
+    if rows is not None:
+        for ts, op, bucket, title, source in rows:
+            if op == "report":
+                continue
+            line = f"{ts.strftime('%Y-%m-%dT%H:%M:%SZ')} | {op} | {bucket} | {title} | {source}"
+            if line in seen:
+                continue
+            seen.add(line)
+            captures.append(line)
+        return captures
+
+    # Fallback: read log.md directly.
+    prefix = yesterday.isoformat()
+    try:
+        lines = (wiki_root / "log.md").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
     for line in lines:
         if not line.startswith(prefix):
             continue
@@ -633,18 +650,7 @@ def write_report(wiki_root: Path, today: date, digest_text: str) -> Path:
 
 
 def append_log(wiki_root: Path, today: date) -> None:
-    """Append a report entry to log.md."""
-    log_path = wiki_root / "log.md"
-    entry = (
-        f"{today.isoformat()}T07:00:00Z | report | — "
-        f"| Daily Digest — {today.isoformat()} | daily-digest\n"
-    )
-    try:
-        with log_path.open("a", encoding="utf-8") as fh:
-            fh.write(entry)
-    except OSError as exc:
-        print(f"Warning: could not append to log.md: {exc}", file=sys.stderr)
-    # dual-write to the authoritative Postgres log (fail-soft)
+    """Record the digest as a report event in mneme_log (authoritative log)."""
     mneme_log.log_event("report", "—", f"Daily Digest — {today.isoformat()}", "daily-digest")
 
 

@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""Regenerate wiki/log.md as a read-only, timestamp-ordered view of mneme_log.
+
+mneme_log (Postgres) is the authoritative event log; this renders it back to the
+flat file so Obsidian keeps a readable, correctly-ordered history. Deterministic
+(same rows -> same bytes) so unchanged runs produce no diff and no spurious
+vault commit. UTF-8 forced via mneme_pg (the cluster is SQL_ASCII).
+
+Usage:
+    render-log                 # write wiki/log.md
+    render-log --stdout        # print to stdout, write nothing
+    render-log --wiki-root DIR # operate on a wiki root other than the default
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+import mneme_pg  # noqa: E402
+
+DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+
+HEADER = """\
+# Mnemosyne Log
+
+<!-- GENERATED from the mneme_log Postgres table by render-log — DO NOT EDIT.
+     mneme_log is authoritative; this file is a read-only, timestamp-ordered view. -->
+
+Format: `{ISO-datetime} | {operation} | {bucket} | {page title} | {source}`
+Operations: ingest | create | update | merge | rename | delete | report | lint
+Sorted by event timestamp. Source of truth: mneme_log (Postgres). See schema/09-log-format.md.
+
+---
+
+"""
+
+
+def render() -> str:
+    conn = mneme_pg.connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT ts, operation, bucket, page_title, source "
+                "FROM mneme_log ORDER BY ts, id"
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    lines = [
+        f"{ts.strftime('%Y-%m-%dT%H:%M:%SZ')} | {op} | {bucket} | {title} | {source}"
+        for ts, op, bucket, title, source in rows
+    ]
+    return HEADER + "\n".join(lines) + "\n"
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--wiki-root", type=Path, default=DEFAULT_WIKI_ROOT)
+    ap.add_argument("--stdout", action="store_true",
+                    help="print to stdout instead of writing log.md")
+    args = ap.parse_args()
+
+    text = render()
+    if args.stdout:
+        sys.stdout.write(text)
+        return 0
+    (args.wiki_root / "log.md").write_text(text, encoding="utf-8")
+    n = text.count("\n") - HEADER.count("\n")
+    print(f"Wrote {args.wiki_root / 'log.md'}: {n} log entries", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
