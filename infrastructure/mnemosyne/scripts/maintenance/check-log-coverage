@@ -36,6 +36,18 @@ main() {
 	local today
 	today=$(date '+%Y-%m-%d')
 
+	# mneme_log is the authoritative event log; fall back to log.md if the
+	# database is unreachable so coverage still reports.
+	local titles_file log_source
+	titles_file="$(mktemp)"
+	if python3 "$SCRIPT_DIR/../lib/mneme_log.py" --all-titles > "$titles_file" 2>/dev/null \
+		&& [[ -s "$titles_file" ]]; then
+		log_source="mneme_log"
+	else
+		log_source="log.md"
+		: > "$titles_file"
+	fi
+
 	local missing_count=0
 	local report_lines=()
 
@@ -45,13 +57,22 @@ main() {
 		local relative="${f#"$WIKI_DIR/"}"
 		local bucket="${relative%%/*}"
 
-		if ! grep -qF "| ${title} |" "$LOG_FILE" 2>/dev/null; then
+		local covered=0
+		if [[ "$log_source" == "mneme_log" ]]; then
+			grep -qxF -- "$title" "$titles_file" && covered=1
+		else
+			grep -qF -- "| ${title} |" "$LOG_FILE" 2>/dev/null && covered=1
+		fi
+
+		if [[ $covered -eq 0 ]]; then
 			report_lines+=(
 				"- [[${title}]] — ${bucket^^}"
 			)
 			missing_count=$(( missing_count + 1 ))
 		fi
 	done < <(find_wiki_files)
+
+	rm -f "$titles_file"
 
 	if [[ $missing_count -eq 0 ]]; then
 		log_info "Log coverage: all pages have log entries"
@@ -61,10 +82,10 @@ main() {
 	local body
 	body="# Log Coverage Report — ${today}
 
-**Issues found:** ${missing_count} pages with no log.md entry
+**Issues found:** ${missing_count} pages with no mneme_log entry
 
 These pages were likely created without going through the standard ingest
-flow. Each should have at least one \`ingest\` event added to log.md.
+flow. Each should have at least one \`ingest\` event recorded in mneme_log.
 
 ## Uncovered Pages
 

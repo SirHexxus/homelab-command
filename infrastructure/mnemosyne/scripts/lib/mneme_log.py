@@ -42,14 +42,60 @@ def log_event(operation: str, bucket: str, title: str, source: str,
         return False
 
 
+def events_on_date(d) -> list[tuple]:
+    """Events on ISO date `d` as (ts, op, bucket, title, source), ts-ordered.
+
+    Raises on DB error so callers can fall back to log.md.
+    """
+    import mneme_pg
+    conn = mneme_pg.connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT ts, operation, bucket, page_title, source "
+                "FROM mneme_log WHERE ts::date = %s ORDER BY ts, id",
+                (d,),
+            )
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def all_titles() -> set[str]:
+    """Distinct page_titles present in mneme_log. Raises on DB error."""
+    import mneme_pg
+    conn = mneme_pg.connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT DISTINCT page_title FROM mneme_log")
+            return {r[0] for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--op", required=True, help="operation (ingest, update, report, ...)")
-    ap.add_argument("--bucket", required=True, help="bucket, or — for reports")
-    ap.add_argument("--title", required=True)
-    ap.add_argument("--source", required=True)
+    ap.add_argument("--all-titles", action="store_true",
+                    help="print every distinct page_title in mneme_log and exit "
+                         "(exit 1 if the DB is unreachable)")
+    ap.add_argument("--op", help="operation (ingest, update, report, ...)")
+    ap.add_argument("--bucket", help="bucket, or — for reports")
+    ap.add_argument("--title")
+    ap.add_argument("--source")
     ap.add_argument("--ts", help="ISO timestamp; default now (UTC)")
     args = ap.parse_args()
+
+    if args.all_titles:
+        try:
+            for t in sorted(all_titles()):
+                print(t)
+            return 0
+        except Exception as exc:
+            print(f"Error: mneme_log query failed ({exc})", file=sys.stderr)
+            return 1
+
+    if not all((args.op, args.bucket, args.title, args.source)):
+        ap.error("--op, --bucket, --title and --source are required to log an event")
     if args.op not in VALID_OPS:
         print(f"Warning: undocumented operation '{args.op}' "
               f"(see schema/09-log-format.md)", file=sys.stderr)
