@@ -58,15 +58,27 @@ def ollama_base_url() -> str:
     return os.environ.get("OLLAMA_BASE_URL", "").strip() or DEFAULT_OLLAMA_BASE_URL
 
 
-def embed_text(text: str) -> list[float]:
+VALID_TASKS = frozenset({"search_query", "search_document", "clustering", "classification"})
+
+
+def embed_text(text: str, *, task: str = "search_query") -> list[float]:
     """Return the 768-dim nomic-embed-text embedding for `text`.
 
+    nomic-embed-text requires a task instruction prefix for best quality:
+      - "search_query"    — a question or lookup (default; used by retrieval callers)
+      - "search_document" — a document being indexed (used by embed-wiki)
+      - "clustering"      — symmetric similarity comparison
+      - "classification"  — feature vector for a classifier
+
+    The prefix is prepended automatically: callers pass raw text only.
     Pure stdlib (urllib), mirroring lib/weather.py. Raises EmbeddingError on any
     failure so callers decide whether to abort (embed-wiki) or degrade
     (daily-digest).
     """
+    if task not in VALID_TASKS:
+        raise EmbeddingError(f"unknown task prefix '{task}'; valid: {sorted(VALID_TASKS)}")
     url = f"{ollama_base_url()}/api/embeddings"
-    payload = json.dumps({"model": EMBED_MODEL, "prompt": text}).encode("utf-8")
+    payload = json.dumps({"model": EMBED_MODEL, "prompt": f"{task}: {text}"}).encode("utf-8")
     req = urllib.request.Request(
         url, data=payload, headers={"Content-Type": "application/json"}
     )
