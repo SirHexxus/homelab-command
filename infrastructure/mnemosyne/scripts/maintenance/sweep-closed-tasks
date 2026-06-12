@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+################################################################################
+# Script Name: sweep-closed-tasks
+# Description: Move closed ADMIN tasks out of the active bucket and into the
+#              Postgres archive, so the daily digest stops surfacing them.
+#
+#   Chains three existing tools in order:
+#     1. archive-wiki        — move closed admin/*.md -> wiki/archive/admin/
+#     2. db/load-archive-to-pg — insert archived pages into mneme_archived_pages
+#     3. prune-index         — drop now-stale index.md entries
+#
+#   Each child defaults to dry-run; this wrapper passes --apply to all of them
+#   only when run with --apply, so `sweep-closed-tasks` alone is a safe preview.
+#
+#   INTERIM AUTOMATION: wired to cron for now (06:50, before the 07:00 digest).
+#   Long-term this mutating sweep should move to a Hermes approval-gated job
+#   per the maintenance-task-routing rule.
+#
+# Author: James Stacy
+# Version: 1.0.0
+#
+# Usage: sweep-closed-tasks [--apply]
+#
+# Options:
+#   --apply         Actually move/insert/prune (default: dry-run preview)
+#   -h, --help      Show this help message
+#
+# Exit Codes:
+#   0 - Success
+#   1 - A sweep step failed (chain aborted)
+#   2 - Invalid arguments
+################################################################################
+
+set -u
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/../lib/wiki-common.sh" || exit 1
+
+APPLY=0
+
+show_help() {
+	cat << EOF
+Usage: $(basename "$0") [--apply]
+
+Moves closed ADMIN tasks out of admin/ and into the Postgres archive, then
+prunes stale index.md entries. Without --apply, prints a dry-run preview of
+every step and changes nothing.
+
+Options:
+    --apply         Actually move/insert/prune
+    -h, --help      Show this help message
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		--apply) APPLY=1; shift ;;
+		-h|--help) show_help; exit 0 ;;
+		*) log_error "Unknown argument: $1"; show_help; exit 2 ;;
+	esac
+done
+
+# Run a sweep step; abort the whole chain if it fails.
+run_step() {
+	local label=$1; shift
+	log_info "Step: $label"
+	if ! python3 "$@"; then
+		log_error "Step failed: $label — aborting sweep"
+		exit 1
+	fi
+}
+
+main() {
+	local apply_flag=()
+	[[ $APPLY -eq 1 ]] && apply_flag=(--apply)
+	if [[ $APPLY -eq 1 ]]; then
+		log_info "sweep-closed-tasks: APPLY mode"
+	else
+		log_info "sweep-closed-tasks: dry-run preview (pass --apply to act)"
+	fi
+
+	run_step "archive-wiki" "$SCRIPTS_DIR/archive-wiki" "${apply_flag[@]}"
+	run_step "load-archive-to-pg" "$SCRIPTS_DIR/db/load-archive-to-pg" \
+		"${apply_flag[@]}"
+	run_step "prune-index" "$SCRIPTS_DIR/prune-index" "${apply_flag[@]}"
+
+	log_info "sweep-closed-tasks: done"
+}
+
+main
