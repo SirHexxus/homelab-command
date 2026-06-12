@@ -59,10 +59,22 @@ load_page_titles() {
 }
 
 # Outputs wikilink titles from a file, one per line
-# Handles [[Title]] and [[Title|Alias]] — outputs Title only
+# Handles [[Title]] and [[Title|Alias]] — outputs Title only.
+# Skips fenced code blocks (``` / ~~~) and strips inline-code spans (`...`)
+# so illustrative example syntax is not mistaken for real graph links.
 extract_wikilinks() {
 	local file=$1
-	grep -oE '\[\[[^]]+\]\]' "$file" 2>/dev/null \
+	awk '
+		/^[[:space:]]*```/ || /^[[:space:]]*~~~/ { fence = !fence; next }
+		fence { next }
+		{
+			while (match($0, /`[^`]*`/)) {
+				$0 = substr($0, 1, RSTART - 1) substr($0, RSTART + RLENGTH)
+			}
+			print
+		}
+	' "$file" 2>/dev/null \
+		| grep -oE '\[\[[^]]+\]\]' 2>/dev/null \
 		| sed 's/^\[\[//; s/\]\]$//; s/|.*//'
 }
 
@@ -95,6 +107,27 @@ is_closed_status() {
 	fi
 	local s
 	for s in "${_CLOSED_STATUSES[@]}"; do
+		[[ $status_lc == "$s" ]] && return 0
+	done
+	return 1
+}
+
+# True (0) if the given status is a known active OR closed status word,
+# case-insensitively. Single source of truth is schema/statuses.json, read via
+# task_status.py (--list-active + --list-closed). Loaded once and cached.
+# Usage: is_valid_task_status "$status"
+is_valid_task_status() {
+	local status_lc="${1,,}"
+	if [[ -z ${_VALID_STATUSES_LOADED:-} ]]; then
+		mapfile -t _VALID_STATUSES < <(
+			python3 "${BASH_SOURCE%/*}/task_status.py" --list-active \
+				2>/dev/null
+			python3 "${BASH_SOURCE%/*}/task_status.py" --list-closed \
+				2>/dev/null)
+		_VALID_STATUSES_LOADED=1
+	fi
+	local s
+	for s in "${_VALID_STATUSES[@]}"; do
 		[[ $status_lc == "$s" ]] && return 0
 	done
 	return 1
