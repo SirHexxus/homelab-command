@@ -45,14 +45,16 @@ load_page_titles() {
 	local -n _ref=$1
 	local f title
 	# Bucket directories + _templates/ (bucket hub pages live there)
+	# + raw-sources/ (valid wikilink targets, but not part of the
+	# find_wiki_files scan universe — raw pages skip bucket contracts)
 	while IFS= read -r -d '' f; do
 		title="${f##*/}"
 		title="${title%.md}"
 		_ref["$title"]=1
 	done < <(
 		find_wiki_files
-		find "$WIKI_DIR/_templates" -maxdepth 1 -name '*.md' -print0 \
-			2>/dev/null
+		find "$WIKI_DIR/_templates" "$WIKI_DIR/raw-sources" \
+			-maxdepth 1 -name '*.md' -print0 2>/dev/null
 	)
 }
 
