@@ -231,7 +231,7 @@ def merge_candidates(
     try:
         body = _strip_frontmatter(stub_file.read_text(encoding="utf-8")).strip()
         rel = stub_file.relative_to(wiki_root).as_posix()
-        vec = embeddings.embed_text(f"{stub_title}\n\n{body}".strip())
+        vec = embeddings.embed_text(f"{stub_title}\n\n{body}".strip(), task="search_query")
         return embeddings.nearest_pages(
             vec, k=k, exclude_paths=(rel,), exclude_titles=tuple(stub_titles),
         )

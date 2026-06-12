@@ -58,7 +58,7 @@ def embed_with_fallback(text: str) -> list[float]:
     size = MAX_EMBED_CHARS
     while True:
         try:
-            return embeddings.embed_text(text[:size])
+            return embeddings.embed_text(text[:size], task="search_document")
         except embeddings.EmbeddingError as exc:
             if "500" in str(exc) and size > 750:
                 size //= 2
