@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""Set an ADMIN task's `status:` to a canonical state — idempotently.
+
+Closing (or re-opening) a task is otherwise a hand edit nobody performs, so
+finished tasks linger as `status: Pending` and keep surfacing in the daily
+digest. This makes the flip a single command for James, Claude, or Hermes.
+
+The target state is validated against the canonical vocabulary
+(`lib/task_status.py` / `schema/statuses.json`) — an unknown word is rejected
+rather than written, which is what stops typo/case drift at the source. When the
+task is already in the target state the script is a no-op.
+
+On a real change it rewrites the `status:` line, bumps `updated:` to today, and
+records an `update` event in `mneme_log`.
+
+Usage:
+  set-task-status "<task-title>" <state> [--dry-run]
+  set-task-status "Apply Weekly Work Schedule" Done
+  set-task-status "Configure Bazarr" Active --dry-run
+
+`<task-title>` is the admin page filename without the `.md` extension.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from datetime import date
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+import mneme_log  # noqa: E402
+import task_status  # noqa: E402
+
+DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+
+
+def resolve_task(wiki_root: Path, title: str) -> Path | None:
+    """Return the admin page for `title`, or None (printing near-matches)."""
+    path = wiki_root / "admin" / f"{title}.md"
+    if path.exists():
+        return path
+    needle = title.lower()
+    hits = [p.stem for p in sorted((wiki_root / "admin").glob("*.md"))
+            if needle in p.stem.lower()]
+    print(f"Error: no admin task named {title!r}.", file=sys.stderr)
+    if hits:
+        print("Did you mean:", file=sys.stderr)
+        for h in hits[:5]:
+            print(f"  {h}", file=sys.stderr)
+    return None
+
+
+def split_frontmatter(text: str) -> tuple[list[str], int, int]:
+    """Return (lines, fm_start, fm_end) — indices of the `---` fences, or (-1,-1)."""
+    lines = text.splitlines(keepends=True)
+    fences = [i for i, ln in enumerate(lines) if ln.rstrip("\n") == "---"]
+    if len(fences) < 2:
+        return lines, -1, -1
+    return lines, fences[0], fences[1]
+
+
+def apply_status(path: Path, new_status: str, today: str,
+                 dry_run: bool) -> tuple[bool, str]:
+    """Set status/updated in the frontmatter. Return (changed, current_status).
+
+    `changed` is False when the task is already in `new_status` (no write). With
+    `dry_run` the file is left untouched but the would-be `changed` flag and the
+    current status are still reported.
+    """
+    text = path.read_text(encoding="utf-8")
+    lines, start, end = split_frontmatter(text)
+    if start == -1:
+        raise ValueError(f"{path.name}: no YAML frontmatter")
+
+    current = ""
+    status_idx = updated_idx = -1
+    for i in range(start + 1, end):
+        key = lines[i].partition(":")[0].strip()
+        if key == "status":
+            status_idx = i
+            current = lines[i].partition(":")[2].strip()
+        elif key == "updated":
+            updated_idx = i
+
+    if status_idx == -1:
+        raise ValueError(f"{path.name}: no status field in frontmatter")
+
+    if current.lower() == new_status.lower():
+        return False, current
+    if dry_run:
+        return True, current
+
+    lines[status_idx] = f"status: {new_status}\n"
+    if updated_idx != -1:
+        lines[updated_idx] = f"updated: {today}\n"
+    path.write_text("".join(lines), encoding="utf-8")
+    return True, current
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("title", help="admin page filename without .md")
+    parser.add_argument("state", help="target status (e.g. Done, Skipped, Active)")
+    parser.add_argument("--wiki-root", type=Path, default=DEFAULT_WIKI_ROOT,
+                        metavar="DIR", help=f"wiki root (default: {DEFAULT_WIKI_ROOT})")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="report the intended change without writing")
+    args = parser.parse_args()
+
+    canon = task_status.canonical(args.state)
+    if canon is None:
+        known = ", ".join(sorted(task_status.ALL_STATUSES))
+        print(f"Error: {args.state!r} is not a known status. Known: {known}",
+              file=sys.stderr)
+        return 2
+
+    path = resolve_task(args.wiki_root, args.title)
+    if path is None:
+        return 1
+
+    today = date.today().isoformat()
+    try:
+        changed, previous = apply_status(path, canon, today, args.dry_run)
+    except (OSError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    prefix = "[dry-run] " if args.dry_run else ""
+    if not changed:
+        print(f"{prefix}{args.title}: already {canon} — no change")
+        return 0
+
+    if args.dry_run:
+        print(f"[dry-run] {args.title}: {previous or '(none)'} -> {canon}; "
+              f"would bump updated to {today} and log an update event")
+        return 0
+
+    mneme_log.log_event("update", "ADMIN", args.title, "set-task-status")
+    print(f"{args.title}: {previous or '(none)'} -> {canon}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
