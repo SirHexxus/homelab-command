@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 ################################################################################
 # Script Name: check-overdue-tasks
-# Description: Finds ADMIN tasks that are Pending past their due date
+# Description: Finds open (non-closed) ADMIN tasks past their due date
 # Author: James Stacy
 # Version: 1.0.0
 #
@@ -26,7 +26,7 @@ show_help() {
 	cat << EOF
 Usage: $(basename "$0") [options]
 
-Checks all ADMIN tasks for Pending status past their due date.
+Checks all open (non-closed) ADMIN tasks past their due date.
 Writes a report to the reports bucket if any overdue tasks are found.
 
 Options:
@@ -59,7 +59,7 @@ main() {
 		task_type=$(get_frontmatter_field "$f" 'task_type')
 		title="${f##*/}"; title="${title%.md}"
 
-		[[ $status == 'Pending' ]] || continue
+		is_closed_status "$status" && continue
 		[[ -z $due || $due == 'null' ]] && continue
 
 		# ISO date string comparison is lexicographically correct

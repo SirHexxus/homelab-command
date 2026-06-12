@@ -47,6 +47,7 @@ import llm_client  # noqa: E402
 from gcal import fetch_calendar  # noqa: E402
 from weather import fetch_weather  # noqa: E402
 import mneme_log  # noqa: E402
+import task_status  # noqa: E402
 
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -74,8 +75,8 @@ CALENDAR_IDS = (
     "@group.calendar.google.com",
 )
 
-# Any of these in `status:` means the ADMIN task is closed (hidden).
-CLOSED_STATUSES = {"Done", "Completed", "Closed", "Cancelled", "Skipped"}
+# Closed-state detection (hide the task) is delegated to the shared
+# task_status vocabulary — see lib/task_status.py and schema/statuses.json.
 
 # Unfinished-thought detection thresholds (see Daily Digest Design Spec).
 UNFINISHED_AGE_DAYS = 7
@@ -169,7 +170,7 @@ def collect_due_tasks(
 
     for md_file in sorted((wiki_root / "admin").glob("*.md")):
         fm, body = split_frontmatter(md_file)
-        if fm.get("status") in CLOSED_STATUSES:
+        if task_status.is_closed(fm.get("status", "")):
             continue
         raw_due = fm.get("due", "")
         if not raw_due or raw_due == "null":
