@@ -28,10 +28,11 @@ all wiki pages. Writes a report if any violations are found.
 
 Checks:
   - bucket:          must match the file's directory
-  - source:          claude_code|telegram|email|web_clipper|n8n_chat|manual
-  - ADMIN status:    Pending|Done
+  - source:          claude_code|telegram|email|web_clipper|n8n_chat|manual|
+                     haley|google_keep|triage-enrich
+  - ADMIN status:    any active|closed word in schema/statuses.json
   - ADMIN task_type: user|maintenance
-  - PROJECT status:  Not Started|Active|Blocked|Done
+  - PROJECT status:  Not Started|Planned|Active|Blocked|Done
   - PERSON follow_up_needed: true|false
   - Date fields:     must be YYYY-MM-DD or null
 
@@ -132,10 +133,10 @@ main() {
 				task_type=$(get_frontmatter_field "$f" 'task_type')
 
 				if [[ -n $status ]] && \
-					! in_list "$status" 'Pending' 'Done'; then
+					! is_valid_task_status "$status"; then
 					file_violations+=(
-						"  - \`status\`: must be Pending|Done," \
-						" got \`${status}\`"
+						"  - \`status\`: not a known status word" \
+						" (see schema/statuses.json), got \`${status}\`"
 					)
 				fi
 				if [[ -n $task_type ]] && \
@@ -154,7 +155,7 @@ main() {
 				status=$(get_frontmatter_field "$f" 'status')
 				if [[ -n $status ]] && \
 					! in_list "$status" \
-						'Not Started' 'Active' 'Blocked' 'Done'; then
+						'Not Started' 'Planned' 'Active' 'Blocked' 'Done'; then
 					file_violations+=(
 						"  - \`status\`: invalid value \`${status}\`"
 					)
