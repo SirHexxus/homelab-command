@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""Semantic page search over the wiki_embeddings pgvector sidecar.
+
+Embeds the query with nomic-embed-text (Ollama) and returns the nearest wiki
+pages by cosine distance. Designed for quick CLI use by the mneme-ask skill.
+
+Usage:
+  semantic-search "your question here"
+  semantic-search --top 10 "your question here"
+  semantic-search --json "your question here"
+
+Output (default): one line per result — path TAB bucket TAB distance
+Output (--json): JSON array of {path, title, bucket, distance}
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib.embeddings import DBError, EmbeddingError, embed_text, nearest_pages
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Semantic wiki page search via pgvector")
+    p.add_argument("question", help="Question or query text to embed and search")
+    p.add_argument("--top", type=int, default=8, metavar="N", help="Number of results (default: 8)")
+    p.add_argument("--json", action="store_true", dest="output_json", help="Output as JSON array")
+    return p.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+
+    try:
+        embedding = embed_text(args.question)
+    except EmbeddingError as exc:
+        print(f"embedding-error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        pages = nearest_pages(embedding, k=args.top)
+    except DBError as exc:
+        print(f"db-error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if not pages:
+        sys.exit(0)
+
+    if args.output_json:
+        print(json.dumps(pages, indent=2))
+    else:
+        for p in pages:
+            print(f"{p['path']}\t{p['bucket']}\t{p['distance']:.4f}")
+
+
+if __name__ == "__main__":
+    main()
