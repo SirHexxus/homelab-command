@@ -43,6 +43,7 @@ EOF
 
 readonly VALID_SOURCES=(
 	claude_code telegram email web_clipper n8n_chat manual
+	haley google_keep triage-enrich
 )
 
 readonly DIR_TO_BUCKET=(
