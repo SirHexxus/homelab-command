@@ -79,6 +79,25 @@ get_frontmatter_field() {
 	' "$file"
 }
 
+# True (0) if the given status is a closed-state word, case-insensitively.
+# Single source of truth is schema/statuses.json, read via task_status.py
+# (--list-closed). The closed set is loaded once and cached for the run.
+# Usage: is_closed_status "$status" && continue
+is_closed_status() {
+	local status_lc="${1,,}"
+	if [[ -z ${_CLOSED_STATUSES_LOADED:-} ]]; then
+		mapfile -t _CLOSED_STATUSES < <(
+			python3 "${BASH_SOURCE%/*}/task_status.py" --list-closed \
+				2>/dev/null)
+		_CLOSED_STATUSES_LOADED=1
+	fi
+	local s
+	for s in "${_CLOSED_STATUSES[@]}"; do
+		[[ $status_lc == "$s" ]] && return 0
+	done
+	return 1
+}
+
 # Counts words in file body (content after frontmatter)
 count_body_words() {
 	local file=$1

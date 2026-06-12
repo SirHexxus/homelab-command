@@ -2,7 +2,8 @@
 """Identify (and optionally move) wiki pages eligible for archiving.
 
 Four streams, per the cleanup decisions of 2026-06:
-  - admin-closed   : ADMIN pages with status Done/Completed/Skipped
+  - admin-closed   : ADMIN pages with a closed status (Done/Completed/Skipped/
+                     Closed/Cancelled — see lib/task_status.py)
   - journal-aged   : JOURNAL pages older than --journal-days, UNLESS a recent
                      (within --journal-days) non-archived page still wikilinks them
   - machine-report : reports/*.md that are not daily-digest-* (regenerable tool output)
@@ -20,11 +21,13 @@ import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+import task_status  # noqa: E402
+
 DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
 TODAY = date.today()
 DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 WIKILINK_RE = re.compile(r"\[\[([^\]]+?)\]\]")
-CLOSED_STATUSES = {"done", "completed", "skipped"}
 
 
 def parse_date_from_name(name: str) -> date | None:
@@ -73,8 +76,7 @@ def title_of(path: Path) -> str:
 def collect_admin_closed(wiki: Path) -> list[Path]:
     out = []
     for p in sorted((wiki / "admin").glob("*.md")):
-        status = read_frontmatter(p).get("status", "").lower()
-        if status in CLOSED_STATUSES:
+        if task_status.is_closed(read_frontmatter(p).get("status", "")):
             out.append(p)
     return out
 
