@@ -32,7 +32,7 @@ Checks:
                      haley|google_keep|triage-enrich
   - ADMIN status:    any active|closed word in schema/statuses.json
   - ADMIN task_type: user|maintenance
-  - PROJECT status:  Not Started|Planned|Active|Blocked|Done
+  - PROJECT status:  Not Started|Planned|Active|On Hold|Blocked|Done
   - PERSON follow_up_needed: true|false
   - Date fields:     must be YYYY-MM-DD or null
 
@@ -155,7 +155,7 @@ main() {
 				status=$(get_frontmatter_field "$f" 'status')
 				if [[ -n $status ]] && \
 					! in_list "$status" \
-						'Not Started' 'Planned' 'Active' 'Blocked' 'Done'; then
+						'Not Started' 'Planned' 'Active' 'On Hold' 'Blocked' 'Done'; then
 					file_violations+=(
 						"  - \`status\`: invalid value \`${status}\`"
 					)
