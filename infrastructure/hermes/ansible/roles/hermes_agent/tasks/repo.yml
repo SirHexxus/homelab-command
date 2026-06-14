@@ -1,0 +1,93 @@
+# roles/hermes_agent/tasks/repo.yml
+#
+# Clone the homelab-command IaC monorepo onto the LXC, READ-ONLY, so Chiron
+# can verify repo state against live services (the repo-health-sweep skill
+# does `git -C {{ hermes_agent_command_dir }} pull`). Pattern mirrors
+# tasks/wiki.yml — same deploy-key copy, known_hosts, and check-mode guards.
+#
+# DIFFERENCE FROM wiki.yml: this clone is read-only. The deploy key is a
+# read-only GitHub deploy key (vault_chiron_repo_deploy_key) and the git
+# user.name/email config tasks are deliberately omitted — nothing here
+# commits or pushes. See AGENTS.md at the repo root: never push from this
+# clone.
+
+- name: Ensure parent directory exists for homelab-command clone
+  file:
+    path: "{{ hermes_agent_command_dir | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Ensure SSH directory exists
+  file:
+    path: "{{ hermes_agent_ssh_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Deploy homelab-command read-only SSH deploy key
+  copy:
+    content: "{{ vault_chiron_repo_deploy_key | b64decode }}"
+    dest: "{{ hermes_agent_ssh_dir }}/command_deploy"
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Fetch github.com SSH host key
+  command: ssh-keyscan -t ed25519 github.com
+  register: github_keyscan
+  changed_when: false
+  check_mode: false   # ssh-keyscan is read-only; safe to run during --check
+  failed_when: github_keyscan.rc != 0 or github_keyscan.stdout == ''
+
+- name: Add github.com to known_hosts
+  known_hosts:
+    path: "{{ hermes_agent_ssh_dir }}/known_hosts"
+    name: github.com
+    key: "{{ github_keyscan.stdout }}"
+    state: present
+
+- name: Set known_hosts ownership
+  file:
+    path: "{{ hermes_agent_ssh_dir }}/known_hosts"
+    owner: root
+    group: root
+    mode: '0644'
+
+# Clone + post-clone config are guarded by `when: not ansible_check_mode`.
+# In --check, the `command: git clone` would be skipped silently, leaving the
+# .git/config task below to fail on a non-existent path. Guarding the whole
+# block makes --check cleanly report "would clone + configure".
+- name: Clone homelab-command repository (read-only)
+  command: git clone {{ hermes_agent_command_repo }} {{ hermes_agent_command_dir }}
+  args:
+    creates: "{{ hermes_agent_command_dir }}/.git"
+  environment:
+    GIT_SSH_COMMAND: >-
+      ssh -i {{ hermes_agent_ssh_dir }}/command_deploy
+      -o UserKnownHostsFile={{ hermes_agent_ssh_dir }}/known_hosts
+      -o StrictHostKeyChecking=yes
+  when: not ansible_check_mode
+
+- name: Set homelab-command directory ownership
+  file:
+    path: "{{ hermes_agent_command_dir }}"
+    state: directory
+    owner: root
+    group: root
+    recurse: yes
+  when: not ansible_check_mode
+
+- name: Configure homelab-command repo to use read-only deploy key
+  ini_file:
+    path: "{{ hermes_agent_command_dir }}/.git/config"
+    section: core
+    option: sshCommand
+    value: >-
+      ssh -i {{ hermes_agent_ssh_dir }}/command_deploy
+      -o UserKnownHostsFile={{ hermes_agent_ssh_dir }}/known_hosts
+      -o StrictHostKeyChecking=yes
+    mode: '0644'
+  when: not ansible_check_mode

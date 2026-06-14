@@ -19,6 +19,9 @@
 - import_tasks: wiki.yml
   tags: [hermes-agent, wiki]
 
+- import_tasks: repo.yml
+  tags: [hermes-agent, repo]
+
 - import_tasks: config.yml
   tags: [hermes-agent, config]
 

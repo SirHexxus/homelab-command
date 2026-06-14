@@ -27,6 +27,14 @@ hermes_agent_ssh_dir:     /root/.ssh
 hermes_agent_wiki_repo: "git@github.com:SirHexxus/mnemosyne-wiki.git"
 hermes_agent_wiki_dir:  /root/mneme/wiki
 
+# ── homelab-command repo (cloned read-only via tasks/repo.yml) ─────────────
+# Read-only working tree of the IaC monorepo so Chiron can verify repo state
+# for scheduled checks. Uses a dedicated read-only deploy key
+# (vault_chiron_repo_deploy_key); NEVER push from this clone — see AGENTS.md.
+# NB: distinct from `hermes_agent_repo` above, which is the upstream agent src.
+hermes_agent_command_repo: "git@github.com:SirHexxus/homelab-command.git"
+hermes_agent_command_dir:  /opt/hermes-agent/repos/homelab-command
+
 # ── Python ──────────────────────────────────────────────────────────────────
 hermes_agent_python_version: "3.11"
 hermes_agent_uv_bin:         /root/.local/bin/uv

@@ -37,6 +37,11 @@ vault_wiki_deploy_key: ""    # base64 of private key: base64 -w0 /path/to/key
 vault_git_user_name:   ""    # commit author name (e.g., "James Stacy")
 vault_git_user_email:  ""    # commit author email
 
+# ── homelab-command read-only clone (used by repo-health-sweep via tasks/repo.yml) ─
+# Read-only GitHub deploy key for SirHexxus/homelab-command. Distinct identity
+# from the wiki key; this clone never commits or pushes (see repo-root AGENTS.md).
+vault_chiron_repo_deploy_key: ""    # base64 of read-only private key: base64 -w0 /path/to/key
+
 # ── Legacy (homegrown Hermes — being decommissioned in the Week 8 cascade) ─
 # Kept here until the rename cascade so other playbooks that still reference
 # them don't break. Delete once the apps/hermes/ → apps/chiron/ rename lands.
