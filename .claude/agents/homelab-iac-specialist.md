@@ -24,7 +24,7 @@ IP/VMID assignments, service state, and repo-specific conventions for homelab-co
 1. **Check the allocation table before assigning any VMID or IP.** Never guess or
    auto-increment. The table below is the source of truth.
 
-2. **Terraform provider is `bpg/proxmox` version `0.96.0`.** No exceptions.
+2. **Terraform provider is `bpg/proxmox`, target version `0.98.1`.** Hermes and inbox-receiver are already migrated; bump others via `terraform init -upgrade` as the opportunity presents. New services must use `0.98.1`.
 
 3. **`ansible.cfg` roles_path depth for this repo:**
    - `infrastructure/iris/ansible/` (2 levels from `infrastructure/`): `roles:../../ansible/roles`
@@ -78,12 +78,13 @@ IP/VMID assignments, service state, and repo-specific conventions for homelab-co
 |------|------|--------|---------|
 | 10 | Management | 10.0.10.0/24 | 10.0.10.1 |
 | 20 | Personal | 10.0.20.0/24 | 10.0.20.1 |
-| 30 | IoT | 10.0.30.0/24 | 10.0.30.1 |
-| 40 | Trusted Wireless | 10.0.40.0/24 | 10.0.40.1 |
+| 30 | Work | 10.0.30.0/24 | 10.0.30.1 |
+| 40 | IoT | 10.0.40.0/24 | 10.0.40.1 |
 | 50 | Lab Services | 10.0.50.0/24 | 10.0.50.1 |
 | 60 | DMZ | 10.0.60.0/24 | 10.0.60.1 |
-| 66 | Quarantine | 10.0.66.0/24 | 10.0.66.1 |
+| 66 | Sandbox | 10.0.66.0/24 | 10.0.66.1 |
 | 70 | Guest | 10.0.70.0/24 | 10.0.70.1 |
+| 80 | Media | 10.0.80.0/24 | 10.0.80.1 |
 
 ### IP/VMID Allocation Table
 
@@ -97,27 +98,27 @@ IP/VMID assignments, service state, and repo-specific conventions for homelab-co
 | helm-log (iris) | 10.0.10.25 | — | 10 | Ansible | Bare metal; ntfy, logging |
 | TP-Link switch | 10.0.10.50 | — | 10 | Ansible | Hardware switch |
 | Test-00 | — | 100 | — | — | Test container — do not reuse VMID |
-| ollama | 10.0.50.10 | 101 | 50 | Ansible | Mistral 7B, nomic-embed-text |
-| whisper | 10.0.50.12 | 102 | 50 | Ansible | STT service, port 9000 |
+| ollama | 10.0.50.10 | 101 | 50 | Terraform + Ansible | mistral:7b, qwen3:1.7b/4b, nomic-embed-text installed — Tier-1 intent pending decision D2 |
+| whisper | 10.0.50.12 | 102 | 50 | Terraform + Ansible | STT service, port 9000 |
+| inbox-receiver | 10.0.50.19 | 103 | 50 | Terraform + Ansible | Mnemosyne intake LXC |
 | holding | — | 104 | — | — | Reserved — do not reuse VMID |
 | postgres | 10.0.50.14 | 105 | 50 | Ansible | Shared DB (mnemosyne, argus, n8n, umami) |
 | redis | 10.0.50.15 | 106 | 50 | Ansible | n8n queue |
 | n8n | 10.0.50.13 | 107 | 50 | Ansible | Workflow automation |
 | minio | 10.0.50.16 | 108 | 50 | Ansible | Object storage |
-| hermes | 10.0.50.17 | 110 | 50 | Terraform + Ansible | AI agent runtime (planned VMID) |
+| hermes | 10.0.50.17 | 110 | 50 | Terraform + Ansible | Chiron/Hermes-Agent runtime |
 | npm (Ariadne) | 10.0.60.10 | 120 | 60 | Terraform (ariadne) | NGINX Proxy Manager |
 | authelia (Ariadne) | 10.0.60.11 | 121 | 60 | Terraform (ariadne) | Auth gateway |
 | umami | 10.0.50.18 | 122 | 50 | Terraform (ariadne) | Analytics |
 
-**Available VMID ranges (confirmed from Proxmox dashboard 2026-03-11):**
-- 103: available
+**Available VMID ranges (live-verified 2026-06-11):**
 - 109: available
 - 111–119: available
 - 123–199: available
 - 201+: available
 
 **Available IPs per VLAN:**
-- VLAN 50: 10.0.50.19+ available (10.0.50.10–18 assigned above)
+- VLAN 50: 10.0.50.23+ available (10.0.50.10–22 assigned; .20–22 reserved for Argus)
 - VLAN 60: 10.0.60.12+ available (10.0.60.10–11 assigned above)
 
 ### Service IaC State Reference
@@ -136,7 +137,7 @@ IP/VMID assignments, service state, and repo-specific conventions for homelab-co
 | hermes | ✅ Written | ✅ Written | `infrastructure/hermes/` |
 | Ariadne (NPM+Authelia+Umami) | ✅ Written | ✅ Written | `infrastructure/ariadne/` |
 | TP-Link switch | — | ✅ Written | `infrastructure/network/switch/` |
-| Mnemosyne | — | Planned | Phase 2 |
+| Mnemosyne | ✅ Written | ✅ Written | `infrastructure/mnemosyne/` — inbox-receiver (VMID 103) deployed |
 | Argus | — | Planned | Phase 3 |
 
 ### Key File Paths
