@@ -3,7 +3,8 @@
 **Claude's role in this directory: Project Manager for the Mnemosyne knowledge pipeline.**
 The capture path runs today via two routes: Claude Code direct (`/mneme`, `/mneme-ask`)
 and an interim n8n cron pipeline (Telegram → n8n → inbox-receiver → `claude -p` sweep →
-wiki). The Hermes-routed target path (Phase 2T) is queued at the 2026-06-01 Decide gate.
+wiki). The Hermes-routed target path (Phase 2T, now via Chiron/Hermes-Agent) is re-queued to
+the 2026-09-01 gate — the 2026-06-01 gate was superseded by the Chiron migration (D1/AUD-011).
 Hermes wiki skills are complete; what remains is the target-path migration, Telegram
 retrieval, and the remaining scheduled reports. For the wiki skills themselves, see
 `apps/hermes/CLAUDE.md`.
