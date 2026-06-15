@@ -105,7 +105,7 @@ IP/VMID assignments, service state, and repo-specific conventions for homelab-co
 | helm-log (iris) | 10.0.10.25 | — | 10 | Ansible | Bare metal; ntfy, logging |
 | TP-Link switch | 10.0.10.50 | — | 10 | Ansible | Hardware switch |
 | Test-00 | — | 100 | — | — | Test container — do not reuse VMID |
-| ollama | 10.0.50.10 | 101 | 50 | Terraform + Ansible | mistral:7b, qwen3:1.7b/4b, nomic-embed-text installed — Tier-1 intent pending decision D2 |
+| ollama | 10.0.50.10 | 101 | 50 | Terraform + Ansible | nomic-embed-text (embeddings only); reasoning tier retired post-pivot per D2/AUD-017 — revisit w/ GPU |
 | whisper | 10.0.50.12 | 102 | 50 | Terraform + Ansible | STT service, port 9000 |
 | inbox-receiver | 10.0.50.19 | 103 | 50 | Terraform + Ansible | Mnemosyne intake LXC |
 | holding | — | 104 | — | — | Reserved — do not reuse VMID |
