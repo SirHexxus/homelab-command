@@ -77,7 +77,7 @@ These apply to every service in the repo. Service CLAUDE.md files do not repeat 
   - 3-level services (`infrastructure/platform/<service>/ansible/`): `roles:../../../ansible/roles`
   - 3-level network (`infrastructure/network/<service>/ansible/`): `roles:../../../ansible/roles`
 - Shared roles live at `infrastructure/ansible/roles/` (dotfiles, proxmox_base)
-- SSH keys: most services → `~/.ssh/id_rsa`; iris + pfSense → `~/.ssh/homelab_ed25519`
+- SSH keys: most services → `~/.ssh/id_rsa`; iris + pfSense → `~/.ssh/homelab_ed25519`; proxmox (puppetmaster) → `~/.ssh/id_ed25519` (third key — only key puppetmaster accepts)
 
 ### Vault
 - Convention: `vault_<service>_<credential>`
@@ -87,6 +87,12 @@ These apply to every service in the repo. Service CLAUDE.md files do not repeat 
   - `vault_minio_root_user`, `vault_minio_root_password`
   - `vault_mnemosyne_password`, `vault_argus_password`, `vault_umami_password`
   - `vault_switch_password`
+  - `vault_authelia_jwt_secret`, `vault_authelia_session_secret`, `vault_authelia_storage_encryption_key`
+  - `vault_umami_app_secret`, `vault_umami_postgres_password`
+  - `vault_wiki_deploy_key`
+  - `vault_inbox_token`
+  - `vault_chiron_gemini_api_key`, `vault_chiron_telegram_bot_token`, `vault_chiron_vertex_sa_json`, `vault_chiron_webhook_secret`
+  - `vault_git_user_name`, `vault_git_user_email` *(convention exceptions — no service segment)*
 
 ---
 
