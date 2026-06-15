@@ -99,6 +99,17 @@ hermes_agent_webhook_port:    8644
 hermes_agent_telegram_enabled:       true
 hermes_agent_telegram_allowed_users: ""   # comma-separated Telegram user IDs
 
+# ── Command approvals ───────────────────────────────────────────────────────
+# Shell-command glob patterns auto-approved without a prompt (config.yaml
+# `command_allowlist`). Required so the cron-scheduled repo-health-sweep runs
+# unattended despite `approvals.cron_mode: deny`. All entries are read-only:
+# a fast-forward pull, internal-IP health GETs, and reads under the repo clone.
+# Patterns are fnmatch globs (`*` spans spaces); the role OWNS this key.
+hermes_agent_command_allowlist:
+  - "git -C /opt/hermes-agent/repos/homelab-command pull*"
+  - "curl *http://10.0.50.*"
+  - "cat /opt/hermes-agent/repos/homelab-command/*"
+
 # ── MCP servers (list of {name, url}) ──────────────────────────────────────
 hermes_agent_mcp_servers: []
 
