@@ -5,8 +5,9 @@
 
 > ⚠️ **Active session pickup:** see `LAYER-3-PICKUP.md` for the Layer 3 ingest evaluation work in progress. Phase 0 (Gemini bridge for image OCR/VLM + URL extraction in `Mnemosyne Ingest v1` n8n workflow) is awaiting James's approval to start.
 **Status:** Phase 0 mostly done; Phase 1 complete; Phase 2 complete via interim path
-(inbox-receiver); Phase 4 Daily Digest live; target-path migration (Phase 2T) and
-Phase 3 retrieval queued at the 2026-06-01 Decide gate
+(inbox-receiver); Phase 4 Daily Digest live; the 2026-06-01 Decide gate was superseded
+by the Chiron migration (D1/AUD-011) — target-path migration (Phase 2T) and Phase 3
+retrieval re-queued to the 2026-09-01 gate
 
 ---
 
@@ -17,8 +18,9 @@ wiki stored in a private git repository of markdown files. Knowledge is organize
 7 semantic buckets (IDEA, ADMIN, REFERENCE, JOURNAL, PERSON, PROJECT, PURSUIT). Capture
 runs today through two paths: Claude Code direct (`/mneme`, `/mneme-ask` skills) and a
 cron-based n8n pipeline (Telegram text/voice/file → inbox-receiver → `claude -p` sweep
-→ wiki). The Hermes-routed target path (replacing `claude -p` with `[[Project - Hermes]]`
-autonomous execution) is queued at the 2026-06-01 Decide gate.
+→ wiki). The Hermes-routed target path (now = routing through Chiron/Hermes-Agent, replacing
+the `claude -p` sweep) is re-queued to the 2026-09-01 gate — the 2026-06-01 gate was
+superseded by the Chiron migration.
 
 Mnemosyne is a **peer subsystem** that requests services from Hermes — it is not strictly
 downstream. The wiki is the long-term store; Hermes and Claude Code are alternative
@@ -31,9 +33,10 @@ Proxmox host.
 
 | Gate | Date | Decides |
 |------|------|---------|
-| Decide First Mnemosyne and Hermes Build Sprint | 2026-06-01 | Whether the next sprint is Phase 2T (Hermes-routed ingest), Daily Digest LLM swap, GeminiClient refactor, or ReAct-loop scope reduction |
+| Decide First Mnemosyne and Hermes Build Sprint | 2026-06-01 | **RESOLVED (D1/AUD-011): superseded by the 2026-05-27 Chiron migration. Daily Digest LLM swap shipped 2026-05-21; the GeminiClient refactor + ReAct-loop items were mooted by retiring homegrown Hermes. Phase 2T re-queued below.** |
+| Phase 2T sprint decision (Mnemosyne → Chiron ingest) | 2026-09-01 | Whether to route Mnemosyne ingest through Chiron (Hermes-Agent), replacing the `claude -p` interim path. Dated post-restructure (S4.2) + post-trip. |
 
-See `[[Decide First Mnemosyne and Hermes Build Sprint]]` for the candidate list.
+See `[[Decide First Mnemosyne and Hermes Build Sprint]]` for the original candidate list.
 
 ---
 

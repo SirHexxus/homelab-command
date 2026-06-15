@@ -28,7 +28,7 @@ cd infrastructure/platform/postgres && claude   # Postgres-focused
 | **Ariadne** | `infrastructure/ariadne/` | NPM (VMID 120, 10.0.60.10), Authelia (VMID 121, 10.0.60.11), Umami (VMID 122, 10.0.50.18) | 60 / 50 | Deployed |
 | **Hermes** | `infrastructure/hermes/` | LXC VMID 110, 10.0.50.17 | 50 | Deployed — runs Chiron/Hermes-Agent since 2026-05-27 pivot |
 | **Iris** | `infrastructure/iris/` | Bare metal: 10.0.10.25 (Helm HPS20) | 10 | ntfy deployed; logging Phase 3 |
-| **Mnemosyne** | `infrastructure/mnemosyne/` | No dedicated host — wiki at `~/mneme/wiki/`, served by Hermes | 50 | Phase 2 — current path operational (cron + n8n); Hermes-routed target queued at 2026-06-01 Decide gate |
+| **Mnemosyne** | `infrastructure/mnemosyne/` | No dedicated host — wiki at `~/mneme/wiki/`, served by Hermes | 50 | Phase 2 — current path operational (cron + n8n); 2026-06-01 gate superseded by Chiron migration (D1/AUD-011), Phase 2T re-queued to 2026-09-01 gate |
 | **inbox-receiver** | `infrastructure/mnemosyne/inbox-receiver/` | LXC VMID 103, 10.0.50.19 | 50 | Deployed — Mnemosyne intake endpoint |
 | **Orpheus** | `infrastructure/orpheus/` | TrueNAS R710 eno4: 10.0.80.5 (13+ TrueNAS Scale apps) | 80 | Apps running; *Arr reconfiguration pending |
 | **Hephaestus** | `infrastructure/hephaestus/` *(planned)* | VM 10.0.50.30 — Docker Compose host | 50 | Planned — post-June |
