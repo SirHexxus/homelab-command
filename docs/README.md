@@ -5,6 +5,11 @@ conventions, and operational procedures live here.
 
 See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all homelab decisions.
 
+> **Versioning policy (D4 / AUD-015, 2026-06-14):** document filenames are version-free; the
+> authoritative version lives in each doc's header and the Version column below. Filenames are
+> **not** renamed on version bumps, so links never break. The S5.1 docs sweep will strip the
+> existing `-vX.Y` suffixes from filenames and update references.
+
 ---
 
 ## Core reference
