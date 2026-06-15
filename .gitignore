@@ -26,10 +26,11 @@ id_ed25519
 .DS_Store
 Thumbs.db
 
-# Hermes benchmark artifacts (but keep tracked tooling like edge-health-probe)
+# Hermes scripts/: track maintained tooling (edge-health-probe), ignore the
+# rest (ad-hoc benchmark artifacts). The March A/B benchmarks + test-results/
+# were removed per D3 (AUD-021).
 infrastructure/hermes/scripts/*
 !infrastructure/hermes/scripts/edge-health-probe
-infrastructure/hermes/test-results/
 
 # Laptop-written edge health status (SSH-pushed to the LXC, never committed)
 edge-health.json
