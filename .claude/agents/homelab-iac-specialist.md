@@ -41,6 +41,12 @@ IP/VMID assignments, service state, and repo-specific conventions for homelab-co
    - `vault_minio_root_user`, `vault_minio_root_password` (minio)
    - `vault_mnemosyne_password`, `vault_argus_password`, `vault_umami_password` (postgres)
    - `vault_switch_password` (network switch)
+   - `vault_authelia_jwt_secret`, `vault_authelia_session_secret`, `vault_authelia_storage_encryption_key` (authelia)
+   - `vault_umami_app_secret`, `vault_umami_postgres_password` (umami)
+   - `vault_wiki_deploy_key` (mnemosyne wiki)
+   - `vault_inbox_token` (inbox-receiver)
+   - `vault_chiron_gemini_api_key`, `vault_chiron_telegram_bot_token`, `vault_chiron_vertex_sa_json`, `vault_chiron_webhook_secret` (chiron)
+   - `vault_git_user_name`, `vault_git_user_email` *(convention exceptions — no service segment)*
 
 5. **Module directories exist but are currently empty.** `infrastructure/modules/lxc-container/`
    and `infrastructure/modules/proxmox-vm/` are placeholders. Write inline Terraform resources
@@ -49,6 +55,7 @@ IP/VMID assignments, service state, and repo-specific conventions for homelab-co
 6. **SSH key convention:**
    - Most services: `~/.ssh/id_rsa` (RSA key)
    - iris/helm-log and pfSense: `~/.ssh/homelab_ed25519` (ed25519 key)
+   - proxmox (puppetmaster): `~/.ssh/id_ed25519` (third key — only key puppetmaster accepts; verified live 2026-06-11)
    Match the key to the service when writing `inventory.ini`.
 
 7. **LXC template default:** `local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst`
