@@ -103,12 +103,16 @@
         "model":    "{{ hermes_agent_aux_lite_model }}",
         "base_url": "{{ hermes_agent_aux_lite_base_url }}",
     }
+    desired_command_allowlist = {{ hermes_agent_command_allowlist }}
     changed = False
     if cfg.get("model") != desired_model:
         cfg["model"] = desired_model
         changed = True
     if (cfg.get("platforms") or {}) != desired_platforms:
         cfg["platforms"] = desired_platforms
+        changed = True
+    if (cfg.get("command_allowlist") or []) != desired_command_allowlist:
+        cfg["command_allowlist"] = desired_command_allowlist
         changed = True
     aux = cfg.setdefault("auxiliary", {})
     for task in aux_lite_tasks:
