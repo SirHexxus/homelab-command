@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""Probe the cross-VLAN edge services Chiron cannot reach and publish their
+health to the LXC clone's edge-health.json (read by the repo-health-sweep skill).
+
+Why this exists: Chiron runs on LXC 110 (VLAN 50) and cannot reach Iris ntfy
+(VLAN 10) or Ariadne (VLAN 60). This script runs on the laptop, which has
+all-VLAN reach, probes those two endpoints, and writes the result onto the LXC
+so the weekly sweep can fold them in. Run on a cron well under the sweep's
+6-hour staleness window.
+
+Transport note: the result is written DIRECTLY onto the LXC over SSH (not
+committed to git). Committing every probe would churn the repo history for a
+file the sweep reads ~once a week; edge-health.json should be gitignored. The
+sweep reads the local file on the LXC regardless of git pull.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+from datetime import datetime, timezone
+from pathlib import Path
+
+# Service name -> probe URL. Ariadne is expected to answer 301, so the probe
+# must NOT follow redirects (curl without -L returns the first status code).
+TARGETS: dict[str, str] = {
+    "Iris": "http://10.0.10.25:2586/v1/health",
+    "Ariadne": "http://10.0.60.10",
+}
+
+DEFAULT_LXC_HOST: str = "root@10.0.50.17"
+DEFAULT_REMOTE_PATH: str = "/opt/hermes-agent/repos/homelab-command/edge-health.json"
+DEFAULT_SSH_KEY: str = "~/.ssh/id_rsa"
+HTTP_TIMEOUT: int = 5
+
+
+def probe(url: str) -> int:
+    """Return the HTTP status code for url, or 0 if unreachable/timed out."""
+    try:
+        result = subprocess.run(
+            ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+             "--max-time", str(HTTP_TIMEOUT), url],
+            capture_output=True,
+            text=True,
+            timeout=HTTP_TIMEOUT + 3,
+        )
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError, OSError):
+        return 0
+    code = result.stdout.strip()
+    return int(code) if code.isdigit() else 0
+
+
+def build_payload() -> dict[str, dict[str, object]]:
+    """Probe every target and return the edge-health document."""
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return {
+        name: {"status": probe(url), "timestamp": now}
+        for name, url in TARGETS.items()
+    }
+
+
+def publish(payload: dict[str, dict[str, object]], host: str, remote_path: str,
+            ssh_key: Path, dry_run: bool) -> int:
+    """Write payload to remote_path on host over SSH. Return an exit code."""
+    blob = json.dumps(payload, indent=2)
+    if dry_run:
+        print(f"[dry-run] would write to {host}:{remote_path}\n{blob}")
+        return 0
+    try:
+        result = subprocess.run(
+            ["ssh", "-i", str(ssh_key),
+             "-o", "StrictHostKeyChecking=no",
+             "-o", "ConnectTimeout=10",
+             host, f"cat > {remote_path}"],
+            input=blob,
+            text=True,
+            capture_output=True,
+            timeout=25,
+        )
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError, OSError) as exc:
+        print(f"ERROR: ssh publish failed: {exc}")
+        return 1
+    if result.returncode != 0:
+        print(f"ERROR: ssh exited {result.returncode}: {result.stderr.strip()}")
+    return result.returncode
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Probe cross-VLAN edge services and publish edge-health.json to the LXC.",
+    )
+    parser.add_argument("--host", default=DEFAULT_LXC_HOST,
+                        help=f"SSH target for the LXC clone (default: {DEFAULT_LXC_HOST})")
+    parser.add_argument("--remote-path", default=DEFAULT_REMOTE_PATH,
+                        help=f"Path to edge-health.json on the LXC (default: {DEFAULT_REMOTE_PATH})")
+    parser.add_argument("--ssh-key", default=DEFAULT_SSH_KEY,
+                        help=f"SSH private key (default: {DEFAULT_SSH_KEY})")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Probe and print the JSON without writing to the LXC")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    payload = build_payload()
+    return publish(
+        payload,
+        host=args.host,
+        remote_path=args.remote_path,
+        ssh_key=Path(args.ssh_key).expanduser(),
+        dry_run=args.dry_run,
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
