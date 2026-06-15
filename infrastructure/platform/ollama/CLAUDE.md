@@ -15,8 +15,12 @@ GPU passthrough is not configured — Ollama runs on CPU only. GPU sourcing is d
 
 | Model | Purpose |
 |-------|---------|
-| `qwen3:8b` | General reasoning and task execution (Tier 1 in Hermes routing) |
 | `nomic-embed-text` | Vector embedding generation — never routed to cloud |
+
+**Reasoning tier retired (D2 / AUD-017, 2026-06-14):** post-pivot, all reasoning inference
+moved to Vertex via Chiron's LiteLLM proxy — Ollama is **embeddings-only**. The CPU-only
+reasoning models (`mistral:7b`, `qwen3:1.7b`, `qwen3:4b`) are being pruned. Revisit a local
+reasoning tier once a GPU lands (target RTX 3060 12GB / Intel Arc B580).
 
 ## Role in Stack
 
