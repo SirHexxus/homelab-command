@@ -26,9 +26,13 @@ id_ed25519
 .DS_Store
 Thumbs.db
 
-# Hermes benchmark artifacts
-infrastructure/hermes/scripts/
+# Hermes benchmark artifacts (but keep tracked tooling like edge-health-probe)
+infrastructure/hermes/scripts/*
+!infrastructure/hermes/scripts/edge-health-probe
 infrastructure/hermes/test-results/
+
+# Laptop-written edge health status (SSH-pushed to the LXC, never committed)
+edge-health.json
 
 # Logs
 *.log
