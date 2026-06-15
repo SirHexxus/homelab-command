@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Probe the cross-VLAN edge services Chiron cannot reach and publish their
-health to the LXC clone's edge-health.json (read by the repo-health-sweep skill).
+"""Probe the things Chiron's repo-health-sweep cannot check from LXC 110, and
+publish them to the LXC clone's edge-health.json for the sweep to read.
 
-Why this exists: Chiron runs on LXC 110 (VLAN 50) and cannot reach Iris ntfy
-(VLAN 10) or Ariadne (VLAN 60). This script runs on the laptop, which has
-all-VLAN reach, probes those two endpoints, and writes the result onto the LXC
-so the weekly sweep can fold them in. Run on a cron well under the sweep's
-6-hour staleness window.
+Two classes of check run here on the laptop because the LXC can't do them:
+  1. Cross-VLAN HTTP: Iris ntfy (VLAN 10) and Ariadne (VLAN 60) are unreachable
+     from Chiron on VLAN 50. The laptop has all-VLAN reach.
+  2. wiki_embeddings liveness: `semantic-search` needs the mnemosyne Python
+     runtime (psycopg2) + Postgres access, which the LXC lacks. The laptop runs
+     the mnemosyne crons, so it has both.
 
-Transport note: the result is written DIRECTLY onto the LXC over SSH (not
-committed to git). Committing every probe would churn the repo history for a
-file the sweep reads ~once a week; edge-health.json should be gitignored. The
-sweep reads the local file on the LXC regardless of git pull.
+Transport: the result is SSH-written directly onto the LXC clone (NOT committed
+to git — edge-health.json is gitignored; this avoids per-probe commit churn).
+The sweep reads the local file on the LXC regardless of git pull. Run on a cron
+well under the sweep's 6-hour staleness window.
 """
 
 from __future__ import annotations
@@ -22,20 +23,31 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Service name -> probe URL. Ariadne is expected to answer 301, so the probe
+# Cross-VLAN HTTP targets:  name -> probe URL. Ariadne answers 301, so the probe
 # must NOT follow redirects (curl without -L returns the first status code).
-TARGETS: dict[str, str] = {
+HTTP_TARGETS: dict[str, str] = {
     "Iris": "http://10.0.10.25:2586/v1/health",
     "Ariadne": "http://10.0.60.10",
 }
+
+# Single place to update the mnemosyne scripts location after the S4.2
+# restructure (infrastructure/mnemosyne/scripts -> mnemosyne/scripts).
+MNEMOSYNE_SCRIPTS_SUBPATH: str = "infrastructure/mnemosyne/scripts"
+DEFAULT_REPO_ROOT: str = "/home/james/projects/homelab-command"
 
 DEFAULT_LXC_HOST: str = "root@10.0.50.17"
 DEFAULT_REMOTE_PATH: str = "/opt/hermes-agent/repos/homelab-command/edge-health.json"
 DEFAULT_SSH_KEY: str = "~/.ssh/id_rsa"
 HTTP_TIMEOUT: int = 5
+EMBEDDINGS_TIMEOUT: int = 30
 
 
-def probe(url: str) -> int:
+def now_iso() -> str:
+    """Current UTC time as an ISO-8601 string (seconds precision)."""
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def probe_http(url: str) -> int:
     """Return the HTTP status code for url, or 0 if unreachable/timed out."""
     try:
         result = subprocess.run(
@@ -51,13 +63,37 @@ def probe(url: str) -> int:
     return int(code) if code.isdigit() else 0
 
 
-def build_payload() -> dict[str, dict[str, object]]:
-    """Probe every target and return the edge-health document."""
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    return {
-        name: {"status": probe(url), "timestamp": now}
-        for name, url in TARGETS.items()
+def probe_embeddings(repo_root: Path) -> dict[str, object]:
+    """Liveness-check the wiki_embeddings store via semantic-search.
+
+    Runs `semantic-search --top 1 test`; exit 0 means the embeddings store is
+    queryable. Returns {"ok": bool, "timestamp": str}.
+    """
+    script = repo_root / MNEMOSYNE_SCRIPTS_SUBPATH / "semantic-search"
+    ok = False
+    if script.exists():
+        try:
+            result = subprocess.run(
+                [str(script), "--top", "1", "test"],
+                capture_output=True,
+                text=True,
+                timeout=EMBEDDINGS_TIMEOUT,
+            )
+            ok = result.returncode == 0
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError, OSError):
+            ok = False
+    return {"ok": ok, "timestamp": now_iso()}
+
+
+def build_payload(repo_root: Path) -> dict[str, dict[str, object]]:
+    """Run every laptop-side check and return the edge-health document."""
+    stamp = now_iso()
+    payload: dict[str, dict[str, object]] = {
+        name: {"status": probe_http(url), "timestamp": stamp}
+        for name, url in HTTP_TARGETS.items()
     }
+    payload["wiki_embeddings"] = probe_embeddings(repo_root)
+    return payload
 
 
 def publish(payload: dict[str, dict[str, object]], host: str, remote_path: str,
@@ -88,8 +124,10 @@ def publish(payload: dict[str, dict[str, object]], host: str, remote_path: str,
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Probe cross-VLAN edge services and publish edge-health.json to the LXC.",
+        description="Probe cross-VLAN edge services + wiki_embeddings and publish edge-health.json to the LXC.",
     )
+    parser.add_argument("--repo-root", default=DEFAULT_REPO_ROOT,
+                        help=f"Local repo root holding the mnemosyne scripts (default: {DEFAULT_REPO_ROOT})")
     parser.add_argument("--host", default=DEFAULT_LXC_HOST,
                         help=f"SSH target for the LXC clone (default: {DEFAULT_LXC_HOST})")
     parser.add_argument("--remote-path", default=DEFAULT_REMOTE_PATH,
@@ -103,7 +141,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    payload = build_payload()
+    payload = build_payload(Path(args.repo_root).expanduser())
     return publish(
         payload,
         host=args.host,
