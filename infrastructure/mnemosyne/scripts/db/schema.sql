@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS mneme_log (
     source      TEXT NOT NULL,                  -- telegram|claude_code|scheduled|...
     ingested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT mneme_log_operation_ck CHECK (operation IN
-        ('ingest','create','update','merge','rename','delete','report','lint'))
+        ('ingest','create','update','merge','rename','delete','archive','report','lint'))
 );
 CREATE INDEX IF NOT EXISTS mneme_log_ts_idx        ON mneme_log (ts);
 CREATE INDEX IF NOT EXISTS mneme_log_bucket_ts_idx ON mneme_log (bucket, ts);
