@@ -21,7 +21,7 @@ from pathlib import Path
 
 DEFAULT_LOG = Path.home() / "mneme" / "wiki" / "log.md"
 VALID_OPS = {"ingest", "create", "update", "merge", "rename",
-             "delete", "report", "lint"}
+             "delete", "archive", "report", "lint"}
 
 
 def parse_log(log_path: Path) -> tuple[list[tuple], list[tuple[int, str]]]:

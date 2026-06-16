@@ -28,7 +28,7 @@ HEADER = """\
      mneme_log is authoritative; this file is a read-only, timestamp-ordered view. -->
 
 Format: `{ISO-datetime} | {operation} | {bucket} | {page title} | {source}`
-Operations: ingest | create | update | merge | rename | delete | report | lint
+Operations: ingest | create | update | merge | rename | delete | archive | report | lint
 Sorted by event timestamp. Source of truth: mneme_log (Postgres). See schema/09-log-format.md.
 
 ---

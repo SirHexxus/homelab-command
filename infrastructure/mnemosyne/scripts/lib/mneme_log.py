@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # make mneme_pg importable
 
 VALID_OPS = {"ingest", "create", "update", "merge", "rename",
-             "delete", "report", "lint"}
+             "delete", "archive", "report", "lint"}
 
 
 def log_event(operation: str, bucket: str, title: str, source: str,
