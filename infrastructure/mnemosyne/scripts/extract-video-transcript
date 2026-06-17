@@ -53,7 +53,7 @@ DEFAULT_CAP_MIN = 60
 WHISPER_URL = "http://10.0.50.12:9000/v1/audio/transcriptions"
 WHISPER_MODEL = "small"
 WHISPER_LABEL = f"whisper-{WHISPER_MODEL} @ 10.0.50.12:9000"
-SCRIPT_VERSION = "extract-video-transcript@1.0"
+SCRIPT_VERSION = "extract-video-transcript@1.1"
 
 VALID_SOURCES = {
     "telegram", "email", "web_clipper", "n8n_chat",
@@ -109,14 +109,21 @@ def yt_dlp_probe(url: str, *, verbose: bool) -> dict | None:
 
 
 def yt_dlp_download_audio(url: str, dest_dir: Path, *, verbose: bool) -> Path | None:
-    """Download bestaudio to dest_dir; return path to the downloaded file."""
+    """Download an audio-bearing format to dest_dir; return the downloaded file.
+
+    Format string prefers a pure-audio stream, then the best format that
+    actually *has* an audio codec, then best as a last resort. The
+    `[acodec!=none]` guard is critical for sources like TikTok that expose
+    split video-only fragments — a bare `best` can otherwise grab a silent
+    video stream (see extract_audio below, which is the second line of defense).
+    """
     out_template = str(dest_dir / "audio.%(ext)s")
     for with_cookies in (True, False):
         cmd = _yt_dlp_command(
             url,
             with_cookies=with_cookies,
             extra_args=[
-                "-f", "bestaudio/best",
+                "-f", "bestaudio/best[acodec!=none]/best",
                 "-o", out_template,
                 "--no-warnings",
             ],
@@ -133,6 +140,38 @@ def yt_dlp_download_audio(url: str, dest_dir: Path, *, verbose: bool) -> Path | 
             files = sorted(dest_dir.glob("audio.*"))
             return files[0] if files else None
     return None
+
+
+def extract_audio(src: Path, dest_dir: Path, *, verbose: bool) -> Path | None:
+    """Transcode the download to mono 16kHz mp3 for Whisper via ffmpeg.
+
+    Returns the mp3 path, or None if the source has no usable audio stream
+    (e.g. yt-dlp handed back a video-only fragment). This is what converts a
+    silent file into an honest `no-audio` instead of a mystery whisper failure.
+    """
+    out = dest_dir / "audio_for_whisper.mp3"
+    cmd = [
+        "ffmpeg", "-y", "-i", str(src),
+        "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libmp3lame", "-q:a", "5",
+        str(out),
+    ]
+    if verbose:
+        print(f"[ffmpeg] extracting audio → {out.name}", file=sys.stderr)
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        if verbose:
+            print(f"[ffmpeg] failed: {exc}", file=sys.stderr)
+        return None
+    if proc.returncode != 0 or not out.exists() or out.stat().st_size == 0:
+        if verbose:
+            print(
+                "[ffmpeg] no audio stream in download (likely a video-only "
+                f"fragment); rc={proc.returncode}",
+                file=sys.stderr,
+            )
+        return None
+    return out
 
 
 # ── Whisper ──────────────────────────────────────────────────────────────────
@@ -335,10 +374,29 @@ def main() -> int:
                 emit_human_summary(result)
             return EXIT_NO_AUDIO
 
+        # Normalize to clean mono audio before Whisper. This also catches the
+        # video-only-fragment case (e.g. TikTok) — ffmpeg finds no audio stream
+        # and we report no-audio honestly instead of shipping a silent file.
+        clean_audio = extract_audio(audio, tmp_path, verbose=verbose)
+        if clean_audio is None:
+            result = {
+                "status": "no-audio",
+                "reason": "downloaded stream has no audio track (video-only format)",
+                "source_url": canonical_url,
+                "title": title,
+                "platform": platform,
+                "duration_seconds": duration_s,
+            }
+            if json_out:
+                emit_json(result)
+            else:
+                emit_human_summary(result)
+            return EXIT_NO_AUDIO
+
         # Transcribe.
         if verbose:
-            print(f"Transcribing ({audio.stat().st_size // 1024} KB) ...", file=sys.stderr)
-        transcript = whisper_transcribe(audio, verbose=verbose)
+            print(f"Transcribing ({clean_audio.stat().st_size // 1024} KB) ...", file=sys.stderr)
+        transcript = whisper_transcribe(clean_audio, verbose=verbose)
 
     if not transcript:
         result = {
