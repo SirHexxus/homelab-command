@@ -1,0 +1,333 @@
+{
+  "name": "Mnemosyne Ingest Core",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "dedup-key",
+        "key": "={{ $json._dedup_key }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        80,
+        16
+      ],
+      "id": "2199d2c1-fe8d-4b01-ab4e-c0de39f99176",
+      "name": "Check Dedup",
+      "credentials": {
+        "redis": {
+          "id": "n6IjS0GfR9L8f7P3",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c9e820f0-d2f0-4cdf-b68a-5cdef468ce49",
+              "leftValue": "={{ $json['dedup-key'] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        304,
+        16
+      ],
+      "id": "c2050b9f-0fd5-450f-a502-39e85da0c216",
+      "name": "Is Duplicate?"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "={{ $('When Executed by Another Workflow').item.json._dedup_key }}",
+        "value": "1",
+        "expire": true,
+        "ttl": 86400
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        976,
+        112
+      ],
+      "id": "0bd3d5c4-7e3b-4fcf-b2a2-03d93a44aea6",
+      "name": "Mark Seen",
+      "credentials": {
+        "redis": {
+          "id": "n6IjS0GfR9L8f7P3",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://10.0.50.19:8080/inbox",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ workflow: $json.workflow, task: $json.task, payload: $json.payload, context_name: $json.context_name }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        752,
+        112
+      ],
+      "id": "80e87f44-8094-4f84-aee4-6a195665ec32",
+      "name": "POST to inbox-receiver",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hP3jO803t9UNia9b",
+          "name": "Inbox Receiver Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -144,
+        16
+      ],
+      "id": "9ac5c16d-cb09-4aa8-9576-03023065ecff",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3d623696-a488-4aeb-8817-bd702c911f94",
+              "name": "status",
+              "value": "duplicate",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        528,
+        -80
+      ],
+      "id": "8ebd31f9-2dd8-4b76-9428-a1f552f71516",
+      "name": "Return Duplicate"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "bca9fe04-8ebd-4290-b392-4611aa3519be",
+              "name": "status",
+              "value": "ok",
+              "type": "string"
+            },
+            {
+              "id": "0badbd79-45b4-40b5-8c2f-805c31d35c02",
+              "name": "file",
+              "value": "={{ $json.file }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1200,
+        112
+      ],
+      "id": "04c97442-12fa-4ee7-a96a-810c9ca89f1b",
+      "name": "Return OK"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6ec0e2f5-ca66-4cde-936c-1cbb8d746748",
+              "name": "workflow",
+              "value": "={{ $('When Executed by Another Workflow').item.json.workflow }}",
+              "type": "string"
+            },
+            {
+              "id": "c445cd4c-4472-4ba4-853d-ee2e44750918",
+              "name": "task",
+              "value": "={{ $('When Executed by Another Workflow').item.json.task }}",
+              "type": "string"
+            },
+            {
+              "id": "d71859d9-1b40-4468-8cf9-3234d70a7641",
+              "name": "payload",
+              "value": "={{ $('When Executed by Another Workflow').item.json.payload }}",
+              "type": "object"
+            },
+            {
+              "id": "db66e8ff-c1af-4ee5-8ff5-8d9dfb5f1c2b",
+              "name": "context_name",
+              "value": "={{ $('When Executed by Another Workflow').item.json.context_name }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        528,
+        112
+      ],
+      "id": "36ec699b-5649-41f2-8341-592607cbca7b",
+      "name": "Setup for POST"
+    }
+  ],
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "workflow": "mnemosyne",
+          "task": "ingest",
+          "payload": {
+            "raw_content_type": "file_ref",
+            "source": "email",
+            "text": "# The Hotels We're Staying At\n\nThese are the hotel stays we've booked for our big trip next month.\n\nJames Stacy\n\nPhone: 1‪(951) 805-3811\nPortfolio <http://www.hexxusweb.com/> | Github\n<https://github.com/SirHexxus> | LinkedIn\n<http://www.linkedin.com/in/james-m-stacy>\n",
+            "file_ref": "files/2026/06/709-image001.png",
+            "metadata": {
+              "from": "jamesmichaelstacy@gmail.com",
+              "subject": "The Hotels We're Staying At",
+              "message_id": "<CADwvOWghfOgbrn8rob0YO+j96kW2s0AcCmeDBsHzG6sfKpyZOw@mail.gmail.com>"
+            },
+            "bucket_hint": null
+          },
+          "context_name": "personal",
+          "_dedup_key": "dedup:email:<CAwvOWghfOgbrn8rob0YO+j96kW2s0AcCmeDBsHzG6sfKpyZOw@mail.gmail.com>",
+          "_dedup_ttl": 2592000
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Check Dedup": {
+      "main": [
+        [
+          {
+            "node": "Is Duplicate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST to inbox-receiver": {
+      "main": [
+        [
+          {
+            "node": "Mark Seen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Duplicate?": {
+      "main": [
+        [
+          {
+            "node": "Return Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Setup for POST",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Check Dedup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Seen": {
+      "main": [
+        [
+          {
+            "node": "Return OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setup for POST": {
+      "main": [
+        [
+          {
+            "node": "POST to inbox-receiver",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "1a12d7b0-3900-448c-bfe1-583519f59bc2",
+  "meta": {
+    "instanceId": "c9e69cd1bf2e801166c2a3da21d08c97e1b62941466cb59e2b9d5f95dbc43244"
+  },
+  "id": "kmLVsDKjdPTmInVL",
+  "tags": []
+}
