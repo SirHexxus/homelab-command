@@ -205,7 +205,11 @@
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate",
-    "availableInMCP": false
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "vXSYJNLnQlyeQ79i",
+    "timezone": "America/Los_Angeles",
+    "callerPolicy": "workflowsFromSameOwner"
   },
   "versionId": "48b69f26-462a-460f-897f-76627d01f148",
   "meta": {
