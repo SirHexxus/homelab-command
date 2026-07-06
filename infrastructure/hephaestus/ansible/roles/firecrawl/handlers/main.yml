@@ -1,0 +1,9 @@
+# roles/firecrawl/handlers/main.yml
+
+# `state: present` recreates any container whose compose definition or env
+# changed — docker compose handles the diff.
+- name: Reconcile firecrawl stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ firecrawl_dir }}"
+    state: present
+    remove_orphans: yes

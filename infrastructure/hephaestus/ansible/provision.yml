@@ -1,0 +1,124 @@
+# ansible/provision.yml — Hephaestus Docker Host Provisioning Playbook
+#
+# Installs Docker Engine and deploys the Firecrawl compose stack on a fresh
+# Ubuntu cloud-image VM. Run after Terraform creates the VM:
+#
+#   ansible-playbook -i inventory.ini provision.yml --ask-vault-pass
+#
+# Variables: group_vars/hephaestus.yml (non-secret) +
+#            group_vars/vault.yml (secrets — see vault.yml.example)
+---
+- name: Provision Hephaestus Docker Host
+  hosts: hephaestus
+  vars_files:
+    - group_vars/vault.yml
+
+  vars:
+    apt_cache_valid_time: 3600
+
+  pre_tasks:
+    - name: Verify Ansible version
+      ansible.builtin.assert:
+        that:
+          - ansible_version.major >= 2
+          - ansible_version.minor >= 10
+        fail_msg: "Ansible 2.10+ is required"
+      run_once: yes
+
+    - name: Display deployment information
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          Starting Hephaestus Docker Host Provisioning
+          ============================================================
+          Target Host: {{ inventory_hostname }}
+          OS:          {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Python:      {{ ansible_python_version }}
+          CPU Cores:   {{ ansible_processor_vcpus }}
+          RAM:         {{ (ansible_memtotal_mb / 1024) | round(2) }} GB
+
+          Firecrawl:
+            Install dir: {{ firecrawl_dir }}
+            API port:    {{ firecrawl_port }}
+
+          ============================================================
+
+  tasks:
+    # =========================================================================
+    # 1. SYSTEM UPDATES
+    # =========================================================================
+    - name: Update package cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: "{{ apt_cache_valid_time }}"
+      when: ansible_os_family == "Debian"
+
+    - name: Upgrade all packages to latest versions
+      ansible.builtin.apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Verify internet connectivity
+      ansible.builtin.uri:
+        url: "https://download.docker.com"
+        method: HEAD
+        status_code: [200, 301, 302, 403]
+        timeout: 30
+      changed_when: false
+
+    # =========================================================================
+    # 2. DOCKER ENGINE
+    # =========================================================================
+    - name: Install and configure Docker Engine
+      ansible.builtin.import_role:
+        name: docker_host
+
+    # =========================================================================
+    # 3. FIRECRAWL STACK
+    # =========================================================================
+    - name: Deploy Firecrawl compose stack
+      ansible.builtin.import_role:
+        name: firecrawl
+
+  post_tasks:
+    # =========================================================================
+    # 4. HEALTH CHECK
+    # =========================================================================
+    - name: Wait for Firecrawl API port
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ firecrawl_port }}"
+        timeout: 180
+
+    - name: Confirm Firecrawl API responds
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ firecrawl_port }}/"
+        method: GET
+        status_code: [200]
+        timeout: 30
+      register: firecrawl_root
+      retries: 6
+      delay: 10
+      until: firecrawl_root.status == 200
+      changed_when: false
+
+    - name: Display connection information
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          Hephaestus Provisioning Complete
+          ============================================================
+
+          Firecrawl API: http://10.0.50.30:{{ firecrawl_port }}
+
+          Quick checks:
+            ssh ubuntu@10.0.50.30 'docker compose -f {{ firecrawl_dir }}/compose.yaml ps'
+
+          Smoke test:
+            curl -X POST http://10.0.50.30:{{ firecrawl_port }}/v1/scrape \
+              -H 'Content-Type: application/json' \
+              -d '{"url": "https://example.com"}'
+
+          ============================================================

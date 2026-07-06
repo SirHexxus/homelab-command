@@ -1,0 +1,27 @@
+# roles/firecrawl/tasks/main.yml — Deploy the Firecrawl compose stack
+
+- name: Create Firecrawl directory
+  ansible.builtin.file:
+    path: "{{ firecrawl_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Deploy compose.yaml (Source of Truth from IaC)
+  ansible.builtin.copy:
+    src: compose.yaml
+    dest: "{{ firecrawl_dir }}/compose.yaml"
+    mode: "0644"
+  notify: Reconcile firecrawl stack
+
+- name: Deploy .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ firecrawl_dir }}/.env"
+    mode: "0600"
+  notify: Reconcile firecrawl stack
+
+- name: Start Firecrawl stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ firecrawl_dir }}"
+    state: present
+    pull: missing

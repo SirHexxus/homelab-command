@@ -1,0 +1,12 @@
+# group_vars/hephaestus.yml — Hephaestus Docker host variables
+#
+# Non-secret. Secrets go in vault.yml (Ansible Vault encrypted).
+
+# ── Docker daemon ───────────────────────────────────────────────────────────
+# Log rotation for all containers (json-file driver defaults).
+docker_log_max_size: "10m"
+docker_log_max_file: "3"
+
+# ── Firecrawl ───────────────────────────────────────────────────────────────
+firecrawl_dir: /opt/firecrawl
+firecrawl_port: 3002
