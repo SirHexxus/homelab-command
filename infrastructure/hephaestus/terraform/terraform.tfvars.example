@@ -1,0 +1,64 @@
+# terraform.tfvars.example - Example Configuration
+#
+# Copy this file to terraform.tfvars and fill in your values:
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# IMPORTANT: terraform.tfvars contains secrets and should NOT be committed to git.
+
+# =============================================================================
+# PROXMOX CONNECTION (Required)
+# =============================================================================
+
+# Your Proxmox API URL
+proxmox_endpoint = "https://10.0.10.2:8006/"
+
+# API token ID (format: username@pam!tokenname)
+proxmox_api_token_id = "root@pam!terraform"
+
+# API token secret (the long string shown when you created the token)
+proxmox_api_token = "your-api-token-secret-here"
+
+# Set to true if using self-signed certificates (common in home labs)
+proxmox_tls_insecure = true
+
+# Name of your Proxmox node
+proxmox_node = "puppetmaster"
+
+# SSH private key for root on the Proxmox node — the provider uploads
+# cloud-init snippets over SSH. puppetmaster only accepts id_ed25519.
+proxmox_ssh_private_key_file = "~/.ssh/id_ed25519"
+
+# =============================================================================
+# VM SETTINGS (Optional - defaults shown)
+# =============================================================================
+
+vm_hostname = "hephaestus"
+vm_vmid     = 109
+
+# Resource allocation — Docker host running Firecrawl (API + workers +
+# Playwright browsers); sized with headroom for future compose stacks.
+vm_cpu_cores  = 4
+vm_memory_mb  = 8192
+vm_balloon_mb = 4096
+vm_disk_gb    = 80
+
+# Storage pool for the VM root disk
+vm_disk_storage = "local-lvm"
+
+# =============================================================================
+# NETWORK SETTINGS (Lab Services VLAN 50)
+# =============================================================================
+
+network_bridge = "vmbr1"
+vm_ip          = "10.0.50.30/24"
+vm_gateway     = "10.0.50.1"
+vlan_tag       = 50
+
+# =============================================================================
+# SECURITY SETTINGS
+# =============================================================================
+
+vm_user             = "ubuntu"
+ssh_public_key_file = "~/.ssh/id_rsa.pub"
+
+tags = ["hephaestus", "docker"]

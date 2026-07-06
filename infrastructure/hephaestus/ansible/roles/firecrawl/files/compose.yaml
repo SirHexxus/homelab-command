@@ -1,0 +1,170 @@
+# compose.yaml — Firecrawl self-hosted stack (Source of Truth, per root CLAUDE.md)
+#
+# Vendored from upstream firecrawl/firecrawl docker-compose.yaml, adapted:
+#   - prebuilt images instead of source builds; api/worker image pinned to a
+#     release tag (playwright-service and nuq-postgres only publish :latest)
+#   - FoundationDB queue backend dropped (experimental, NUQ_BACKEND=fdb only;
+#     the default Postgres-backed queue is used instead)
+#   - restart: unless-stopped on all services
+#   - nuq-postgres given a named volume so the job queue survives reboots
+#   - resource limits scaled to the 8GB Hephaestus VM
+#
+# Runtime secrets/tuning come from .env (templated by Ansible from vault).
+
+name: firecrawl
+
+x-common-service: &common-service
+  image: ghcr.io/firecrawl/firecrawl:2.11.14
+  restart: unless-stopped
+  ulimits:
+    nofile:
+      soft: 65535
+      hard: 65535
+  networks:
+    - backend
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+      compress: "true"
+
+x-common-env: &common-env
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+  REDIS_RATE_LIMIT_URL: ${REDIS_URL:-redis://redis:6379}
+  PLAYWRIGHT_MICROSERVICE_URL: ${PLAYWRIGHT_MICROSERVICE_URL:-http://playwright-service:3000/scrape}
+  POSTGRES_USER: ${POSTGRES_USER:-postgres}
+  POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+  POSTGRES_DB: ${POSTGRES_DB:-postgres}
+  POSTGRES_HOST: ${POSTGRES_HOST:-nuq-postgres}
+  POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+  USE_DB_AUTHENTICATION: ${USE_DB_AUTHENTICATION:-false}
+  NUM_WORKERS_PER_QUEUE: ${NUM_WORKERS_PER_QUEUE:-8}
+  CRAWL_CONCURRENT_REQUESTS: ${CRAWL_CONCURRENT_REQUESTS:-10}
+  MAX_CONCURRENT_JOBS: ${MAX_CONCURRENT_JOBS:-5}
+  BROWSER_POOL_SIZE: ${BROWSER_POOL_SIZE:-5}
+  OPENAI_API_KEY: ${OPENAI_API_KEY}
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+  MODEL_NAME: ${MODEL_NAME}
+  MODEL_EMBEDDING_NAME: ${MODEL_EMBEDDING_NAME}
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+  BULL_AUTH_KEY: ${BULL_AUTH_KEY}
+  TEST_API_KEY: ${TEST_API_KEY}
+  SELF_HOSTED_WEBHOOK_URL: ${SELF_HOSTED_WEBHOOK_URL}
+  LOGGING_LEVEL: ${LOGGING_LEVEL}
+  PROXY_SERVER: ${PROXY_SERVER}
+  PROXY_USERNAME: ${PROXY_USERNAME}
+  PROXY_PASSWORD: ${PROXY_PASSWORD}
+  SEARXNG_ENDPOINT: ${SEARXNG_ENDPOINT}
+  SEARXNG_ENGINES: ${SEARXNG_ENGINES}
+  SEARXNG_CATEGORIES: ${SEARXNG_CATEGORIES}
+
+services:
+  playwright-service:
+    image: ghcr.io/firecrawl/playwright-service:latest
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      PROXY_SERVER: ${PROXY_SERVER}
+      PROXY_USERNAME: ${PROXY_USERNAME}
+      PROXY_PASSWORD: ${PROXY_PASSWORD}
+      ALLOW_LOCAL_WEBHOOKS: ${ALLOW_LOCAL_WEBHOOKS}
+      BLOCK_MEDIA: ${BLOCK_MEDIA}
+      MAX_CONCURRENT_PAGES: ${CRAWL_CONCURRENT_REQUESTS:-10}
+    networks:
+      - backend
+    cpus: 2.0
+    mem_limit: 2G
+    memswap_limit: 2G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+    tmpfs:
+      - /tmp/.cache:noexec,nosuid,size=1g
+
+  api:
+    <<: *common-service
+    environment:
+      <<: *common-env
+      HOST: "0.0.0.0"
+      PORT: ${INTERNAL_PORT:-3002}
+      EXTRACT_WORKER_PORT: ${EXTRACT_WORKER_PORT:-3004}
+      WORKER_PORT: ${WORKER_PORT:-3005}
+      NUQ_RABBITMQ_URL: amqp://rabbitmq:5672
+      HARNESS_STARTUP_TIMEOUT_MS: ${HARNESS_STARTUP_TIMEOUT_MS:-60000}
+      ENV: local
+    depends_on:
+      redis:
+        condition: service_started
+      playwright-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "${PORT:-3002}:${INTERNAL_PORT:-3002}"
+    command: node dist/src/harness.js --start-docker
+    cpus: 3.0
+    mem_limit: 5G
+    memswap_limit: 5G
+
+  redis:
+    image: redis:alpine
+    restart: unless-stopped
+    networks:
+      - backend
+    command: redis-server --bind 0.0.0.0
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+        compress: "true"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    restart: unless-stopped
+    networks:
+      - backend
+    command: rabbitmq-server
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+        compress: "true"
+
+  nuq-postgres:
+    image: ghcr.io/firecrawl/nuq-postgres:latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+    networks:
+      - backend
+    volumes:
+      - nuq-postgres-data:/var/lib/postgresql/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  nuq-postgres-data:

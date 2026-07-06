@@ -1,0 +1,16 @@
+# vault.yml.example - Secret Variables Template
+#
+# Copy this file to vault.yml and encrypt it with Ansible Vault:
+#   cp vault.yml.example vault.yml
+#   ansible-vault encrypt vault.yml
+#
+# To edit after encryption:
+#   ansible-vault edit vault.yml
+#
+# To run playbooks with vault:
+#   ansible-playbook provision.yml --ask-vault-pass
+
+# ── Firecrawl ───────────────────────────────────────────────────────────────
+# Vault convention is `vault_<service>_<credential>` per root CLAUDE.md.
+
+vault_firecrawl_bull_auth_key: ""    # Queue admin UI auth; generate: openssl rand -hex 32

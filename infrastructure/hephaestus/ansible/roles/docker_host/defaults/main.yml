@@ -1,0 +1,11 @@
+# roles/docker_host/defaults/main.yml — Docker Engine install defaults
+
+docker_log_max_size: "10m"
+docker_log_max_file: "3"
+
+docker_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin

@@ -1,0 +1,4 @@
+# roles/firecrawl/defaults/main.yml — Firecrawl stack defaults
+
+firecrawl_dir: /opt/firecrawl
+firecrawl_port: 3002

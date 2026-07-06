@@ -1,0 +1,77 @@
+# ansible/update.yml - Hephaestus Maintenance Playbook
+#
+# OS package updates + pull current compose images and reconcile the stack:
+#   ansible-playbook -i inventory.ini update.yml --ask-vault-pass
+#
+# Image version bumps are made in roles/firecrawl/files/compose.yaml
+# (Source of Truth) and applied with provision.yml or this playbook.
+---
+- name: Update Hephaestus Docker Host
+  hosts: hephaestus
+  vars_files:
+    - group_vars/vault.yml
+
+  vars:
+    apt_cache_valid_time: 3600
+
+  pre_tasks:
+    - name: Display update start message
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          Starting Hephaestus Update
+          ============================================================
+          Target: {{ inventory_hostname }}
+          Time: {{ ansible_date_time.iso8601 }}
+          ============================================================
+
+  tasks:
+    # =========================================================================
+    # 1. SYSTEM UPDATES
+    # =========================================================================
+    - name: Update package cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: "{{ apt_cache_valid_time }}"
+
+    - name: Upgrade all packages to latest versions
+      ansible.builtin.apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    # =========================================================================
+    # 2. RE-SYNC COMPOSE STACK FROM IaC
+    # =========================================================================
+    - name: Re-deploy Firecrawl stack (compose.yaml + .env from IaC)
+      ansible.builtin.import_role:
+        name: firecrawl
+
+    - name: Pull current images and reconcile stack
+      community.docker.docker_compose_v2:
+        project_src: "{{ firecrawl_dir }}"
+        state: present
+        pull: always
+        remove_orphans: yes
+
+  post_tasks:
+    # =========================================================================
+    # 3. HEALTH CHECK
+    # =========================================================================
+    - name: Wait for Firecrawl API port
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ firecrawl_port }}"
+        timeout: 180
+
+    - name: Confirm Firecrawl API responds
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ firecrawl_port }}/"
+        method: GET
+        status_code: [200]
+        timeout: 30
+      register: firecrawl_root
+      retries: 6
+      delay: 10
+      until: firecrawl_root.status == 200
+      changed_when: false
