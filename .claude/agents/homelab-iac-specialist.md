@@ -113,19 +113,19 @@ IP/VMID assignments, service state, and repo-specific conventions for homelab-co
 | redis | 10.0.50.15 | 106 | 50 | Ansible | n8n queue |
 | n8n | 10.0.50.13 | 107 | 50 | Ansible | Workflow automation |
 | minio | 10.0.50.16 | 108 | 50 | Ansible | Object storage |
+| hephaestus | 10.0.50.30 | 109 | 50 | Terraform + Ansible | Shared Docker Compose host VM; Firecrawl (:3002) |
 | hermes | 10.0.50.17 | 110 | 50 | Terraform + Ansible | Chiron/Hermes-Agent runtime |
 | npm (Ariadne) | 10.0.60.10 | 120 | 60 | Terraform (ariadne) | NGINX Proxy Manager |
 | authelia (Ariadne) | 10.0.60.11 | 121 | 60 | Terraform (ariadne) | Auth gateway |
 | umami | 10.0.50.18 | 122 | 50 | Terraform (ariadne) | Analytics |
 
-**Available VMID ranges (live-verified 2026-06-11):**
-- 109: available
+**Available VMID ranges (updated 2026-07-06 — 109 assigned to hephaestus):**
 - 111–119: available
 - 123–199: available
 - 201+: available
 
 **Available IPs per VLAN:**
-- VLAN 50: 10.0.50.23+ available (10.0.50.10–22 assigned; .20–22 reserved for Argus)
+- VLAN 50: 10.0.50.23+ available except .30 (10.0.50.10–22 assigned; .20–22 reserved for Argus; .30 = hephaestus)
 - VLAN 60: 10.0.60.12+ available (10.0.60.10–11 assigned above)
 
 ### Service IaC State Reference
@@ -142,6 +142,7 @@ IP/VMID assignments, service state, and repo-specific conventions for homelab-co
 | redis | — | ✅ Written | `infrastructure/platform/redis/` |
 | minio | — | ✅ Written | `infrastructure/platform/minio/` |
 | hermes | ✅ Written | ✅ Written | `infrastructure/hermes/` |
+| hephaestus | ✅ Written | ✅ Written | `infrastructure/hephaestus/` — Docker host VM (VMID 109); Firecrawl stack |
 | Ariadne (NPM+Authelia+Umami) | ✅ Written | ✅ Written | `infrastructure/ariadne/` |
 | TP-Link switch | — | ✅ Written | `infrastructure/network/switch/` |
 | Mnemosyne | ✅ Written | ✅ Written | `infrastructure/mnemosyne/` — inbox-receiver (VMID 103) deployed |
