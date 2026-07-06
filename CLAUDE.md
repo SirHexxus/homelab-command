@@ -31,7 +31,7 @@ cd infrastructure/platform/postgres && claude   # Postgres-focused
 | **Mnemosyne** | `infrastructure/mnemosyne/` | No dedicated host — wiki at `~/mneme/wiki/`, served by Hermes | 50 | Phase 2 — current path operational (cron + n8n); 2026-06-01 gate superseded by Chiron migration (D1/AUD-011), Phase 2T re-queued to 2026-09-01 gate |
 | **inbox-receiver** | `infrastructure/mnemosyne/inbox-receiver/` | LXC VMID 103, 10.0.50.19 | 50 | Deployed — Mnemosyne intake endpoint |
 | **Orpheus** | `infrastructure/orpheus/` | TrueNAS R710 eno4: 10.0.80.5 (13+ TrueNAS Scale apps) | 80 | Apps running; *Arr reconfiguration pending |
-| **Hephaestus** | `infrastructure/hephaestus/` *(planned)* | VM 10.0.50.30 — Docker Compose host | 50 | Planned — post-June |
+| **Hephaestus** | `infrastructure/hephaestus/` | VM VMID 109, 10.0.50.30 — Docker Compose host | 50 | Deployed — Firecrawl (:3002) |
 | **Postgres** | `infrastructure/platform/postgres/` | LXC VMID 105, 10.0.50.14 | 50 | Deployed |
 | **Redis** | `infrastructure/platform/redis/` | LXC VMID 106, 10.0.50.15 | 50 | Deployed |
 | **MinIO** | `infrastructure/platform/minio/` | LXC VMID 108, 10.0.50.16 | 50 | Deployed |
@@ -42,8 +42,8 @@ cd infrastructure/platform/postgres && claude   # Postgres-focused
 | **Switch** | `infrastructure/network/switch/` | TP-Link T1600G-28PS, 10.0.10.50 | 10 | Deployed |
 | **Proxmox** | `infrastructure/proxmox/` | Bare metal puppetmaster, 10.0.10.2 | 10 | Deployed |
 
-**Available VMIDs:** 109, 111–119, 123–199, 201+
-**Available IPs:** VLAN 50 → 10.0.50.23+ (10.0.50.20–22 reserved for Argus); VLAN 60 → 10.0.60.12+
+**Available VMIDs:** 111–119, 123–199, 201+
+**Available IPs:** VLAN 50 → 10.0.50.23+ except .30 (10.0.50.20–22 reserved for Argus; .30 = Hephaestus); VLAN 60 → 10.0.60.12+
 
 ---
 
