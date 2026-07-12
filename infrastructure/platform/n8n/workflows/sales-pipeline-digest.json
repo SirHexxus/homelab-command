@@ -1,0 +1,138 @@
+{
+  "name": "Sales Pipeline Digest (Claude)",
+  "nodes": [
+    {
+      "id": "c1000000-0000-0000-0000-000000000001",
+      "name": "Daily at Noon",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 12,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c1000000-0000-0000-0000-000000000002",
+      "name": "Get Pipeline Rows",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        220,
+        100
+      ],
+      "alwaysOutputData": true,
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "hDWNYxoRip0JcCJb",
+          "cachedResultName": "pipeline"
+        },
+        "returnAll": true,
+        "filters": {}
+      }
+    },
+    {
+      "id": "c1000000-0000-0000-0000-000000000003",
+      "name": "Build Digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        100
+      ],
+      "parameters": {
+        "jsCode": "const STAGE_ORDER = ['Prospect', 'Meeting Booked', 'Qualified', 'Proposal Sent', 'Decision Pending'];\nconst all = $input.all().map(i => i.json).filter(r => r && r.name);\nconst live = all.filter(r => r.stage && !String(r.stage).startsWith('Closed'));\n\nconst now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));\nconst todayMid = new Date(now.getFullYear(), now.getMonth(), now.getDate());\nconst staleCutoff = new Date(todayMid.getTime() - 7 * 86400000);\nconst day = d => d ? String(d).slice(0, 10) : null;\n\nlet msg = `📊 Sales Pipeline — ${todayMid.toISOString().slice(0, 10)}\\n`;\n\nif (!live.length) {\n  msg += '\\nPipeline is empty. Add prospects to the \"pipeline\" data table in n8n.';\n  return [{ json: { digest: msg } }];\n}\n\nfor (const stage of STAGE_ORDER) {\n  const rows = live.filter(r => r.stage === stage);\n  if (!rows.length) continue;\n  msg += `\\n${stage}:\\n`;\n  for (const r of rows) {\n    const who = r.company ? `${r.name} (${r.company})` : r.name;\n    const step = r.next_step ? ` — ${r.next_step}` : '';\n    const due = r.next_step_due ? ` (due ${day(r.next_step_due)})` : '';\n    msg += `• ${who}${step}${due}\\n`;\n  }\n}\n\nconst missing = live.filter(r => !r.next_step);\nif (missing.length) {\n  msg += '\\n⚠ No documented next step:\\n';\n  for (const r of missing) msg += `• ${r.name} — decide what moves this forward, today\\n`;\n}\n\nconst overdue = live.filter(r => r.next_step_due && new Date(r.next_step_due) < todayMid);\nif (overdue.length) {\n  msg += '\\n🔴 Overdue next steps:\\n';\n  for (const r of overdue) msg += `• ${r.name} — ${r.next_step || '(none)'} (was due ${day(r.next_step_due)})\\n`;\n}\n\nconst stale = live.filter(r => r.last_touch && new Date(r.last_touch) < staleCutoff);\nif (stale.length) {\n  msg += '\\n🥶 No touch in 7+ days:\\n';\n  for (const r of stale) msg += `• ${r.name} — last touch ${day(r.last_touch)}\\n`;\n}\n\nmsg += '\\n— 30 minutes. Move each prospect one step forward.';\nreturn [{ json: { digest: msg } }];\n"
+      }
+    },
+    {
+      "id": "c1000000-0000-0000-0000-000000000005",
+      "name": "Send Digest",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        660,
+        100
+      ],
+      "parameters": {
+        "chatId": "1135813646",
+        "text": "={{ $json.digest }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "jfhTkDLLipHkDAGz",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily at Noon": {
+      "main": [
+        [
+          {
+            "node": "Get Pipeline Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Pipeline Rows": {
+      "main": [
+        [
+          {
+            "node": "Build Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Digest": {
+      "main": [
+        [
+          {
+            "node": "Send Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "vXSYJNLnQlyeQ79i",
+    "timezone": "America/Los_Angeles",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "active": true,
+  "id": "i4QdhyXakoEBuojy",
+  "versionId": "6bd52f25-dccc-46ba-923b-34021d0fd74c",
+  "meta": null,
+  "tags": [
+    {
+      "id": "CGimnfcrf7NhL7yQ",
+      "name": "Claude"
+    }
+  ]
+}
