@@ -1,0 +1,105 @@
+{
+  "name": "Stripe Sale Alert Webhook (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "events": [
+          "charge.succeeded"
+        ]
+      },
+      "id": "b1000000-0000-0000-0000-000000000001",
+      "name": "Stripe Trigger",
+      "type": "n8n-nodes-base.stripeTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "db101f30-7f90-46c3-bcae-41ffcc9a9dd8",
+      "credentials": {
+        "stripeApi": {
+          "id": "QnMBXXVdnGWbd01Q",
+          "name": "Stripe account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const c = $json.data.object;\nreturn [{\n  json: {\n    amount: (c.amount / 100).toFixed(2),\n    currency: (c.currency || 'usd').toUpperCase(),\n    email: (c.billing_details && c.billing_details.email) || c.receipt_email || 'no email',\n    desc: c.description || c.calculated_statement_descriptor || 'payment',\n  }\n}];"
+      },
+      "id": "b1000000-0000-0000-0000-000000000002",
+      "name": "Format Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "1135813646",
+        "text": "=💰 Stripe payment: ${{ $json.amount }} {{ $json.currency }}\n{{ $json.desc }}\nBuyer: {{ $json.email }}",
+        "additionalFields": {}
+      },
+      "id": "b1000000-0000-0000-0000-000000000003",
+      "name": "Telegram Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        448,
+        0
+      ],
+      "webhookId": "9abe8fc1-050f-425c-997e-b01d26d4081a",
+      "credentials": {
+        "telegramApi": {
+          "id": "jfhTkDLLipHkDAGz",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Stripe Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Alert": {
+      "main": [
+        [
+          {
+            "node": "Telegram Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "vXSYJNLnQlyeQ79i",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "active": true,
+  "id": "qCohEFc4AUVikg4R",
+  "versionId": "018046ce-9f1b-4728-99d1-a9da654818c1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": [
+    {
+      "id": "CGimnfcrf7NhL7yQ",
+      "name": "Claude"
+    }
+  ]
+}
