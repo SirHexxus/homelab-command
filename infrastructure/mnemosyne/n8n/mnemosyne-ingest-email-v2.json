@@ -5,7 +5,8 @@
       "parameters": {
         "format": "resolved",
         "options": {
-          "customEmailConfig": "[\"UNSEEN\"]"
+          "customEmailConfig": "[\"UNSEEN\"]",
+          "forceReconnect": 60
         }
       },
       "type": "n8n-nodes-base.emailReadImap",
@@ -91,7 +92,8 @@
           "id": "uNKf5cc0hEqbOHyM",
           "name": "MinIO S3 credentials"
         }
-      }
+      },
+      "retryOnFail": true
     },
     {
       "parameters": {
@@ -136,7 +138,6 @@
       "name": "Call Ingest Core"
     }
   ],
-  "pinData": {},
   "connections": {
     "Email Trigger (IMAP)": {
       "main": [
@@ -201,7 +202,7 @@
       ]
     }
   },
-  "active": true,
+  "pinData": {},
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate",
@@ -211,11 +212,11 @@
     "timezone": "America/Los_Angeles",
     "callerPolicy": "workflowsFromSameOwner"
   },
-  "versionId": "48b69f26-462a-460f-897f-76627d01f148",
-  "meta": {
-    "templateCredsSetupCompleted": true,
-    "instanceId": "c9e69cd1bf2e801166c2a3da21d08c97e1b62941466cb59e2b9d5f95dbc43244"
-  },
+  "active": true,
   "id": "xEy5BtPqopAF2vPI",
+  "versionId": "81a4db86-8c18-4f2a-835c-b7432bb915f4",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
   "tags": []
 }

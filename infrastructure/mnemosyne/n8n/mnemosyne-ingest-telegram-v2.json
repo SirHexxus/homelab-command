@@ -176,6 +176,31 @@
               },
               "renameOutput": true,
               "outputKey": "photos"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "e7a91b02-4c3d-4f5e-8a6b-9c0d1e2f3a4b",
+                    "leftValue": "={{ $json.message.audio }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "object",
+                      "operation": "exists",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "audio"
             }
           ]
         },
@@ -218,7 +243,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const msg = $('Telegram Trigger').item.json;\nconst chatId = String(msg.message.chat.id);\nconst isVoice = !!msg.message.voice;\nconst isVideo = !!msg.message.video;\nconst isFile = !!(msg.message.document || msg.message.photo);\nconst caption = msg.message.caption ?? null;\nconst inputJson = $input.item.json;\n\nlet text = null;\nlet fileRef = null;\nlet rawContentType;\nlet dedupKey;\n\nif (isVoice) {\n  text = inputJson.text;\n  rawContentType = 'voice';\n} else if (isVideo) {\n  const transcript = inputJson.text ?? null;\n  text = [caption, transcript].filter(Boolean).join('\\n\\n## Transcript\\n\\n');\n  try { fileRef = $('Build Video Key').item.json._file_key; } catch(e) { fileRef = null; }\n  rawContentType = 'video';\n} else if (isFile) {\n  if (inputJson.text || inputJson.data) {\n    text = inputJson.text ?? inputJson.data;\n    rawContentType = 'file_text';\n  } else {\n    try { fileRef = $('Build File Key').item.json._file_key; } catch(e) { fileRef = null; }\n    rawContentType = 'file_ref';\n  }\n  if (caption) text = caption + (text ? '\\n\\n---\\n' + text : '');\n} else {\n  text = msg.message.text;\n  rawContentType = 'text';\n}\n\nif (text) {\n  let h = 5381;\n  for (let i = 0; i < text.length; i++) h = (((h << 5) + h) + text.charCodeAt(i)) >>> 0;\n  dedupKey = `dedup:${h.toString(16).padStart(8, '0')}`;\n} else {\n  const fileId = msg.message.video?.file_id\n    ?? msg.message.document?.file_id\n    ?? msg.message.photo?.[msg.message.photo.length - 1]?.file_id\n    ?? $execution.id;\n  dedupKey = `dedup:${fileId}`;\n}\n\nreturn [{ json: { ...msg, _text: text, _file_ref: fileRef, _chat_id: chatId, _dedup_key: dedupKey, _raw_content_type: rawContentType } }];"
+        "jsCode": "const nrm = $input.item.json;\nif (nrm._normalized) {\n  const nmsg = $('Telegram Trigger').item.json;\n  let ndk;\n  if (nrm._text) {\n    let h = 5381;\n    const t = nrm._text;\n    for (let i = 0; i < t.length; i++) h = (((h << 5) + h) + t.charCodeAt(i)) >>> 0;\n    ndk = `dedup:${h.toString(16).padStart(8, '0')}`;\n  } else {\n    ndk = `dedup:${nrm._file_ref ?? $execution.id}`;\n  }\n  return [{ json: { ...nmsg, _text: nrm._text ?? null, _file_ref: nrm._file_ref ?? null,\n    _file_refs: nrm._file_refs ?? null, _extraction_modes: nrm._extraction_modes ?? null,\n    _photo_count: nrm._photo_count ?? null, _chat_id: String(nmsg.message.chat.id),\n    _dedup_key: ndk, _raw_content_type: nrm._raw_content_type ?? 'file_ref' } }];\n}\n\nconst msg = $('Telegram Trigger').item.json;\nconst chatId = String(msg.message.chat.id);\nconst isVoice = !!msg.message.voice;\nconst isVideo = !!msg.message.video;\nconst isFile = !!(msg.message.document || msg.message.photo);\nconst caption = msg.message.caption ?? null;\nconst inputJson = $input.item.json;\n\nlet text = null;\nlet fileRef = null;\nlet rawContentType;\nlet dedupKey;\n\nif (isVoice) {\n  text = inputJson.text;\n  rawContentType = 'voice';\n} else if (isVideo) {\n  const transcript = inputJson.text ?? null;\n  text = [caption, transcript].filter(Boolean).join('\\n\\n## Transcript\\n\\n');\n  try { fileRef = $('Build Video Key').item.json._file_key; } catch(e) { fileRef = null; }\n  rawContentType = 'video';\n} else if (msg.message.audio) {\n  const transcript = inputJson.text ?? null;\n  text = [caption, transcript].filter(Boolean).join('\\n\\n## Transcript\\n\\n');\n  rawContentType = 'voice';\n} else if (isFile) {\n  if (inputJson.text || inputJson.data) {\n    text = inputJson.text ?? inputJson.data;\n    rawContentType = 'file_text';\n  } else {\n    try { fileRef = $('Build File Key').item.json._file_key; } catch(e) { fileRef = null; }\n    rawContentType = 'file_ref';\n  }\n  if (caption) text = caption + (text ? '\\n\\n---\\n' + text : '');\n} else {\n  text = msg.message.text;\n  rawContentType = 'text';\n}\n\nif (text) {\n  let h = 5381;\n  for (let i = 0; i < text.length; i++) h = (((h << 5) + h) + text.charCodeAt(i)) >>> 0;\n  dedupKey = `dedup:${h.toString(16).padStart(8, '0')}`;\n} else {\n  const fileId = msg.message.video?.file_id\n    ?? msg.message.document?.file_id\n    ?? msg.message.photo?.[msg.message.photo.length - 1]?.file_id\n    ?? $execution.id;\n  dedupKey = `dedup:${fileId}`;\n}\n\nreturn [{ json: { ...msg, _text: text, _file_ref: fileRef, _chat_id: chatId, _dedup_key: dedupKey, _raw_content_type: rawContentType } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -231,7 +256,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const prev = $('Build Dedup Hash').item.json;\nreturn [{ json: {\n  workflow: 'mnemosyne',\n  task: 'ingest',\n  payload: {\n    raw_content_type: prev._raw_content_type || 'text',\n    source: 'telegram',\n    text: prev._text,\n    file_ref: prev._file_ref,\n    metadata: { chat_id: prev._chat_id },\n    bucket_hint: null\n  },\n  context_name: 'personal',\n  _text: prev._text,\n  _chat_id: prev._chat_id,\n  _dedup_key: prev._dedup_key,\n  _dedup_ttl: 86400\n} }];"
+        "jsCode": "const prev = $('Build Dedup Hash').item.json;\nreturn [{ json: {\n  workflow: 'mnemosyne',\n  task: 'ingest',\n  payload: {\n    raw_content_type: prev._raw_content_type || 'text',\n    source: 'telegram',\n    text: prev._text,\n    file_ref: prev._file_ref,\n    metadata: Object.assign({ chat_id: prev._chat_id }, prev._file_refs ? { file_refs: prev._file_refs, extraction_modes: prev._extraction_modes ?? null, photo_count: prev._photo_count ?? null } : {}),\n    bucket_hint: null\n  },\n  context_name: 'personal',\n  _text: prev._text,\n  _chat_id: prev._chat_id,\n  _dedup_key: prev._dedup_key,\n  _dedup_ttl: 86400\n} }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -459,7 +484,8 @@
           "id": "uNKf5cc0hEqbOHyM",
           "name": "MinIO S3 credentials"
         }
-      }
+      },
+      "retryOnFail": true
     },
     {
       "parameters": {
@@ -580,7 +606,8 @@
           "id": "uNKf5cc0hEqbOHyM",
           "name": "MinIO S3 credentials"
         }
-      }
+      },
+      "retryOnFail": true
     },
     {
       "parameters": {
@@ -669,65 +696,379 @@
       ],
       "id": "6b27b12e-76fc-4c58-bf82-2e53b75e2aa7",
       "name": "Call 'Mnemosyne Ingest Core'"
-    }
-  ],
-  "pinData": {
-    "Telegram Trigger": [
-      {
-        "json": {
-          "update_id": 264203205,
-          "message": {
-            "message_id": 535,
-            "from": {
-              "id": 1135813646,
-              "is_bot": false,
-              "first_name": "James",
-              "username": "SirHexxus",
-              "language_code": "en"
-            },
-            "chat": {
-              "id": 1135813646,
-              "first_name": "James",
-              "username": "SirHexxus",
-              "type": "private"
-            },
-            "date": 1780931038,
-            "photo": [
-              {
-                "file_id": "AgACAgEAAxkBAAICF2om2d4mdlmMFFHvM2hY8V6c5e5RAAIlDGsbyS85RYZn5DSBKJoQAQADAgADcwADOwQ",
-                "file_unique_id": "AQADJQxrG8kvOUV4",
-                "file_size": 1164,
-                "width": 51,
-                "height": 90
-              },
-              {
-                "file_id": "AgACAgEAAxkBAAICF2om2d4mdlmMFFHvM2hY8V6c5e5RAAIlDGsbyS85RYZn5DSBKJoQAQADAgADbQADOwQ",
-                "file_unique_id": "AQADJQxrG8kvOUVy",
-                "file_size": 16690,
-                "width": 180,
-                "height": 320
-              },
-              {
-                "file_id": "AgACAgEAAxkBAAICF2om2d4mdlmMFFHvM2hY8V6c5e5RAAIlDGsbyS85RYZn5DSBKJoQAQADAgADeAADOwQ",
-                "file_unique_id": "AQADJQxrG8kvOUV9",
-                "file_size": 86403,
-                "width": 450,
-                "height": 800
-              },
-              {
-                "file_id": "AgACAgEAAxkBAAICF2om2d4mdlmMFFHvM2hY8V6c5e5RAAIlDGsbyS85RYZn5DSBKJoQAQADAgADeQADOwQ",
-                "file_unique_id": "AQADJQxrG8kvOUV-",
-                "file_size": 179365,
-                "width": 720,
-                "height": 1280
+    },
+    {
+      "id": "e23752108816-0000-4000-8000-463752108816",
+      "name": "Is Album?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        224,
+        1508
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f1a2b3c4-d5e6-4f70-8192-a3b4c5d6e7f8",
+              "leftValue": "={{ $json.message.media_group_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
               }
-            ],
-            "caption": "Work schedule for 6/7 - 6/13"
-          }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e22961232692-0000-4000-8000-272961232692",
+      "name": "Album Buffer Push",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        444,
+        1428
+      ],
+      "parameters": {
+        "operation": "push",
+        "list": "=album:{{ $json.message.media_group_id }}",
+        "messageData": "={{ JSON.stringify({ file_id: $json.message.photo[$json.message.photo.length - 1].file_id, caption: $json.message.caption ?? null }) }}",
+        "tail": true
+      },
+      "credentials": {
+        "redis": {
+          "id": "n6IjS0GfR9L8f7P3",
+          "name": "Redis account"
+        }
+      },
+      "retryOnFail": true
+    },
+    {
+      "id": "e23568151895-0000-4000-8000-033568151895",
+      "name": "Album Claim",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        664,
+        1428
+      ],
+      "parameters": {
+        "operation": "incr",
+        "key": "=albumclaim:{{ $json.message.media_group_id }}",
+        "expire": true,
+        "ttl": 300
+      },
+      "credentials": {
+        "redis": {
+          "id": "n6IjS0GfR9L8f7P3",
+          "name": "Redis account"
+        }
+      },
+      "retryOnFail": true
+    },
+    {
+      "id": "e21375566057-0000-4000-8000-301375566057",
+      "name": "First Claim?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        884,
+        1428
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a9b8c7d6-e5f4-4a3b-9281-706f5e4d3c2b",
+              "leftValue": "={{ Object.values($json)[0] }}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e22542271218-0000-4000-8000-842542271218",
+      "name": "Wait for Album",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1104,
+        1428
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 6,
+        "unit": "seconds"
+      },
+      "webhookId": "c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f"
+    },
+    {
+      "id": "e29871284122-0000-4000-8000-969871284122",
+      "name": "Read Album Buffer",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1324,
+        1428
+      ],
+      "parameters": {
+        "operation": "get",
+        "propertyName": "members",
+        "key": "=album:{{ $('Telegram Trigger').item.json.message.media_group_id }}",
+        "keyType": "list",
+        "options": {}
+      },
+      "credentials": {
+        "redis": {
+          "id": "n6IjS0GfR9L8f7P3",
+          "name": "Redis account"
+        }
+      },
+      "retryOnFail": true
+    },
+    {
+      "id": "e29657101411-0000-4000-8000-549657101411",
+      "name": "Prep Album",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1544,
+        1428
+      ],
+      "parameters": {
+        "jsCode": "const raw = $json.members ?? [];\nconst members = raw.map(m => { try { return JSON.parse(m); } catch (e) { return null; } }).filter(Boolean);\nconst fileIds = members.map(m => m.file_id).filter(Boolean);\nconst caption = members.map(m => m.caption).find(c => c) ?? null;\nreturn [{ json: { file_ids: fileIds, caption } }];\n"
+      }
+    },
+    {
+      "id": "e22984843292-0000-4000-8000-312984843292",
+      "name": "Delete Album Buffer",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1764,
+        1308
+      ],
+      "parameters": {
+        "operation": "delete",
+        "key": "=album:{{ $('Telegram Trigger').item.json.message.media_group_id }}"
+      },
+      "credentials": {
+        "redis": {
+          "id": "n6IjS0GfR9L8f7P3",
+          "name": "Redis account"
         }
       }
-    ]
-  },
+    },
+    {
+      "id": "e29880249285-0000-4000-8000-219880249285",
+      "name": "Prep Single Photo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        444,
+        1588
+      ],
+      "parameters": {
+        "jsCode": "const msg = $input.first().json.message;\nconst photos = msg.photo ?? [];\nconst fid = photos.length ? photos[photos.length - 1].file_id : null;\nreturn [{ json: { file_ids: fid ? [fid] : [], caption: msg.caption ?? null } }];\n"
+      }
+    },
+    {
+      "id": "e20033498722-0000-4000-8000-010033498722",
+      "name": "Split Photo IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1764,
+        1508
+      ],
+      "parameters": {
+        "jsCode": "const src = $input.first().json;\nconst ids = src.file_ids ?? [];\nreturn ids.map((id, i) => ({ json: { file_id: id, photo_index: i + 1, photo_count: ids.length, caption: src.caption ?? null } }));\n"
+      }
+    },
+    {
+      "id": "e27833304515-0000-4000-8000-407833304515",
+      "name": "Get Photo File",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1984,
+        1508
+      ],
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.file_id }}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "jfhTkDLLipHkDAGz",
+          "name": "Telegram account"
+        }
+      },
+      "retryOnFail": true
+    },
+    {
+      "id": "e27005201458-0000-4000-8000-197005201458",
+      "name": "Build Photo Key",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2204,
+        1508
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+              "name": "_file_key",
+              "value": "=files/{{ new Date().getFullYear() }}/{{ String(new Date().getMonth() + 1).padStart(2, '0') }}/{{ $execution.id }}-photo-{{ $('Split Photo IDs').item.json.photo_index }}.jpg",
+              "type": "string"
+            },
+            {
+              "id": "c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f",
+              "name": "photo_index",
+              "value": "={{ $('Split Photo IDs').item.json.photo_index }}",
+              "type": "number"
+            },
+            {
+              "id": "d3e4f5a6-b7c8-4d9e-0f1a-2b3c4d5e6f70",
+              "name": "caption",
+              "value": "={{ $('Split Photo IDs').item.json.caption }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "e26386010708-0000-4000-8000-496386010708",
+      "name": "MinIO Photo Upload",
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [
+        2424,
+        1348
+      ],
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "mnemosyne",
+        "fileName": "={{ $json._file_key }}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "s3": {
+          "id": "uNKf5cc0hEqbOHyM",
+          "name": "MinIO S3 credentials"
+        }
+      },
+      "retryOnFail": true
+    },
+    {
+      "id": "e22925216933-0000-4000-8000-462925216933",
+      "name": "Prepare OCR Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2424,
+        1508
+      ],
+      "parameters": {
+        "jsCode": "const PROMPT = \"You are processing an image sent to a personal knowledge base. If the image is primarily text (document, screenshot, sign, whiteboard, receipt, handwriting), transcribe ALL text verbatim and set mode to \\\"ocr\\\". Otherwise set mode to \\\"description\\\" and write a concise 2-4 sentence description of the image contents.\";\nconst items = $input.all();\nconst out = [];\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i];\n  let b64 = null;\n  try {\n    const buf = await this.helpers.getBinaryDataBuffer(i, 'data');\n    b64 = buf.toString('base64');\n  } catch (e) { b64 = null; }\n  const mime = item.binary?.data?.mimeType ?? 'image/jpeg';\n  const body = b64 ? {\n    contents: [{ role: 'user', parts: [\n      { text: PROMPT },\n      { inlineData: { mimeType: mime, data: b64 } },\n    ]}],\n    generationConfig: {\n      responseMimeType: 'application/json',\n      responseSchema: {\n        type: 'OBJECT',\n        properties: { mode: { type: 'STRING', enum: ['ocr', 'description'] }, text: { type: 'STRING' } },\n        required: ['mode', 'text'],\n      },\n      temperature: 0,\n    },\n  } : null;\n  out.push({ json: { ...item.json, ocr_body: body } });\n}\nreturn out;\n"
+      }
+    },
+    {
+      "id": "e28896059327-0000-4000-8000-318896059327",
+      "name": "Vertex OCR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2644,
+        1508
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-central1-aiplatform.googleapis.com/v1/projects/gen-lang-client-0234750661/locations/us-central1/publishers/google/models/gemini-2.5-flash-lite:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.ocr_body) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "Z4FVeynwn8eRoNUQ",
+          "name": "Google Service Account account"
+        }
+      },
+      "retryOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "e20058019964-0000-4000-8000-680058019964",
+      "name": "Normalize Photos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2864,
+        1508
+      ],
+      "parameters": {
+        "jsCode": "const prepped = $('Prepare OCR Payload').all().map(i => i.json);\nconst resp = $input.all().map(i => i.json);\nconst caption = prepped[0]?.caption ?? null;\nconst sections = [];\nconst fileRefs = [];\nconst modes = [];\nfor (let i = 0; i < prepped.length; i++) {\n  const key = prepped[i]._file_key ?? null;\n  if (key) fileRefs.push(key);\n  let mode = 'failed';\n  let text = null;\n  const rawText = resp[i]?.candidates?.[0]?.content?.parts?.[0]?.text;\n  if (rawText) {\n    try { const p = JSON.parse(rawText); mode = p.mode ?? 'ocr'; text = p.text ?? null; }\n    catch (e) { mode = 'ocr'; text = rawText; }\n  }\n  modes.push(mode);\n  const label = mode === 'description' ? 'Image description' : (mode === 'ocr' ? 'OCR' : 'Extraction failed');\n  const header = prepped.length > 1 ? `Photo ${i + 1} — ${label}` : label;\n  sections.push(text ? `## ${header}\\n\\n${text}` : `## ${header}\\n\\n(no text extracted)`);\n}\nconst bodyText = [caption, ...sections].filter(Boolean).join('\\n\\n');\nreturn [{ json: {\n  _normalized: true,\n  _text: bodyText || null,\n  _file_ref: fileRefs[0] ?? null,\n  _file_refs: fileRefs,\n  _extraction_modes: modes,\n  _photo_count: prepped.length,\n  _raw_content_type: fileRefs.length ? 'file_ref' : 'text',\n} }];\n"
+      }
+    },
+    {
+      "id": "e26235750640-0000-4000-8000-966235750640",
+      "name": "Get Music File",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        4,
+        1508
+      ],
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $('Telegram Trigger').item.json.message.audio.file_id }}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "jfhTkDLLipHkDAGz",
+          "name": "Telegram account"
+        }
+      },
+      "retryOnFail": true
+    }
+  ],
   "connections": {
     "Telegram Trigger": {
       "main": [
@@ -779,7 +1120,14 @@
         ],
         [
           {
-            "node": "Switch on MIME Type",
+            "node": "Is Album?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Music File",
             "type": "main",
             "index": 0
           }
@@ -977,9 +1325,248 @@
           }
         ]
       ]
+    },
+    "Is Album?": {
+      "main": [
+        [
+          {
+            "node": "Album Buffer Push",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep Single Photo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Album Buffer Push": {
+      "main": [
+        [
+          {
+            "node": "Album Claim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Album Claim": {
+      "main": [
+        [
+          {
+            "node": "First Claim?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "First Claim?": {
+      "main": [
+        [
+          {
+            "node": "Wait for Album",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Wait for Album": {
+      "main": [
+        [
+          {
+            "node": "Read Album Buffer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Album Buffer": {
+      "main": [
+        [
+          {
+            "node": "Prep Album",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Album": {
+      "main": [
+        [
+          {
+            "node": "Split Photo IDs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Delete Album Buffer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Single Photo": {
+      "main": [
+        [
+          {
+            "node": "Split Photo IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Photo IDs": {
+      "main": [
+        [
+          {
+            "node": "Get Photo File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Photo File": {
+      "main": [
+        [
+          {
+            "node": "Build Photo Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Photo Key": {
+      "main": [
+        [
+          {
+            "node": "MinIO Photo Upload",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare OCR Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare OCR Payload": {
+      "main": [
+        [
+          {
+            "node": "Vertex OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vertex OCR": {
+      "main": [
+        [
+          {
+            "node": "Normalize Photos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Photos": {
+      "main": [
+        [
+          {
+            "node": "Build Dedup Hash",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Music File": {
+      "main": [
+        [
+          {
+            "node": "Transcribe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": true,
+  "pinData": {
+    "Telegram Trigger": [
+      {
+        "json": {
+          "update_id": 264203205,
+          "message": {
+            "message_id": 535,
+            "from": {
+              "id": 1135813646,
+              "is_bot": false,
+              "first_name": "James",
+              "username": "SirHexxus",
+              "language_code": "en"
+            },
+            "chat": {
+              "id": 1135813646,
+              "first_name": "James",
+              "username": "SirHexxus",
+              "type": "private"
+            },
+            "date": 1780931038,
+            "photo": [
+              {
+                "file_id": "AgACAgEAAxkBAAICF2om2d4mdlmMFFHvM2hY8V6c5e5RAAIlDGsbyS85RYZn5DSBKJoQAQADAgADcwADOwQ",
+                "file_unique_id": "AQADJQxrG8kvOUV4",
+                "file_size": 1164,
+                "width": 51,
+                "height": 90
+              },
+              {
+                "file_id": "AgACAgEAAxkBAAICF2om2d4mdlmMFFHvM2hY8V6c5e5RAAIlDGsbyS85RYZn5DSBKJoQAQADAgADbQADOwQ",
+                "file_unique_id": "AQADJQxrG8kvOUVy",
+                "file_size": 16690,
+                "width": 180,
+                "height": 320
+              },
+              {
+                "file_id": "AgACAgEAAxkBAAICF2om2d4mdlmMFFHvM2hY8V6c5e5RAAIlDGsbyS85RYZn5DSBKJoQAQADAgADeAADOwQ",
+                "file_unique_id": "AQADJQxrG8kvOUV9",
+                "file_size": 86403,
+                "width": 450,
+                "height": 800
+              },
+              {
+                "file_id": "AgACAgEAAxkBAAICF2om2d4mdlmMFFHvM2hY8V6c5e5RAAIlDGsbyS85RYZn5DSBKJoQAQADAgADeQADOwQ",
+                "file_unique_id": "AQADJQxrG8kvOUV-",
+                "file_size": 179365,
+                "width": 720,
+                "height": 1280
+              }
+            ],
+            "caption": "Work schedule for 6/7 - 6/13"
+          }
+        }
+      }
+    ]
+  },
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate",
@@ -989,11 +1576,11 @@
     "timezone": "America/Los_Angeles",
     "callerPolicy": "workflowsFromSameOwner"
   },
-  "versionId": "7b770787-f496-422f-8c7d-33e11d535f8b",
-  "meta": {
-    "templateCredsSetupCompleted": true,
-    "instanceId": "c9e69cd1bf2e801166c2a3da21d08c97e1b62941466cb59e2b9d5f95dbc43244"
-  },
+  "active": true,
   "id": "nfMp2lj9OCDQifsu",
+  "versionId": "f316e50a-56d3-4bde-ad42-d909099bab34",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
   "tags": []
 }
