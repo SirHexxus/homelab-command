@@ -21,7 +21,8 @@
           "id": "n6IjS0GfR9L8f7P3",
           "name": "Redis account"
         }
-      }
+      },
+      "retryOnFail": true
     },
     {
       "parameters": {
@@ -63,7 +64,7 @@
         "key": "={{ $('When Executed by Another Workflow').item.json._dedup_key }}",
         "value": "1",
         "expire": true,
-        "ttl": 86400
+        "ttl": "={{ $('When Executed by Another Workflow').item.json._dedup_ttl ?? 86400 }}"
       },
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
@@ -78,7 +79,8 @@
           "id": "n6IjS0GfR9L8f7P3",
           "name": "Redis account"
         }
-      }
+      },
+      "retryOnFail": true
     },
     {
       "parameters": {
@@ -218,31 +220,6 @@
       "name": "Setup for POST"
     }
   ],
-  "pinData": {
-    "When Executed by Another Workflow": [
-      {
-        "json": {
-          "workflow": "mnemosyne",
-          "task": "ingest",
-          "payload": {
-            "raw_content_type": "file_ref",
-            "source": "email",
-            "text": "# The Hotels We're Staying At\n\nThese are the hotel stays we've booked for our big trip next month.\n\nJames Stacy\n\nPhone: 1‪(951) 805-3811\nPortfolio <http://www.hexxusweb.com/> | Github\n<https://github.com/SirHexxus> | LinkedIn\n<http://www.linkedin.com/in/james-m-stacy>\n",
-            "file_ref": "files/2026/06/709-image001.png",
-            "metadata": {
-              "from": "jamesmichaelstacy@gmail.com",
-              "subject": "The Hotels We're Staying At",
-              "message_id": "<CADwvOWghfOgbrn8rob0YO+j96kW2s0AcCmeDBsHzG6sfKpyZOw@mail.gmail.com>"
-            },
-            "bucket_hint": null
-          },
-          "context_name": "personal",
-          "_dedup_key": "dedup:email:<CAwvOWghfOgbrn8rob0YO+j96kW2s0AcCmeDBsHzG6sfKpyZOw@mail.gmail.com>",
-          "_dedup_ttl": 2592000
-        }
-      }
-    ]
-  },
   "connections": {
     "Check Dedup": {
       "main": [
@@ -318,7 +295,31 @@
       ]
     }
   },
-  "active": true,
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "workflow": "mnemosyne",
+          "task": "ingest",
+          "payload": {
+            "raw_content_type": "file_ref",
+            "source": "email",
+            "text": "# The Hotels We're Staying At\n\nThese are the hotel stays we've booked for our big trip next month.\n\nJames Stacy\n\nPhone: 1‪(951) 805-3811\nPortfolio <http://www.hexxusweb.com/> | Github\n<https://github.com/SirHexxus> | LinkedIn\n<http://www.linkedin.com/in/james-m-stacy>\n",
+            "file_ref": "files/2026/06/709-image001.png",
+            "metadata": {
+              "from": "jamesmichaelstacy@gmail.com",
+              "subject": "The Hotels We're Staying At",
+              "message_id": "<CADwvOWghfOgbrn8rob0YO+j96kW2s0AcCmeDBsHzG6sfKpyZOw@mail.gmail.com>"
+            },
+            "bucket_hint": null
+          },
+          "context_name": "personal",
+          "_dedup_key": "dedup:email:<CAwvOWghfOgbrn8rob0YO+j96kW2s0AcCmeDBsHzG6sfKpyZOw@mail.gmail.com>",
+          "_dedup_ttl": 2592000
+        }
+      }
+    ]
+  },
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate",
@@ -328,10 +329,9 @@
     "timezone": "America/Los_Angeles",
     "callerPolicy": "workflowsFromSameOwner"
   },
-  "versionId": "1a12d7b0-3900-448c-bfe1-583519f59bc2",
-  "meta": {
-    "instanceId": "c9e69cd1bf2e801166c2a3da21d08c97e1b62941466cb59e2b9d5f95dbc43244"
-  },
+  "active": true,
   "id": "kmLVsDKjdPTmInVL",
+  "versionId": "b3d58504-695a-4683-ac2b-e8d32f7864fe",
+  "meta": null,
   "tags": []
 }
