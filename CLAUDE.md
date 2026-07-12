@@ -91,6 +91,7 @@ These apply to every service in the repo. Service CLAUDE.md files do not repeat 
   - `vault_umami_app_secret`, `vault_umami_postgres_password`
   - `vault_wiki_deploy_key`
   - `vault_inbox_token`
+  - `vault_n8n_vertex_sa_json`
   - `vault_chiron_gemini_api_key`, `vault_chiron_telegram_bot_token`, `vault_chiron_vertex_sa_json`, `vault_chiron_webhook_secret`
   - `vault_git_user_name`, `vault_git_user_email` *(convention exceptions — no service segment)*
 
