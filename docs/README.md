@@ -30,6 +30,7 @@ See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all h
 | [Ariadne Design Doc](ariadne-design-doc-v1.0.md) | v1.0 | Ariadne | DMZ and perimeter - reverse proxy, authentication, VPN, outbound filtering |
 | [Hermes Design Doc](hermes-design-doc-v1.1.md) | v1.1 | Hermes | Autonomous-execution subsystem encapsulating Layers 1–4 of the Five-Layer AI Stack |
 | [Mnemosyne Design Doc](mnemosyne-design-doc-v1.1.md) | v1.1 | Mnemosyne | Personal knowledge management - git-backed wiki with AI-assisted capture |
+| [Mnemosyne Worker Migration](mnemosyne-worker-migration.md) | v1.0 | Mnemosyne | Migration plan moving pipeline cron off the laptop onto the LXC 103 worker (n8n/LXC split, LLM engine decision, cutover slices) |
 | [Orpheus Design Doc](orpheus-design-doc-v1.1.md) | v1.1 | Orpheus | Family media platform - video, photos, music, audiobooks, ebooks |
 
 ## Operational guides
