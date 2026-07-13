@@ -1,0 +1,717 @@
+{
+  "active": true,
+  "connections": {
+    "When Called": {
+      "main": [
+        [
+          {
+            "node": "Validate & Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Normalize": {
+      "main": [
+        [
+          {
+            "node": "Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route": {
+      "main": [
+        [
+          {
+            "node": "List Rows",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Insert Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Target Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Target Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Rows": {
+      "main": [
+        [
+          {
+            "node": "Format List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Row": {
+      "main": [
+        [
+          {
+            "node": "Format Insert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Target Row": {
+      "main": [
+        [
+          {
+            "node": "Guard & Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard & Merge": {
+      "main": [
+        [
+          {
+            "node": "Route Write",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Write": {
+      "main": [
+        [
+          {
+            "node": "Update Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Row": {
+      "main": [
+        [
+          {
+            "node": "Format Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Row": {
+      "main": [
+        [
+          {
+            "node": "Format Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "id": "OsgFbqf3dq3NvgAj",
+  "meta": null,
+  "name": "Pipeline Ops Engine (Claude)",
+  "nodes": [
+    {
+      "id": "a0c0eecf-2f5e-4432-8fad-3c46a8e9b7b4",
+      "name": "When Called",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "operation",
+              "type": "string"
+            },
+            {
+              "name": "id",
+              "type": "number"
+            },
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "company",
+              "type": "string"
+            },
+            {
+              "name": "stage",
+              "type": "string"
+            },
+            {
+              "name": "next_step",
+              "type": "string"
+            },
+            {
+              "name": "next_step_due",
+              "type": "string"
+            },
+            {
+              "name": "notes",
+              "type": "string"
+            },
+            {
+              "name": "outcome",
+              "type": "string"
+            },
+            {
+              "name": "include_closed",
+              "type": "boolean"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "9a413303-2380-47dc-b8e6-0280913e69cd",
+      "name": "Validate & Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const OPEN_STAGES = ['Prospect', 'Meeting Booked', 'Qualified', 'Proposal Sent', 'Decision Pending'];\nconst inp = $input.first().json;\nconst fail = (error) => [{ json: { op: 'error', error } }];\n\nconst laToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date());\nconst toIsoDate = (s) => {\n  const m = String(s).trim().match(/^(\\d{4})-(\\d{2})-(\\d{2})/);\n  if (!m) return null;\n  const iso = `${m[1]}-${m[2]}-${m[3]}`;\n  const d = new Date(`${iso}T00:00:00Z`);\n  if (isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== iso) return null;\n  return `${iso}T00:00:00.000Z`;\n};\nconst str = (v) => (v === undefined || v === null) ? '' : String(v).trim();\n\nconst op = str(inp.operation);\nif (!['list', 'add', 'update', 'touch', 'close', 'delete'].includes(op)) {\n  return fail(`Unknown operation \"${op}\".`);\n}\n\nif (op === 'list') {\n  const inc = inp.include_closed === true || inp.include_closed === 'true';\n  return [{ json: { op: 'list', include_closed: inc } }];\n}\n\nif (op === 'add') {\n  const name = str(inp.name);\n  const nextStep = str(inp.next_step);\n  const due = toIsoDate(inp.next_step_due);\n  if (!name) return fail('pipeline_add requires \"name\".');\n  if (!nextStep) return fail('pipeline_add requires \"next_step\" — never add a prospect without a documented next step.');\n  if (!due) return fail(`pipeline_add requires \"next_step_due\" as an ISO date (YYYY-MM-DD); got \"${str(inp.next_step_due)}\".`);\n  const stage = str(inp.stage) || 'Prospect';\n  if (!OPEN_STAGES.includes(stage)) {\n    return fail(`Invalid stage \"${stage}\". pipeline_add allows only: ${OPEN_STAGES.join(', ')}.`);\n  }\n  return [{ json: { op: 'add', row: {\n    name,\n    company: str(inp.company),\n    stage,\n    next_step: nextStep,\n    next_step_due: due,\n    last_touch: `${laToday}T00:00:00.000Z`,\n    notes: str(inp.notes),\n  } } }];\n}\n\nconst id = Number(inp.id);\nif (!Number.isInteger(id) || id <= 0) {\n  return fail(`\"${inp.id}\" is not a valid numeric row id. Call pipeline_list to get row ids.`);\n}\n\nif (op === 'delete') return [{ json: { op: 'delete', id } }];\n\nconst changes = {};\nif (op === 'touch') {\n  changes.last_touch = `${laToday}T00:00:00.000Z`;\n} else if (op === 'close') {\n  const outcome = str(inp.outcome);\n  if (!['Won', 'Lost'].includes(outcome)) {\n    return fail('pipeline_close requires \"outcome\" of exactly \"Won\" or \"Lost\".');\n  }\n  changes.stage = `Closed ${outcome}`;\n} else {\n  const stage = str(inp.stage);\n  if (stage) {\n    if (!OPEN_STAGES.includes(stage)) {\n      return fail(`Invalid stage \"${stage}\". pipeline_update allows only open stages (${OPEN_STAGES.join(', ')}); use pipeline_close for Closed Won/Lost.`);\n    }\n    changes.stage = stage;\n  }\n  const nextStep = str(inp.next_step);\n  if (nextStep) changes.next_step = nextStep;\n  const dueRaw = str(inp.next_step_due);\n  if (dueRaw) {\n    const due = toIsoDate(dueRaw);\n    if (!due) return fail(`\"${dueRaw}\" is not a valid ISO date (YYYY-MM-DD).`);\n    changes.next_step_due = due;\n  }\n  const notes = str(inp.notes);\n  if (notes) changes.notes = notes;\n  if (!Object.keys(changes).length) {\n    return fail('pipeline_update requires at least one of: stage, next_step, next_step_due, notes.');\n  }\n}\nreturn [{ json: { op: 'update', id, changes, verb: op } }];"
+      }
+    },
+    {
+      "id": "c88585be-405c-4bd1-9ce4-0a2fef143102",
+      "name": "Route",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "9a6b2b8b-b33c-4f4f-bc14-45acbf505636",
+                    "leftValue": "={{ $json.op }}",
+                    "rightValue": "list",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "list"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "809af934-13d3-4bc6-84df-3603ad4d8802",
+                    "leftValue": "={{ $json.op }}",
+                    "rightValue": "add",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "add"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "4d96e95c-515c-4390-9cc0-e46dea8e68df",
+                    "leftValue": "={{ $json.op }}",
+                    "rightValue": "update",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "update"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "7f176d35-702e-4d4c-b8e5-02af57dba03b",
+                    "leftValue": "={{ $json.op }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "delete"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "23b11407-63d4-4006-bb66-29619558176b",
+                    "leftValue": "={{ $json.op }}",
+                    "rightValue": "error",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "error"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "7f2d2bc3-dae7-4836-b81c-ae387984830c",
+      "name": "List Rows",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        -300
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "hDWNYxoRip0JcCJb",
+          "cachedResultName": "pipeline"
+        },
+        "returnAll": true,
+        "filters": {}
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "4e9f89d2-6d54-462b-a390-fae63ae91bb4",
+      "name": "Format List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -300
+      ],
+      "parameters": {
+        "jsCode": "const inc = $('Validate & Normalize').first().json.include_closed === true;\nconst rows = $input.all().map((i) => i.json).filter((r) => r && r.name);\nconst visible = rows.filter((r) => inc || !String(r.stage || '').startsWith('Closed'));\nconst out = visible.map((r) => ({\n  id: r.id, name: r.name, company: r.company, stage: r.stage,\n  next_step: r.next_step, next_step_due: r.next_step_due, last_touch: r.last_touch, notes: r.notes,\n}));\nreturn [{ json: { ok: true, count: out.length, rows: out } }];"
+      }
+    },
+    {
+      "id": "90d57e68-1c35-4ab5-b284-df36a26dde30",
+      "name": "Insert Row",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        -100
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "hDWNYxoRip0JcCJb",
+          "cachedResultName": "pipeline"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "name": "={{ $json.row.name }}",
+            "company": "={{ $json.row.company }}",
+            "stage": "={{ $json.row.stage }}",
+            "next_step": "={{ $json.row.next_step }}",
+            "next_step_due": "={{ $json.row.next_step_due }}",
+            "last_touch": "={{ $json.row.last_touch }}",
+            "notes": "={{ $json.row.notes }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      }
+    },
+    {
+      "id": "23514901-af8e-4053-8485-47cdf9b441df",
+      "name": "Format Insert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "const req = $('Validate & Normalize').first().json;\nconst created = $input.first().json || {};\nconst row = { ...req.row, ...(created.id !== undefined ? { id: created.id } : {}) };\nconst idNote = row.id !== undefined ? ` (row ${row.id})` : '';\nreturn [{ json: { ok: true, message: `Added prospect \"${row.name}\"${idNote} in stage ${row.stage}.`, row } }];"
+      }
+    },
+    {
+      "id": "d45d6779-ffed-43dc-aeb6-24ae24842eee",
+      "name": "Get Target Row",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        100
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "hDWNYxoRip0JcCJb",
+          "cachedResultName": "pipeline"
+        },
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "3a5fea0b-6424-475b-a743-e9a9ca2a7c14",
+      "name": "Guard & Merge",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        100
+      ],
+      "parameters": {
+        "jsCode": "const req = $('Validate & Normalize').first().json;\nconst found = $input.all().map((i) => i.json).filter((r) => r && r.id !== undefined && r.id !== null);\nif (!found.length) {\n  return [{ json: { op: 'error', error: `No pipeline row with id ${req.id}. Call pipeline_list to see current rows.` } }];\n}\nconst row = found[0];\nif (req.op === 'delete') {\n  if (row.stage !== 'Closed Lost') {\n    return [{ json: { op: 'error', error: `Row ${req.id} (\"${row.name}\") is in stage \"${row.stage}\". Deletes are limited to Closed Lost rows.` } }];\n  }\n  return [{ json: { op: 'do_delete', id: req.id, name: row.name } }];\n}\nconst merged = {\n  name: row.name,\n  company: row.company || '',\n  stage: row.stage,\n  next_step: row.next_step || '',\n  next_step_due: row.next_step_due,\n  last_touch: row.last_touch,\n  notes: row.notes || '',\n  ...req.changes,\n};\nreturn [{ json: { op: 'do_update', id: req.id, verb: req.verb, merged } }];"
+      }
+    },
+    {
+      "id": "3d646a54-0e73-424e-9f8f-db57f32e6588",
+      "name": "Route Write",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1100,
+        100
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "cf18e277-3076-43df-81d3-e392f874b467",
+                    "leftValue": "={{ $json.op }}",
+                    "rightValue": "do_update",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "do_update"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "f0a21146-bc97-4969-b111-5bcdf55fee48",
+                    "leftValue": "={{ $json.op }}",
+                    "rightValue": "do_delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "do_delete"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "6812afeb-9743-49af-a894-7bba67564edb",
+                    "leftValue": "={{ $json.op }}",
+                    "rightValue": "error",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "error"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "aee77a7d-e99d-4b17-aaa8-fcdd7c61d81a",
+      "name": "Update Row",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "hDWNYxoRip0JcCJb",
+          "cachedResultName": "pipeline"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "name": "={{ $json.merged.name }}",
+            "company": "={{ $json.merged.company }}",
+            "stage": "={{ $json.merged.stage }}",
+            "next_step": "={{ $json.merged.next_step }}",
+            "next_step_due": "={{ $json.merged.next_step_due }}",
+            "last_touch": "={{ $json.merged.last_touch }}",
+            "notes": "={{ $json.merged.notes }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      }
+    },
+    {
+      "id": "ad00dce5-a66c-4b5d-8847-d3ab45bda906",
+      "name": "Format Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const g = $('Guard & Merge').first().json;\nconst verbs = { update: 'Updated', touch: 'Touched (last_touch stamped)', close: 'Closed' };\nconst verb = verbs[g.verb] || 'Updated';\nreturn [{ json: { ok: true, message: `${verb} row ${g.id} (\"${g.merged.name}\") — stage: ${g.merged.stage}.`, row: { id: g.id, ...g.merged } } }];"
+      }
+    },
+    {
+      "id": "f4de150c-4a4a-4e97-9432-542096997b23",
+      "name": "Delete Row",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1320,
+        200
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "deleteRows",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "hDWNYxoRip0JcCJb",
+          "cachedResultName": "pipeline"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "034c6e08-bd3e-407c-bdd3-5fffeb4a9bbd",
+      "name": "Format Delete",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const g = $('Guard & Merge').first().json;\nreturn [{ json: { ok: true, message: `Deleted Closed Lost row ${g.id} (\"${g.name}\").` } }];"
+      }
+    },
+    {
+      "id": "5e80bcd0-8a43-4220-9947-c99e305753db",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        400
+      ],
+      "parameters": {
+        "jsCode": "const e = $input.first().json;\nreturn [{ json: { ok: false, error: e.error || 'Unknown error.' } }];"
+      }
+    }
+  ],
+  "pinData": null,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "vXSYJNLnQlyeQ79i",
+    "timezone": "America/Los_Angeles",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "tags": [
+    {
+      "updatedAt": "2026-07-10T18:30:03.609Z",
+      "createdAt": "2026-07-10T18:30:03.609Z",
+      "id": "CGimnfcrf7NhL7yQ",
+      "name": "Claude"
+    }
+  ],
+  "versionId": "644947d3-6b53-4b93-98a9-f0900bf1f950"
+}
