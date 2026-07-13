@@ -1,0 +1,906 @@
+{
+  "active": true,
+  "connections": {
+    "pipeline_list": {
+      "ai_tool": [
+        [
+          {
+            "node": "Pipeline MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "pipeline_add": {
+      "ai_tool": [
+        [
+          {
+            "node": "Pipeline MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "pipeline_update": {
+      "ai_tool": [
+        [
+          {
+            "node": "Pipeline MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "pipeline_touch": {
+      "ai_tool": [
+        [
+          {
+            "node": "Pipeline MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "pipeline_close": {
+      "ai_tool": [
+        [
+          {
+            "node": "Pipeline MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "pipeline_delete": {
+      "ai_tool": [
+        [
+          {
+            "node": "Pipeline MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "id": "VVgPSjTtSvvmfy0q",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "name": "Pipeline Ops (Claude)",
+  "nodes": [
+    {
+      "id": "8eb0e361-46b0-4b32-949f-6f585d416ebc",
+      "name": "Pipeline MCP Server",
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "path": "403680ed-b223-48b2-af0e-7137168403f9",
+        "authentication": "bearerAuth"
+      },
+      "webhookId": "403680ed-b223-48b2-af0e-7137168403f9",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "IqLLx4Sw6Vcq3T1E",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "id": "4b2a61cc-f238-41c6-bc45-ad44bac225af",
+      "name": "pipeline_list",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        -500,
+        260
+      ],
+      "parameters": {
+        "name": "pipeline_list",
+        "description": "List sales pipeline rows with their numeric ids. By default returns only open deals; set include_closed=true to also return Closed Won/Lost. Always call this first to get row ids before update/touch/close/delete.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "OsgFbqf3dq3NvgAj",
+          "cachedResultName": "Pipeline Ops Engine (Claude)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "operation": "list",
+            "include_closed": "={{ $fromAI('include_closed', 'Set true to also include Closed Won/Lost rows', 'boolean', false) }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "operation",
+              "displayName": "operation",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "stage",
+              "displayName": "stage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "next_step",
+              "displayName": "next_step",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "next_step_due",
+              "displayName": "next_step_due",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "outcome",
+              "displayName": "outcome",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "include_closed",
+              "displayName": "include_closed",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "boolean",
+              "removed": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "4441f980-f1a2-43f4-b18f-1616ce6008b5",
+      "name": "pipeline_add",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        -300,
+        260
+      ],
+      "parameters": {
+        "name": "pipeline_add",
+        "description": "Add a prospect to the sales pipeline. name, next_step, and next_step_due (YYYY-MM-DD) are mandatory — a live prospect must always have a documented next step. Optional: company, notes, stage (open stages only: Prospect, Meeting Booked, Qualified, Proposal Sent, Decision Pending; defaults to Prospect). last_touch is stamped to today automatically. Returns the created row including its id.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "OsgFbqf3dq3NvgAj",
+          "cachedResultName": "Pipeline Ops Engine (Claude)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "operation": "add",
+            "name": "={{ $fromAI('name', 'Prospect name (required)', 'string') }}",
+            "next_step": "={{ $fromAI('next_step', 'The one documented action that advances this prospect (required)', 'string') }}",
+            "next_step_due": "={{ $fromAI('next_step_due', 'Action deadline, ISO date YYYY-MM-DD (required)', 'string') }}",
+            "company": "={{ $fromAI('company', 'Company name, optional', 'string', \"\") }}",
+            "stage": "={{ $fromAI('stage', 'Open stage, optional, defaults to Prospect', 'string', \"\") }}",
+            "notes": "={{ $fromAI('notes', 'Freeform notes, optional', 'string', \"\") }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "operation",
+              "displayName": "operation",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "stage",
+              "displayName": "stage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "next_step",
+              "displayName": "next_step",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "next_step_due",
+              "displayName": "next_step_due",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "outcome",
+              "displayName": "outcome",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "include_closed",
+              "displayName": "include_closed",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "boolean",
+              "removed": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "f7131def-5e05-4303-9797-11ce964be8e4",
+      "name": "pipeline_update",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        -100,
+        260
+      ],
+      "parameters": {
+        "name": "pipeline_update",
+        "description": "Update an existing sales-pipeline row. Provide the numeric row id (from pipeline_list) plus at least one field to change: stage (open stages only: Prospect, Meeting Booked, Qualified, Proposal Sent, Decision Pending — use pipeline_close for Won/Lost), next_step, next_step_due (YYYY-MM-DD), notes (full replace). Returns the updated row, or {ok:false, error} explaining what was rejected.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "OsgFbqf3dq3NvgAj",
+          "cachedResultName": "Pipeline Ops Engine (Claude)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "operation": "update",
+            "id": "={{ $fromAI('id', 'Numeric row id from pipeline_list', 'number') }}",
+            "stage": "={{ $fromAI('stage', 'New open stage, optional', 'string', \"\") }}",
+            "next_step": "={{ $fromAI('next_step', 'New next step, optional', 'string', \"\") }}",
+            "next_step_due": "={{ $fromAI('next_step_due', 'New deadline, ISO date YYYY-MM-DD, optional', 'string', \"\") }}",
+            "notes": "={{ $fromAI('notes', 'Replacement notes text, optional', 'string', \"\") }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "operation",
+              "displayName": "operation",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "stage",
+              "displayName": "stage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "next_step",
+              "displayName": "next_step",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "next_step_due",
+              "displayName": "next_step_due",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "outcome",
+              "displayName": "outcome",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "include_closed",
+              "displayName": "include_closed",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "boolean",
+              "removed": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ee2ba535-3522-4740-a634-7aaa21c9be83",
+      "name": "pipeline_touch",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        100,
+        260
+      ],
+      "parameters": {
+        "name": "pipeline_touch",
+        "description": "Stamp last_touch = today (America/Los_Angeles) on a pipeline row after any real contact with the prospect. Changes nothing else. Requires the numeric row id from pipeline_list.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "OsgFbqf3dq3NvgAj",
+          "cachedResultName": "Pipeline Ops Engine (Claude)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "operation": "touch",
+            "id": "={{ $fromAI('id', 'Numeric row id from pipeline_list', 'number') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "operation",
+              "displayName": "operation",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "stage",
+              "displayName": "stage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "next_step",
+              "displayName": "next_step",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "next_step_due",
+              "displayName": "next_step_due",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "outcome",
+              "displayName": "outcome",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "include_closed",
+              "displayName": "include_closed",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "boolean",
+              "removed": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c2aeb503-42e0-4ec1-a0f2-f79cb804e6b6",
+      "name": "pipeline_close",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        300,
+        260
+      ],
+      "parameters": {
+        "name": "pipeline_close",
+        "description": "Close a deal: sets stage to Closed Won or Closed Lost. outcome must be exactly 'Won' or 'Lost'. Closed rows disappear from the daily digest; Won rows are kept for history. Requires the numeric row id from pipeline_list.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "OsgFbqf3dq3NvgAj",
+          "cachedResultName": "Pipeline Ops Engine (Claude)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "operation": "close",
+            "id": "={{ $fromAI('id', 'Numeric row id from pipeline_list', 'number') }}",
+            "outcome": "={{ $fromAI('outcome', 'Exactly Won or Lost (capitalized)', 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "operation",
+              "displayName": "operation",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "stage",
+              "displayName": "stage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "next_step",
+              "displayName": "next_step",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "next_step_due",
+              "displayName": "next_step_due",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "outcome",
+              "displayName": "outcome",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "include_closed",
+              "displayName": "include_closed",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "boolean",
+              "removed": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "9c3202e5-8ffa-49d4-9228-ccc86129de70",
+      "name": "pipeline_delete",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        500,
+        260
+      ],
+      "parameters": {
+        "name": "pipeline_delete",
+        "description": "Permanently delete a pipeline row. Only rows already in stage 'Closed Lost' can be deleted; anything else is refused. Close the deal as Lost first if appropriate.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "OsgFbqf3dq3NvgAj",
+          "cachedResultName": "Pipeline Ops Engine (Claude)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "operation": "delete",
+            "id": "={{ $fromAI('id', 'Numeric row id from pipeline_list', 'number') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "operation",
+              "displayName": "operation",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "stage",
+              "displayName": "stage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "next_step",
+              "displayName": "next_step",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "next_step_due",
+              "displayName": "next_step_due",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "outcome",
+              "displayName": "outcome",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": true
+            },
+            {
+              "id": "include_closed",
+              "displayName": "include_closed",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "boolean",
+              "removed": true
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "vXSYJNLnQlyeQ79i",
+    "timezone": "America/Los_Angeles",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "tags": [
+    {
+      "updatedAt": "2026-07-10T18:30:03.609Z",
+      "createdAt": "2026-07-10T18:30:03.609Z",
+      "id": "CGimnfcrf7NhL7yQ",
+      "name": "Claude"
+    }
+  ],
+  "versionId": "6977d831-4c2f-40d7-bbbf-2c1607255743"
+}
