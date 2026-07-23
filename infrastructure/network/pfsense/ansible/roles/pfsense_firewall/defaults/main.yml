@@ -24,3 +24,8 @@ pfsense_guest_subnet: "10.0.70.0/24"
 pfsense_alias_all_rfc1918: "10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
 pfsense_alias_rfc1918_ex_lab: ""
 pfsense_alias_management_denied: ""
+
+# RECON detonation box (VLAN 66). See tasks/recon.yml.
+recon_vm_ip: "10.0.66.10"
+recon_workstation_ip: "10.0.10.68"   # wired VLAN 10 workstation — sole allowed source
+recon_provisioning_egress: false     # flip true ONLY while provisioning; false before detonation
