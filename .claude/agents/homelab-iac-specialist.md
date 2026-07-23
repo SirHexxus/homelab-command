@@ -118,15 +118,17 @@ IP/VMID assignments, service state, and repo-specific conventions for homelab-co
 | npm (Ariadne) | 10.0.60.10 | 120 | 60 | Terraform (ariadne) | NGINX Proxy Manager |
 | authelia (Ariadne) | 10.0.60.11 | 121 | 60 | Terraform (ariadne) | Auth gateway |
 | umami | 10.0.50.18 | 122 | 50 | Terraform (ariadne) | Analytics |
+| recon | 10.0.66.10 | 6601 | 66 | Terraform + Ansible | Quarantined WordPress detonation box; VM (not LXC) by design; on_boot disabled |
 
-**Available VMID ranges (updated 2026-07-06 — 109 assigned to hephaestus):**
+**Available VMID ranges (updated 2026-07-22 — 6601 assigned to recon):**
 - 111–119: available
 - 123–199: available
-- 201+: available
+- 201+: available (except 6601 = recon)
 
 **Available IPs per VLAN:**
 - VLAN 50: 10.0.50.23+ available except .30 (10.0.50.10–22 assigned; .20–22 reserved for Argus; .30 = hephaestus)
 - VLAN 60: 10.0.60.12+ available (10.0.60.10–11 assigned above)
+- VLAN 66: 10.0.66.11+ available (10.0.66.10 = recon)
 
 ### Service IaC State Reference
 
