@@ -1,0 +1,65 @@
+# roles/recon_box/defaults/main.yml — Recon detonation box tooling defaults
+
+# Base + recon utilities from apt
+recon_apt_packages:
+  - git
+  - curl
+  - wget
+  - jq
+  - unzip
+  - rsync
+  - ripgrep
+  - dnsutils
+  - whois
+  - openssl
+  - ca-certificates
+  - python3
+  - python3-pip
+  - python3-venv
+  - ruby
+  - ruby-dev
+  - build-essential
+  - whatweb
+
+# LAMP-ish stack to run the cloned WordPress site for browser recon
+recon_web_packages:
+  - nginx
+  - mariadb-server
+  - mariadb-client
+  - php-fpm
+  - php-cli
+  - php-mysql
+  - php-curl
+  - php-gd
+  - php-xml
+  - php-mbstring
+  - php-zip
+
+# Malware / integrity scanners
+recon_scanner_packages:
+  - clamav
+  - clamav-daemon
+  - clamav-freshclam
+  - yara
+
+# Reporting (markdown audit report -> PDF)
+recon_report_packages:
+  - pandoc
+  - wkhtmltopdf
+
+# WP-CLI (phar)
+recon_wpcli_url: "https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar"
+recon_wpcli_path: /usr/local/bin/wp
+
+# Linux Malware Detect (maldet) — web-shell-tuned scanner
+recon_maldet_url: "https://www.rfxn.com/downloads/maldetect-current.tar.gz"
+
+# Playwright virtualenv (headless chromium recon)
+recon_venv_path: /opt/recon-venv
+recon_python_packages:
+  - playwright
+  - requests
+  - beautifulsoup4
+
+# Working area for the site clone (imported manually; never world-reachable)
+recon_work_dir: /srv/recon

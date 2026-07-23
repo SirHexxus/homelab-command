@@ -1,0 +1,91 @@
+# ansible/provision.yml — Recon detonation box provisioning playbook
+#
+# Installs the WordPress-review toolchain (WP-CLI, WPScan, maldet, ClamAV,
+# YARA, a Playwright venv, whatweb, and a LAMP-ish stack to run a site clone)
+# on a fresh Debian 12 cloud-image VM. Run AFTER Terraform creates the VM and
+# AFTER opening the pfSense provisioning egress window:
+#
+#   ansible-playbook -i inventory.ini provision.yml --ask-vault-pass
+#
+# Variables: group_vars/recon.yml (non-secret) + role defaults +
+#            group_vars/vault.yml (secrets — see vault.yml.example)
+---
+- name: Provision the recon detonation box
+  hosts: recon
+  vars_files:
+    - group_vars/vault.yml
+
+  vars:
+    apt_cache_valid_time: 3600
+
+  pre_tasks:
+    - name: Verify Ansible version
+      ansible.builtin.assert:
+        that:
+          - ansible_version.major >= 2
+          - ansible_version.minor >= 10
+        fail_msg: "Ansible 2.10+ is required"
+      run_once: yes
+
+    - name: Display deployment information
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          Provisioning the RECON detonation box (VLAN 66 — quarantined)
+          ============================================================
+          Target Host: {{ inventory_hostname }}
+          OS:          {{ ansible_distribution }} {{ ansible_distribution_version }}
+          CPU Cores:   {{ ansible_processor_vcpus }}
+          RAM:         {{ (ansible_memtotal_mb / 1024) | round(2) }} GB
+          ============================================================
+
+    - name: Update package cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: "{{ apt_cache_valid_time }}"
+
+    - name: Confirm provisioning egress is open (fails fast if the pfSense window is shut)
+      ansible.builtin.uri:
+        url: "https://deb.debian.org"
+        method: HEAD
+        status_code: [200, 301, 302]
+        timeout: 20
+      changed_when: false
+      register: egress_check
+      failed_when: false
+
+    - name: Fail clearly if there is no outbound path
+      ansible.builtin.fail:
+        msg: >-
+          No outbound connectivity from the recon VM. Open the provisioning egress
+          window first: from infrastructure/network/pfsense/ansible run
+          `ansible-playbook -i inventory.ini provision.yml -e recon_provisioning_egress=true
+          --tags recon --ask-vault-pass`, then re-run this playbook.
+      when: egress_check.status is not defined or egress_check.status not in [200, 301, 302]
+
+    - name: Upgrade all packages to latest versions
+      ansible.builtin.apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+  tasks:
+    - name: Install and configure the recon toolchain
+      ansible.builtin.import_role:
+        name: recon_box
+
+  post_tasks:
+    - name: Display provisioning summary
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          Recon box provisioning complete
+          ============================================================
+          Installed: WP-CLI, WPScan, maldet, ClamAV + YARA, whatweb,
+                     Playwright venv ({{ recon_venv_path }}), LAMP stack.
+          Working dir for the site clone: {{ recon_work_dir }}
+
+          BEFORE importing any site clone:
+            1. Close the pfSense egress window (recon_provisioning_egress=false).
+            2. Snapshot the VM in Proxmox ("clean-provisioned").
+          ============================================================
