@@ -1,0 +1,55 @@
+---
+# RECON (VLAN 66 detonation box) firewall exceptions.
+#
+# The recon VM (10.0.66.10) runs a clone of a compromised WordPress site. Two
+# carefully-scoped holes in the otherwise-total SANDBOX isolation:
+#
+#   1. PERMANENT: only the wired VLAN 10 workstation may reach the recon VM,
+#      SSH only. This rule is placed above management.yml's
+#      "Block MANAGEMENT -> MANAGEMENT_DENIED" (which otherwise denies
+#      MANAGEMENT -> SANDBOX), so it wins on first match. This task file is
+#      imported after management.yml and sandbox.yml, and uses after: top.
+#
+#   2. TEMPORARY: outbound web + DNS for the recon VM so it can pull packages
+#      during provisioning (apt, the WPScan gem, Playwright's Chromium). Gated
+#      by recon_provisioning_egress (default false). Set it true ONLY while
+#      provisioning; set it false and re-apply BEFORE importing any site clone.
+
+- name: "RECON | Allow workstation -> recon VM (SSH only)"
+  pfsensible.core.pfsense_rule:
+    name: "Allow workstation to RECON VM SSH"
+    action: pass
+    interface: "{{ pfsense_management_interface }}"
+    source: "{{ recon_workstation_ip }}"
+    destination: "{{ recon_vm_ip }}"
+    protocol: tcp
+    destination_port: "22"
+    after: top
+    state: present
+
+- name: "RECON | Provisioning egress — web (HTTP/HTTPS), gated"
+  pfsensible.core.pfsense_rule:
+    name: "Allow RECON provisioning egress {{ item }}"
+    action: pass
+    interface: "{{ pfsense_sandbox_interface }}"
+    source: "{{ recon_vm_ip }}"
+    destination: any
+    protocol: tcp
+    destination_port: "{{ item }}"
+    after: top
+    state: "{{ 'present' if recon_provisioning_egress | bool else 'absent' }}"
+  loop:
+    - "80"
+    - "443"
+
+- name: "RECON | Provisioning egress — DNS, gated"
+  pfsensible.core.pfsense_rule:
+    name: "Allow RECON provisioning egress DNS"
+    action: pass
+    interface: "{{ pfsense_sandbox_interface }}"
+    source: "{{ recon_vm_ip }}"
+    destination: any
+    protocol: tcp/udp
+    destination_port: "53"
+    after: top
+    state: "{{ 'present' if recon_provisioning_egress | bool else 'absent' }}"

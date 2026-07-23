@@ -27,5 +27,10 @@
 - import_tasks: sandbox.yml
   tags: [sandbox]
 
+# recon must import after management.yml and sandbox.yml: its after: top rules
+# then land above the MANAGEMENT_DENIED block and the SANDBOX block-all-outbound.
+- import_tasks: recon.yml
+  tags: [recon, sandbox]
+
 - import_tasks: guest.yml
   tags: [guest]
