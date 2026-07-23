@@ -1,0 +1,148 @@
+# roles/recon_box/tasks/main.yml — Install the WordPress-review toolchain
+#
+# Idempotent install of everything needed to review a CLONE of a compromised
+# WordPress site: WP-CLI, WPScan, maldet, ClamAV + YARA, a Playwright venv,
+# whatweb, and a LAMP-ish stack to serve the clone for browser recon.
+
+# =============================================================================
+# 1. APT PACKAGES
+# =============================================================================
+- name: Install base, web, scanner, and reporting packages
+  ansible.builtin.apt:
+    name: "{{ recon_apt_packages + recon_web_packages + recon_scanner_packages + recon_report_packages }}"
+    state: present
+    update_cache: yes
+
+# =============================================================================
+# 2. WP-CLI
+# =============================================================================
+- name: Install WP-CLI phar
+  ansible.builtin.get_url:
+    url: "{{ recon_wpcli_url }}"
+    dest: "{{ recon_wpcli_path }}"
+    mode: "0755"
+
+- name: Verify WP-CLI runs
+  ansible.builtin.command: "{{ recon_wpcli_path }} --info --allow-root"
+  changed_when: false
+
+# =============================================================================
+# 3. WPSCAN (Ruby gem)
+# =============================================================================
+- name: Install WPScan
+  ansible.builtin.command:
+    cmd: gem install wpscan --no-document
+    creates: /usr/local/bin/wpscan
+
+- name: Configure WPScan API token
+  when: recon_wpscan_api_token | length > 0
+  block:
+    - name: Ensure WPScan config dir exists
+      ansible.builtin.file:
+        path: "/home/{{ ansible_user }}/.wpscan"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0700"
+
+    - name: Write WPScan API token
+      ansible.builtin.copy:
+        dest: "/home/{{ ansible_user }}/.wpscan/scan.yml"
+        content: |
+          cli_options:
+            api_token: {{ recon_wpscan_api_token }}
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0600"
+      no_log: true
+
+# =============================================================================
+# 4. LINUX MALWARE DETECT (maldet)
+# =============================================================================
+- name: Check whether maldet is already installed
+  ansible.builtin.stat:
+    path: /usr/local/sbin/maldet
+  register: recon_maldet_bin
+
+- name: Install Linux Malware Detect
+  when: not recon_maldet_bin.stat.exists
+  block:
+    - name: Download maldet tarball
+      ansible.builtin.get_url:
+        url: "{{ recon_maldet_url }}"
+        dest: /tmp/maldetect-current.tar.gz
+        mode: "0644"
+
+    - name: Unpack maldet
+      ansible.builtin.unarchive:
+        src: /tmp/maldetect-current.tar.gz
+        dest: /tmp/
+        remote_src: yes
+
+    - name: Locate the extracted maldet directory
+      ansible.builtin.find:
+        paths: /tmp
+        patterns: "maldetect-*"
+        file_type: directory
+      register: recon_maldet_dir
+
+    - name: Run the maldet installer
+      ansible.builtin.command:
+        cmd: ./install.sh
+        chdir: "{{ (recon_maldet_dir.files | first).path }}"
+      register: recon_maldet_install
+      changed_when: "'completed' in recon_maldet_install.stdout | lower"
+
+# =============================================================================
+# 5. PLAYWRIGHT VENV (headless Chromium recon)
+# =============================================================================
+- name: Create the recon Python virtualenv
+  ansible.builtin.command:
+    cmd: python3 -m venv {{ recon_venv_path }}
+    creates: "{{ recon_venv_path }}/bin/activate"
+
+- name: Install Python recon packages into the venv
+  ansible.builtin.pip:
+    name: "{{ recon_python_packages }}"
+    virtualenv: "{{ recon_venv_path }}"
+    state: present
+
+- name: Install Playwright Chromium and its OS dependencies
+  ansible.builtin.command:
+    cmd: "{{ recon_venv_path }}/bin/playwright install --with-deps chromium"
+    creates: "{{ recon_venv_path }}/.chromium-installed"
+
+- name: Mark Playwright Chromium as installed
+  ansible.builtin.file:
+    path: "{{ recon_venv_path }}/.chromium-installed"
+    state: touch
+    mode: "0644"
+
+# =============================================================================
+# 6. SERVICES + WORKING AREA
+# =============================================================================
+- name: Enable and start MariaDB
+  ansible.builtin.systemd:
+    name: mariadb
+    enabled: yes
+    state: started
+
+- name: Enable and start nginx
+  ansible.builtin.systemd:
+    name: nginx
+    enabled: yes
+    state: started
+
+- name: Enable ClamAV signature updater (initial DB download runs in background)
+  ansible.builtin.systemd:
+    name: clamav-freshclam
+    enabled: yes
+    state: started
+
+- name: Create the recon working directory for the imported site clone
+  ansible.builtin.file:
+    path: "{{ recon_work_dir }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0750"

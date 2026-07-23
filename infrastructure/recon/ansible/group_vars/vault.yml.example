@@ -1,0 +1,11 @@
+# group_vars/vault.yml.example — Recon box secrets template
+#
+# Copy to vault.yml and encrypt with Ansible Vault:
+#   cp vault.yml.example vault.yml
+#   ansible-vault encrypt vault.yml
+#
+# vault.yml is gitignored. Follows the repo convention: vault_<service>_<credential>.
+
+# Optional: free WPScan API token (wpscan.com) for full CVE/vuln data.
+# Leave empty to run WPScan in fingerprint-only mode.
+vault_recon_wpscan_api_token: ""

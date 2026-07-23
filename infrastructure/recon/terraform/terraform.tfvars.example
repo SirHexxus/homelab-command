@@ -1,0 +1,53 @@
+# terraform.tfvars.example - Example Configuration
+#
+# Copy this file to terraform.tfvars and fill in your values:
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# IMPORTANT: terraform.tfvars contains secrets and must NOT be committed to git.
+
+# =============================================================================
+# PROXMOX CONNECTION (Required)
+# =============================================================================
+
+proxmox_endpoint     = "https://10.0.10.2:8006/"
+proxmox_api_token_id = "root@pam!terraform"
+proxmox_api_token    = "your-api-token-secret-here"
+proxmox_tls_insecure = true
+proxmox_node         = "puppetmaster"
+
+# puppetmaster only accepts id_ed25519 for root SSH (snippet uploads).
+proxmox_ssh_private_key_file = "~/.ssh/id_ed25519"
+
+# =============================================================================
+# VM SETTINGS (defaults shown)
+# =============================================================================
+
+vm_hostname = "recon"
+vm_vmid     = 6601
+
+# Sized for MariaDB + PHP-FPM + headless Chromium + ClamAV daemon concurrently.
+vm_cpu_cores  = 4
+vm_memory_mb  = 6144
+vm_balloon_mb = 4096
+vm_disk_gb    = 40
+
+vm_disk_storage = "local-lvm"
+
+# =============================================================================
+# NETWORK SETTINGS (Sandbox / quarantine VLAN 66)
+# =============================================================================
+
+network_bridge = "vmbr1"
+vm_ip          = "10.0.66.10/24"
+vm_gateway     = "10.0.66.1"
+vlan_tag       = 66
+dns_servers    = ["1.1.1.1", "8.8.8.8"]
+
+# =============================================================================
+# SECURITY SETTINGS
+# =============================================================================
+
+vm_user             = "debian"
+ssh_public_key_file = "~/.ssh/id_rsa.pub"
+
+tags = ["recon", "sandbox", "security", "quarantine"]

@@ -1,0 +1,9 @@
+# group_vars/recon.yml — Recon detonation box variables
+#
+# Non-secret. Secrets go in vault.yml (Ansible Vault encrypted).
+# Package lists and paths live in roles/recon_box/defaults/main.yml; override
+# them here if needed.
+
+# WPScan API token — bound from the vault. Leave the vault var empty to run
+# WPScan in fingerprint-only mode (no CVE enrichment).
+recon_wpscan_api_token: "{{ vault_recon_wpscan_api_token | default('') }}"
