@@ -17,9 +17,17 @@ readonly BUCKET_DIRS=(
 	ideas admin reference journal people projects pursuits
 )
 
-# Models for --enrich mode
+# Models for --enrich mode (retained for reference; the worker uses Vertex below)
 readonly HAIKU_MODEL='claude-haiku-4-5-20251001'
 readonly SONNET_MODEL='claude-sonnet-4-6'
+
+# Vertex/Gemini one-shot enrichment call (replaces the claude CLI on the worker).
+# llm-call is a sibling of this library in lib/. Prints model text to stdout;
+# returns nonzero on failure so callers fall back exactly as they did with claude.
+readonly LLM_CALL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/llm-call"
+llm_enrich() {
+	python3 "$LLM_CALL" "$1"
+}
 
 log_info() {
 	echo "[INFO] $(date '+%Y-%m-%d %H:%M:%S') $*" >&2
