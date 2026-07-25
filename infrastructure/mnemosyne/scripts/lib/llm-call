@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""llm-call — thin CLI over lib/llm_client.call_text for bash callers.
+
+Replaces `claude --model X -p "$prompt"` in the maintenance --enrich scripts
+with a Vertex/Gemini one-shot text call. Reads the user prompt from argv (or
+stdin when the prompt arg is '-'), prints the model's text to stdout, and exits
+non-zero on error so callers can fall back exactly as they did with claude.
+
+Usage:
+  llm-call "prompt text"
+  echo "prompt" | llm-call -
+  llm-call --system "system prompt" --model gemini-2.5-flash "user prompt"
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import llm_client  # noqa: E402
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Vertex text call for bash callers.")
+    ap.add_argument("prompt", help="user prompt, or '-' to read from stdin")
+    ap.add_argument(
+        "--system",
+        default="You are a precise assistant helping maintain a personal knowledge wiki. "
+        "Answer concisely and follow the instructions exactly.",
+        help="system prompt",
+    )
+    ap.add_argument("--model", default=None, help="override the model (default: creds model)")
+    args = ap.parse_args()
+
+    prompt = sys.stdin.read() if args.prompt == "-" else args.prompt
+    try:
+        resp = llm_client.call_text(
+            system_prompt=args.system, user_prompt=prompt, model=args.model
+        )
+        text = (getattr(resp, "text", "") or "").strip()
+    except Exception as exc:  # noqa: BLE001 — mirror claude CLI: any failure -> nonzero
+        print(f"llm-call error: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    if not text:
+        print("llm-call error: empty response", file=sys.stderr)
+        return 1
+    print(text)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
