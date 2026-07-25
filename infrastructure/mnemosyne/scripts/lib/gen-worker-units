@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+################################################################################
+# gen-worker-units — generate systemd timer+service pairs for the Mnemosyne
+# worker on LXC 103. Writes units to /etc/systemd/system/ and daemon-reloads,
+# but does NOT enable them — enabling happens at cutover. Idempotent.
+#
+# Every service gets OnFailure=mneme-alert@%n.service (Telegram alert).
+# enrich-stubs is intentionally excluded (deferred; risky in-place-merge port).
+################################################################################
+set -u
+set -o pipefail
+
+SCRIPTS=/opt/mnemosyne/homelab-command/infrastructure/mnemosyne/scripts
+W=/opt/inbox-receiver/wiki
+UNIT_DIR=/etc/systemd/system
+
+# name | ExecStart | OnCalendar
+JOBS=(
+	"triage|$SCRIPTS/triage-inbox --wiki-root $W|*-*-* *:00:00"
+	"embed|$SCRIPTS/embed-wiki --wiki-root $W|*-*-* 06:55:00"
+	"sweep|$SCRIPTS/maintenance/sweep-closed-tasks --apply|*-*-* 06:50:00"
+	"digest|$SCRIPTS/daily-digest --wiki-root $W|*-*-* 07:00:00"
+	"render-log|$SCRIPTS/render-log --wiki-root $W|*-*-* *:05,35:00"
+	"check-ghost-links|$SCRIPTS/maintenance/check-ghost-links|*-*-* 07:00:00"
+	"check-index|$SCRIPTS/maintenance/check-index-completeness|*-*-* 07:00:00"
+	"check-overdue|$SCRIPTS/maintenance/check-overdue-tasks|*-*-* 07:00:00"
+	"check-followups|$SCRIPTS/maintenance/check-person-followups|*-*-* 07:00:00"
+	"check-inbox-drain|$SCRIPTS/maintenance/check-inbox-drain|*-*-* 07:00:00"
+	"check-frontmatter|$SCRIPTS/maintenance/check-frontmatter-types|Sun *-*-* 08:00:00"
+	"check-drift|$SCRIPTS/maintenance/check-updated-drift|Sun *-*-* 08:00:00"
+	"check-log-coverage|$SCRIPTS/maintenance/check-log-coverage|Sun *-*-* 08:00:00"
+	"orphan-enrich|$SCRIPTS/maintenance/check-orphan-files --enrich|Sun *-*-* 09:00:00"
+	"required-enrich|$SCRIPTS/maintenance/audit-required-fields --enrich|Sun *-*-* 09:00:00"
+	"stub-enrich|$SCRIPTS/maintenance/check-stub-pages --enrich|Sun *-*-* 09:00:00"
+	"stale-enrich|$SCRIPTS/maintenance/triage-stale-projects --enrich|Sun *-*-* 09:00:00"
+)
+
+count=0
+for job in "${JOBS[@]}"; do
+	IFS='|' read -r name exec oncal <<< "$job"
+	svc="$UNIT_DIR/mneme-${name}.service"
+	tmr="$UNIT_DIR/mneme-${name}.timer"
+
+	cat > "$svc" <<UNIT
+[Unit]
+Description=Mnemosyne worker: ${name}
+OnFailure=mneme-alert@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=$SCRIPTS
+Environment=HOME=/root
+Environment=MNEME_WIKI_PATH=$W
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=${exec}
+UNIT
+
+	cat > "$tmr" <<UNIT
+[Unit]
+Description=Timer for mneme-${name}
+
+[Timer]
+OnCalendar=${oncal}
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+	count=$((count + 1))
+done
+
+systemctl daemon-reload
+echo "generated $count timer+service pairs (disabled; enable at cutover)"

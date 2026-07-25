@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+################################################################################
+# mneme-alert — OnFailure handler for Mnemosyne worker timers.
+#
+# Sends a Telegram alert naming the failed unit. Used as:
+#   OnFailure=mneme-alert@%n.service
+# on the worker's *.service units. Telegram is used instead of ntfy/Iris because
+# the worker (LXC 103, VLAN 50) cannot reach Iris on VLAN 10, but Telegram egress
+# works — and it reaches James directly while he is travelling.
+#
+# Reads TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID from the env file below.
+################################################################################
+set -u
+
+CONF="${MNEME_TELEGRAM_ENV:-/root/.config/mnemosyne/telegram.env}"
+# shellcheck disable=SC1090
+[[ -f $CONF ]] && source "$CONF"
+
+unit="${1:-unknown-unit}"
+host="$(hostname)"
+now="$(date '+%Y-%m-%d %H:%M %Z')"
+text="⚠️ Mnemosyne worker FAILURE on ${host}: ${unit} at ${now}. Inspect: journalctl -u ${unit} -n 50"
+
+if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_CHAT_ID:-}" ]]; then
+	if curl -s -m 20 "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+		--data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+		--data-urlencode "text=${text}" >/dev/null; then
+		exit 0
+	fi
+fi
+
+# Fallback: journald, so the failure is never fully silent.
+logger -t mneme-alert "$text"
+exit 0
