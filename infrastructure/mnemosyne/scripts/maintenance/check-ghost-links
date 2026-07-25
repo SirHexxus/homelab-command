@@ -63,8 +63,8 @@ For each broken link, suggest the most likely matching existing page title,
 or 'NO_MATCH' if none fits. One suggestion per line.
 Format: [[BROKEN_LINK]] -> suggested: TITLE_OR_NO_MATCH"
 
-	claude --model "$HAIKU_MODEL" -p "$prompt" 2>/dev/null \
-		|| echo '(enrichment failed — check claude CLI)'
+	llm_enrich "$prompt" 2>/dev/null \
+		|| echo '(enrichment failed — check llm-call)'
 }
 
 main() {
@@ -119,8 +119,8 @@ main() {
 	done
 
 	if [[ $enrich == true ]]; then
-		if ! command -v claude &>/dev/null; then
-			log_error "claude CLI not found; skipping enrichment"
+		if [[ ! -f "$LLM_CALL" ]]; then
+			log_error "llm-call wrapper not found; skipping enrichment"
 		else
 			log_info "Running enrichment via claude haiku..."
 			local suggestions
