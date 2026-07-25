@@ -49,3 +49,4 @@ thoughts.md
 # Python
 __pycache__/
 *.pyc
+.vault-pass
