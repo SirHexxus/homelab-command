@@ -161,8 +161,8 @@ main() {
 	fi
 
 	if [[ $enrich == true && -n $enrich_context ]]; then
-		if ! command -v claude &>/dev/null; then
-			log_error "claude CLI not found; skipping enrichment"
+		if [[ ! -f "$LLM_CALL" ]]; then
+			log_error "llm-call wrapper not found; skipping enrichment"
 		else
 			log_info "Running enrichment via claude haiku-4-5..."
 			local prompt
@@ -178,9 +178,8 @@ FILE: <relative path>
 STATUS: <1-2 sentence summary>"
 
 			local summaries
-			summaries=$(claude --model "$HAIKU_MODEL" \
-				-p "$prompt" 2>/dev/null) \
-				|| summaries='(enrichment failed — check claude CLI)'
+			summaries=$(llm_enrich "$prompt" 2>/dev/null) \
+				|| summaries='(enrichment failed — check llm-call)'
 
 			body+=$'\n## Status Summaries\n\n'
 			body+="${summaries}"$'\n'

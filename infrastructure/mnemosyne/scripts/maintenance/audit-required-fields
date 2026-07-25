@@ -133,8 +133,8 @@ main() {
 	done
 
 	if [[ $enrich == true && -n $enrich_context ]]; then
-		if ! command -v claude &>/dev/null; then
-			log_error "claude CLI not found; skipping enrichment"
+		if [[ ! -f "$LLM_CALL" ]]; then
+			log_error "llm-call wrapper not found; skipping enrichment"
 		else
 			log_info "Running enrichment via claude haiku-4-5..."
 			local prompt
@@ -153,9 +153,8 @@ Only suggest values you can reasonably infer. Skip fields where
 the content gives no useful signal."
 
 			local suggestions
-			suggestions=$(claude --model "$HAIKU_MODEL" \
-				-p "$prompt" 2>/dev/null) \
-				|| suggestions='(enrichment failed — check claude CLI)'
+			suggestions=$(llm_enrich "$prompt" 2>/dev/null) \
+				|| suggestions='(enrichment failed — check llm-call)'
 
 			body+=$'\n## Suggested Field Values\n\n'
 			body+="${suggestions}"$'\n'

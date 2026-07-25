@@ -106,8 +106,8 @@ backlink added to an existing related page.
 	done
 
 	if [[ $enrich == true ]]; then
-		if ! command -v claude &>/dev/null; then
-			log_error "claude CLI not found; skipping enrichment"
+		if [[ ! -f "$LLM_CALL" ]]; then
+			log_error "llm-call wrapper not found; skipping enrichment"
 		else
 			log_info "Running enrichment via claude sonnet-4-6..."
 			local index_sample
@@ -128,9 +128,8 @@ Format one entry per orphaned page:
 If no suitable backlinks exist: [[PAGE_TITLE]] -> no obvious backlinks"
 
 			local suggestions
-			suggestions=$(claude --model "$SONNET_MODEL" \
-				-p "$prompt" 2>/dev/null) \
-				|| suggestions='(enrichment failed — check claude CLI)'
+			suggestions=$(llm_enrich "$prompt" 2>/dev/null) \
+				|| suggestions='(enrichment failed — check llm-call)'
 
 			body+=$'\n## Suggested Backlinks\n\n'
 			body+="${suggestions}"$'\n'

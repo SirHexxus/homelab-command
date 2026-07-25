@@ -100,8 +100,8 @@ main() {
 	done
 
 	if [[ $enrich == true && -n $enrich_context ]]; then
-		if ! command -v claude &>/dev/null; then
-			log_error "claude CLI not found; skipping enrichment"
+		if [[ ! -f "$LLM_CALL" ]]; then
+			log_error "llm-call wrapper not found; skipping enrichment"
 		else
 			log_info "Running enrichment via claude haiku-4-5..."
 			local prompt
@@ -120,9 +120,8 @@ VERDICT: intentional | incomplete
 SUGGESTION: <one sentence if incomplete, 'none' if intentional>"
 
 			local assessment
-			assessment=$(claude --model "$HAIKU_MODEL" \
-				-p "$prompt" 2>/dev/null) \
-				|| assessment='(enrichment failed — check claude CLI)'
+			assessment=$(llm_enrich "$prompt" 2>/dev/null) \
+				|| assessment='(enrichment failed — check llm-call)'
 
 			body+=$'\n## Stub Assessment\n\n'
 			body+="${assessment}"$'\n'
