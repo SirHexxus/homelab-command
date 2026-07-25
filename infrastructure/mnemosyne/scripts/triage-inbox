@@ -26,6 +26,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR / "lib"))
 import raw_source  # noqa: E402
 import mneme_log  # noqa: E402
+import llm_client  # noqa: E402
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -37,6 +38,11 @@ INDEX_FILENAME = "index.md"
 HAIKU_MODEL = "claude-haiku-4-5-20251001"
 
 MANIFEST_MARKER = "===MANIFEST==="
+# Single-shot (Vertex) markers: the model returns the stub file content between
+# these instead of writing it with a tool; the wrapper writes the file. See
+# triage_file(). The manifest still follows, parsed by extract_manifest().
+STUB_START = "===STUBFILE==="
+STUB_END = "===ENDSTUB==="
 
 # Bucket -> index.md section header (title-case). Mirrors enrich-stubs so the
 # wrapper's index writes land under the same headers as the rest of the pipeline.
@@ -44,6 +50,18 @@ BUCKET_INDEX_HEADER = {
     "IDEA": "Ideas", "ADMIN": "Admin", "REFERENCE": "Reference", "JOURNAL": "Journal",
     "PERSON": "People", "PROJECT": "Projects", "PURSUIT": "Pursuits", "RAW": "Raw",
 }
+
+# Bucket -> wiki subdirectory (lowercase). The wrapper writes the stub file here.
+BUCKET_DIR = {
+    "IDEA": "ideas", "ADMIN": "admin", "REFERENCE": "reference", "JOURNAL": "journal",
+    "PERSON": "people", "PROJECT": "projects", "PURSUIT": "pursuits", "RAW": "raw-sources",
+}
+
+TRIAGE_SYSTEM_PROMPT = (
+    "You are the Mnemosyne Triage Agent, a precise inbox classifier. Follow the "
+    "user's instructions exactly and output only what is requested — the stub file "
+    "block then the manifest — with no extra commentary and no code fences."
+)
 
 EXTRACT_VIDEO = SCRIPT_DIR / "extract-video-transcript"
 EXTRACT_IMAGE = SCRIPT_DIR / "extract-image-data"
@@ -127,14 +145,18 @@ inbox item as a stub.
 2. Generate a page title following the naming conventions in the schema.
    Apply filename sanitization rules above.
 
-3. Write <bucket_dir>/<sanitized_title>.md with:
-   - Complete YAML frontmatter (all required fields for this bucket)
-   - tags: [stub]
-   - title: "natural title" ONLY if filename was sanitized; omit if unchanged
-   - One blank line after the closing ---
-   - Body: the inbox text VERBATIM, unchanged
+3. Output the COMPLETE stub page file between the two markers below, each on its own line,
+   with no code fences and no text between the opening marker and the frontmatter:
+   {stub_start}
+   ---
+   <complete YAML frontmatter: all required fields for this bucket; tags: [stub];
+    add title: "natural title" ONLY if the filename was sanitized, omit if unchanged>
+   ---
 
-4. Output the manifest. After writing the stub file, print the marker below on its OWN line,
+   <Body: the inbox text VERBATIM, unchanged>
+   {stub_end}
+
+4. Output the manifest. After the stub block, print the marker below on its OWN line,
    then ONE JSON object and nothing after it (valid JSON, no comments, no code fence):
    {marker}
    {{"bucket": "IDEA", "title": "<your chosen sanitized title, without .md>", "summary": "<one-line summary, max 120 chars>"}}
@@ -143,9 +165,10 @@ inbox item as a stub.
    - "title": the EXACT sanitized title you used for the filename (no directory, no .md).
    - "summary": a brief one-line summary (max 120 chars). Do NOT add a [STUB] prefix — the wrapper adds it.
 
-IMPORTANT: Write ONLY the new stub page file. Do NOT read, create, or modify index.md or
-log.md — the wrapper applies all index and log changes from your manifest. Do NOT commit,
-push, delete files, or run shell commands. Do NOT read any existing wiki pages or index.md.
+IMPORTANT: Output ONLY two things, in this exact order and nothing else: (1) the stub file
+block between {stub_start} and {stub_end}, then (2) the {marker} line followed by the single
+JSON object. No other prose, no code fences. The wrapper writes the file and applies all
+index and log changes from your manifest — do not attempt those yourself.
 {attached_section}"""
 
 
@@ -232,6 +255,8 @@ def build_prompt(schema: str, item: dict, attachments: list[dict] | None = None)
         bucket_hint=bucket_hint,
         text_section=text_section,
         marker=MANIFEST_MARKER,
+        stub_start=STUB_START,
+        stub_end=STUB_END,
         attached_section=attached_section,
     )
 
@@ -445,6 +470,27 @@ def extract_manifest(output: str) -> dict | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+def extract_stubfile(output: str) -> str | None:
+    """Pull the stub file content between the STUBFILE markers. None if absent.
+
+    Falls back to cutting at the manifest marker if the model omits STUB_END,
+    and strips an accidental surrounding code fence.
+    """
+    start = output.find(STUB_START)
+    if start == -1:
+        return None
+    start += len(STUB_START)
+    end = output.find(STUB_END, start)
+    if end == -1:  # model forgot the closing marker — cut at the manifest
+        end = output.find(MANIFEST_MARKER, start)
+    blob = (output[start:end] if end != -1 else output[start:]).strip("\n")
+    fence = re.match(r"^```[a-zA-Z]*\n(.*?)\n```$", blob, re.DOTALL)
+    if fence:
+        blob = fence.group(1)
+    blob = blob.strip("\n")
+    return blob or None
+
+
 def _read_index(wiki_root: Path) -> str:
     return (wiki_root / INDEX_FILENAME).read_text(encoding="utf-8")
 
@@ -553,41 +599,59 @@ def triage_file(
         return True
 
     print(f"Triaging: {inbox_file.name}", file=sys.stderr)
-    result = subprocess.run(
-        [
-            str(Path.home() / ".local" / "bin" / "claude"),
-            "--model", HAIKU_MODEL,
-            "-p", prompt,
-            "--allowedTools", "Read,Edit,Write",
-        ],
-        capture_output=True,
-        text=True,
-        cwd=str(wiki_root),
-    )
-    if result.stdout:
-        sys.stderr.write(result.stdout)
-    if result.stderr:
-        sys.stderr.write(result.stderr)
-
-    if result.returncode != 0:
+    try:
+        response = llm_client.call_text(
+            system_prompt=TRIAGE_SYSTEM_PROMPT,
+            user_prompt=prompt,
+        )
+        output = (getattr(response, "text", "") or "").strip()
+    except llm_client.LLMError as exc:
         print(
-            f"Error: claude exited {result.returncode} for {inbox_file.name}"
+            f"Error: Vertex triage call failed for {inbox_file.name}: {exc}"
             " — leaving in inbox",
             file=sys.stderr,
         )
         return False
 
-    # The agent wrote only the stub body; the wrapper owns index.md + log via the manifest.
-    manifest = extract_manifest(result.stdout or "")
-    if manifest is None:
+    manifest = extract_manifest(output)
+    stub_body = extract_stubfile(output)
+    if manifest is None or not stub_body:
         print(
-            f"Warning: no parseable manifest for {inbox_file.name} — stub created but not "
-            "indexed; check-index-completeness will flag it.",
+            f"Warning: incomplete triage output for {inbox_file.name} "
+            f"(manifest={'ok' if manifest else 'MISSING'}, "
+            f"stub={'ok' if stub_body else 'MISSING'}) — leaving in inbox",
             file=sys.stderr,
         )
-        stub_title = None
-    else:
-        stub_title = apply_triage_manifest(wiki_root, manifest, item.get("source", "unknown"))
+        return False
+
+    # Single-shot: the model returned the stub content; the wrapper writes the file
+    # and owns index.md + log via the manifest.
+    bucket = str(manifest.get("bucket", "IDEA")).upper()
+    if bucket not in BUCKET_DIR:
+        bucket = "IDEA"
+    manifest_title = (manifest.get("title") or "").strip()
+    if not manifest_title:
+        print(
+            f"Warning: triage manifest missing title for {inbox_file.name}"
+            " — leaving in inbox",
+            file=sys.stderr,
+        )
+        return False
+    stub_path = wiki_root / BUCKET_DIR[bucket] / f"{sanitize_title(manifest_title)}.md"
+    try:
+        stub_path.parent.mkdir(parents=True, exist_ok=True)
+        stub_path.write_text(
+            stub_body if stub_body.endswith("\n") else stub_body + "\n",
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        print(
+            f"Error: could not write stub {stub_path}: {exc} — leaving in inbox",
+            file=sys.stderr,
+        )
+        return False
+
+    stub_title = apply_triage_manifest(wiki_root, manifest, item.get("source", "unknown"))
 
     # Backfill linked_from: on any raw-sources we attached.
     backfill_linked_from(wiki_root, attachments, stub_title)
@@ -632,6 +696,21 @@ def main() -> None:
             sys.exit(1)
         ok = triage_file(args.file, wiki_root, schema, args.dry_run)
         sys.exit(0 if ok else 1)
+
+    # Pull latest commits so items synced by other clients (e.g. Obsidian) are
+    # visible when this runs as a periodic cron fallback without Obsidian open.
+    pull = subprocess.run(
+        ["git", "pull", "--ff-only", "--quiet"],
+        cwd=str(wiki_root),
+        capture_output=True,
+        text=True,
+    )
+    if pull.returncode != 0:
+        print(
+            f"Warning: git pull failed (exit {pull.returncode}): {pull.stderr.strip()}"
+            " — continuing with local state",
+            file=sys.stderr,
+        )
 
     inbox_dir = wiki_root / INBOX_SUBDIR
     inbox_files = sorted(inbox_dir.glob("*.json"))
