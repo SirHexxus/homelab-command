@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -60,8 +61,21 @@ STYLE_PREFIX = (
 # Pitch shift applied during OGG encode (semitones). 0 = no shift.
 PITCH_SEMITONES = 0.0
 
-TELEGRAM_SEND = Path.home() / ".local" / "bin" / "telegram-send"
 CAPTION_MAX = 1024
+
+
+def find_telegram_send() -> str | None:
+    """Locate telegram-send, or None if it is not installed.
+
+    Unlike the text digest, a voice note is a binary upload with no simple
+    urllib fallback — so when the binary is absent the caller reports it
+    instead of silently dropping the note.
+    """
+    found = shutil.which("telegram-send")
+    if found:
+        return found
+    fallback = Path.home() / ".local" / "bin" / "telegram-send"
+    return str(fallback) if fallback.is_file() else None
 
 
 def render_tts(text: str, model: str, voice: str, out_wav: Path) -> None:
@@ -179,8 +193,15 @@ def main() -> int:
                 print("render-digest-voice: dry-run complete, not sent", file=sys.stderr)
             return 0
 
+        telegram_send = find_telegram_send()
+        if telegram_send is None:
+            print("render-digest-voice: telegram-send not installed; cannot "
+                  "send voice note (install it on this host to enable)",
+                  file=sys.stderr)
+            return 1
+
         result = subprocess.run(
-            [str(TELEGRAM_SEND), "--voice", str(ogg_path), "--caption", caption],
+            [telegram_send, "--voice", str(ogg_path), "--caption", caption],
             capture_output=True,
             text=True,
         )
