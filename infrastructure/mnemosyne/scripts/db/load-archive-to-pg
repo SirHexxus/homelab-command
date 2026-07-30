@@ -13,7 +13,10 @@ import sys
 from datetime import date
 from pathlib import Path
 
-DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+from task_status import default_wiki_root  # noqa: E402
+
+DEFAULT_WIKI_ROOT = default_wiki_root()
 DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 # stream dir -> (bucket, orig bucket dir, archived_reason)
 STREAMS = {
@@ -71,7 +74,10 @@ def main() -> int:
                 fm.get("archived_reason", reason) or reason,
                 parse_date_from(path.name, fm),
                 fm.get("status"),
-                json.dumps(fm),
+                # ensure_ascii=False: the cluster is SQL_ASCII, which cannot
+                # translate \uXXXX escapes inside a JSON value. Literal UTF-8
+                # bytes are fine over the UTF-8-forced connection (mneme_pg).
+                json.dumps(fm, ensure_ascii=False),
                 body,
             ))
 
