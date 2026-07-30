@@ -35,9 +35,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import textwrap
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -52,7 +56,7 @@ import task_status  # noqa: E402
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+DEFAULT_WIKI_ROOT = task_status.default_wiki_root()
 # Per-run token usage is appended here as JSONL — one record per generation.
 # Lives outside the wiki git repo: operational telemetry, not knowledge.
 TOKEN_LOG = Path.home() / "mneme" / "logs" / "digest-tokens.jsonl"
@@ -680,10 +684,60 @@ def log_token_usage(today: date, model: str, usage_metadata) -> None:
         print(f"Warning: could not write token log: {exc}", file=sys.stderr)
 
 
+def find_telegram_send() -> str | None:
+    """Locate the telegram-send binary, or None if it is not installed.
+
+    $PATH first, then the usual per-user install dir — the worker LXC has no
+    telegram-send at all, so a hardcoded path silently broke delivery there.
+    """
+    found = shutil.which("telegram-send")
+    if found:
+        return found
+    fallback = Path.home() / ".local" / "bin" / "telegram-send"
+    return str(fallback) if fallback.is_file() else None
+
+
+def send_telegram_api(digest_text: str) -> bool:
+    """Post the digest straight to the Bot API. Returns True on success.
+
+    Fallback for hosts without telegram-send (the worker). Credentials come
+    from the same env file lib/mneme-alert reads.
+    """
+    conf = Path(os.environ.get("MNEME_TELEGRAM_ENV",
+                               "/root/.config/mnemosyne/telegram.env"))
+    creds = dict(os.environ)
+    if conf.is_file():
+        for line in conf.read_text(encoding="utf-8").splitlines():
+            line = line.strip().removeprefix("export ")
+            if line and not line.startswith("#") and "=" in line:
+                key, _, value = line.partition("=")
+                creds[key.strip()] = value.strip().strip("'\"")
+
+    token, chat_id = creds.get("TELEGRAM_BOT_TOKEN"), creds.get("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        print(f"Warning: no Telegram credentials in {conf} or environment",
+              file=sys.stderr)
+        return False
+
+    payload = urllib.parse.urlencode(
+        {"chat_id": chat_id, "text": digest_text}).encode()
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    try:
+        with urllib.request.urlopen(url, data=payload, timeout=20) as resp:
+            return 200 <= resp.status < 300
+    except (urllib.error.URLError, OSError) as exc:
+        print(f"Warning: Telegram API send failed: {exc}", file=sys.stderr)
+        return False
+
+
 def send_telegram(digest_text: str) -> bool:
-    """Send the digest via telegram-send. Returns True on success."""
+    """Send the digest via telegram-send, falling back to the Bot API."""
+    binary = find_telegram_send()
+    if binary is None:
+        return send_telegram_api(digest_text)
+
     result = subprocess.run(
-        [str(Path.home() / ".local" / "bin" / "telegram-send"), digest_text],
+        [binary, digest_text],
         capture_output=True,
         text=True,
     )
@@ -692,7 +746,7 @@ def send_telegram(digest_text: str) -> bool:
             f"Warning: telegram-send exited {result.returncode}: {result.stderr.strip()}",
             file=sys.stderr,
         )
-        return False
+        return send_telegram_api(digest_text)
     return True
 
 
@@ -769,6 +823,7 @@ def main() -> None:
     if not wiki_root.exists():
         print(f"Error: wiki root not found: {wiki_root}", file=sys.stderr)
         sys.exit(1)
+    task_status.reload_vocab(wiki_root)
 
     today = date.today()
     yesterday = today - timedelta(days=1)
