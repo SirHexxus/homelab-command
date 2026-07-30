@@ -13,6 +13,10 @@ set -o pipefail
 SCRIPTS=/opt/mnemosyne/homelab-command/infrastructure/mnemosyne/scripts
 W=/opt/inbox-receiver/wiki
 UNIT_DIR=/etc/systemd/system
+# Telegram creds for telegram-send / render-digest-voice, which read them from
+# the environment only. Leading '-' so a missing file does not fail the unit;
+# mneme-alert sources this same file directly.
+TELEGRAM_ENV=/root/.config/mnemosyne/telegram.env
 
 # name | ExecStart | OnCalendar
 JOBS=(
@@ -52,6 +56,7 @@ WorkingDirectory=$SCRIPTS
 Environment=HOME=/root
 Environment=MNEME_WIKI_PATH=$W
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-${TELEGRAM_ENV}
 ExecStart=${exec}
 UNIT
 
