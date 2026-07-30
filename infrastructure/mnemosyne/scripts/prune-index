@@ -12,7 +12,10 @@ import re
 import sys
 from pathlib import Path
 
-DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+from task_status import default_wiki_root  # noqa: E402
+
+DEFAULT_WIKI_ROOT = default_wiki_root()
 BUCKET_DIRS = ["ideas", "admin", "reference", "journal", "people",
                "projects", "pursuits", "raw-sources"]
 ENTRY_RE = re.compile(r"^- \[\[([^\]]+?)\]\]")
@@ -33,6 +36,11 @@ def main() -> int:
     args = ap.parse_args()
 
     index = args.wiki_root / "index.md"
+    if not index.is_file():
+        print(f"Error: no index.md under wiki root {args.wiki_root}\n"
+              "Set $MNEME_WIKI_PATH or pass --wiki-root.", file=sys.stderr)
+        return 1
+
     titles = active_titles(args.wiki_root)
     kept, dropped = [], []
     for line in index.read_text(encoding="utf-8").splitlines():

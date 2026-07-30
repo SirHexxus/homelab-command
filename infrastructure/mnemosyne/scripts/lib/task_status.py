@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -35,12 +36,26 @@ _FALLBACK = {
     "closed": ["Done", "Completed", "Skipped", "Closed", "Cancelled"],
 }
 
-DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
-_VOCAB_PATH = DEFAULT_WIKI_ROOT / "schema" / "statuses.json"
+def default_wiki_root() -> Path:
+    """Wiki root from $MNEME_WIKI_PATH, else ~/mneme/wiki.
+
+    Mirrors lib/raw_source.py::resolve_wiki_root, but never raises: callers use
+    this as an argparse default, so a missing root must surface at use time (or
+    via their own validation) rather than at import.
+    """
+    env_path = os.environ.get("MNEME_WIKI_PATH")
+    if env_path:
+        return Path(env_path).expanduser()
+    return Path.home() / "mneme" / "wiki"
 
 
-def _load_vocab(path: Path = _VOCAB_PATH) -> dict[str, list[str]]:
+DEFAULT_WIKI_ROOT = default_wiki_root()
+
+
+def _load_vocab(path: Path | None = None) -> dict[str, list[str]]:
     """Read the status vocabulary JSON, falling back to the embedded copy."""
+    if path is None:
+        path = default_wiki_root() / "schema" / "statuses.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -65,6 +80,22 @@ ALL_STATUSES: frozenset[str] = CLOSED_STATUSES | ACTIVE_STATUSES
 _CANONICAL: dict[str, str] = {
     s.lower(): s for s in (*_VOCAB["closed"], *_VOCAB["active"])
 }
+
+
+def reload_vocab(wiki_root: Path) -> None:
+    """Re-read the vocabulary from `wiki_root`, rebinding the module globals.
+
+    Import-time resolution honours $MNEME_WIKI_PATH, which covers the worker
+    units. Callers that accept an explicit --wiki-root must call this after
+    parsing args, otherwise a root that differs from the environment would be
+    scored against the wrong vocabulary.
+    """
+    global _VOCAB, CLOSED_STATUSES, ACTIVE_STATUSES, ALL_STATUSES, _CANONICAL
+    _VOCAB = _load_vocab(Path(wiki_root) / "schema" / "statuses.json")
+    CLOSED_STATUSES = frozenset(s.lower() for s in _VOCAB["closed"])
+    ACTIVE_STATUSES = frozenset(s.lower() for s in _VOCAB["active"])
+    ALL_STATUSES = CLOSED_STATUSES | ACTIVE_STATUSES
+    _CANONICAL = {s.lower(): s for s in (*_VOCAB["closed"], *_VOCAB["active"])}
 
 
 def is_closed(status: str) -> bool:
