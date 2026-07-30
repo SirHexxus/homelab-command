@@ -81,10 +81,17 @@ main() {
 		log_info "sweep-closed-tasks: dry-run preview (pass --apply to act)"
 	fi
 
-	run_step "archive-wiki" "$SCRIPTS_DIR/archive-wiki" "${apply_flag[@]}"
+	# Every child defaults --wiki-root to $MNEME_WIKI_PATH or ~/mneme/wiki;
+	# pass WIKI_DIR explicitly so the chain cannot target a different vault
+	# than the one wiki-common.sh resolved from this checkout.
+	local root_flag=(--wiki-root "$WIKI_DIR")
+
+	run_step "archive-wiki" "$SCRIPTS_DIR/archive-wiki" \
+		"${root_flag[@]}" "${apply_flag[@]}"
 	run_step "load-archive-to-pg" "$SCRIPTS_DIR/db/load-archive-to-pg" \
-		"${apply_flag[@]}"
-	run_step "prune-index" "$SCRIPTS_DIR/prune-index" "${apply_flag[@]}"
+		"${root_flag[@]}" "${apply_flag[@]}"
+	run_step "prune-index" "$SCRIPTS_DIR/prune-index" \
+		"${root_flag[@]}" "${apply_flag[@]}"
 
 	log_info "sweep-closed-tasks: done"
 }

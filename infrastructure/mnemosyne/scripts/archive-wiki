@@ -24,7 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 import task_status  # noqa: E402
 
-DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+DEFAULT_WIKI_ROOT = task_status.default_wiki_root()
 TODAY = date.today()
 DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 WIKILINK_RE = re.compile(r"\[\[([^\]]+?)\]\]")
@@ -171,6 +171,14 @@ def main() -> int:
     args = ap.parse_args()
 
     wiki = args.wiki_root
+    # Refuse to "find nothing" in a root that does not exist: every collector
+    # below globs, and a bad root would report a clean sweep instead of failing.
+    if not wiki.is_dir():
+        print(f"Error: wiki root does not exist: {wiki}\n"
+              "Set $MNEME_WIKI_PATH or pass --wiki-root.", file=sys.stderr)
+        return 1
+    task_status.reload_vocab(wiki)
+
     journal_cutoff = TODAY - timedelta(days=args.journal_days)
     digest_cutoff = TODAY - timedelta(days=args.digest_days)
 
