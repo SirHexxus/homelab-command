@@ -30,11 +30,12 @@ import os
 import re
 import subprocess
 import sys
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR / "lib"))
+import mneme_log  # noqa: E402
 import raw_source  # noqa: E402
 
 EXIT_OK = 0
@@ -280,10 +281,7 @@ def append_index_stub(wiki_root: Path, bucket: str, title: str, summary: str) ->
 
 
 def append_log(wiki_root: Path, bucket: str, title: str) -> None:
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    line = f"{stamp} | create | {bucket} | {title} | google_keep\n"
-    with (wiki_root / "log.md").open("a", encoding="utf-8") as fh:
-        fh.write(line)
+    mneme_log.log_event("create", bucket, title, "google_keep")
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
