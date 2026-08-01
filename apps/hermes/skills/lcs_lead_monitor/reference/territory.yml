@@ -1,0 +1,50 @@
+# Territory matrix for lcs_lead_monitor.
+#
+# Drives which opportunities get surfaced and how they are tagged. Read by the
+# agent (via SKILL.md) and available to scripts that need the hard data. Also
+# doubles as the scope sheet for which procurement portals to register on.
+#
+# Left Coast Scales core: Southern California + Arizona; bleeds into Central
+# California and southern Nevada. NV legal-for-trade registration is unconfirmed.
+
+tier_a:            # auto-surface, no territory caveat
+  description: LCS core territory
+  ca_counties:
+    - Imperial
+    - Riverside
+    - San Bernardino
+    - San Diego
+    - Orange
+    - Los Angeles
+    - Ventura
+    - Santa Barbara
+    - Kern
+  states:
+    - AZ           # all of Arizona
+
+tier_b:            # surface, tag "stretch territory"
+  description: Bleed territory — real but secondary reach
+  ca_counties:     # Central California
+    - Fresno
+    - Tulare
+    - Kings
+    - Madera
+    - Merced
+    - Stanislaus
+    - San Joaquin
+    - Sacramento
+  nv_regions:      # southern Nevada
+    - Clark        # Las Vegas, Henderson, North Las Vegas
+
+# Anything outside tier_a / tier_b is not surfaced, EXCEPT a strong equipment
+# match may be logged as out-of-territory (demand-beyond-reach signal). Never
+# delivered as a memo.
+
+nv_legal_for_trade:
+  status: unconfirmed
+  # Fires only for Nevada opportunities that are commercial / legal-for-trade:
+  # truck scales at points of sale, landfill/aggregate scales billing by weight,
+  # DOT weigh stations, or any scale used to set a price or enforce a regulation.
+  # Does NOT fire for NV non-LFT / internal-process weighing, and never for CA/AZ.
+  banner: "⚠️ VERIFY LCS NV LFT REGISTRATION"
+  bid_worthiness_ceiling: Medium   # until James confirms NV LFT registration
