@@ -37,6 +37,9 @@ JOBS=(
 	"required-enrich|$SCRIPTS/maintenance/audit-required-fields --enrich|Sun *-*-* 09:00:00"
 	"stub-enrich|$SCRIPTS/maintenance/check-stub-pages --enrich|Sun *-*-* 09:00:00"
 	"stale-enrich|$SCRIPTS/maintenance/triage-stale-projects --enrich|Sun *-*-* 09:00:00"
+	# The only unit that talks to the remote. Every other worker commits
+	# locally and lets this one publish.
+	"sync|$SCRIPTS/mneme-sync --wiki-root $W|*-*-* *:0/5:00"
 )
 
 count=0
