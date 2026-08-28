@@ -165,6 +165,28 @@ slug_to_title() {
 
 # Writes a report to reports/ and appends a line to log.md
 # Usage: write_report <slug> <date> <body>
+# wiki_git_commit <action> <summary> <path>...
+#
+# Commit this script's own changes. Only the paths given are staged — staging
+# everything would sweep up another worker's half-written files, since seven
+# units fire at 07:00:00. The lock and message format live in wiki_git.py so
+# there is one implementation, not two.
+wiki_git_commit() {
+	local action=$1
+	local summary=$2
+	shift 2
+
+	[[ $# -eq 0 ]] && return 0
+
+	# Fail-soft: a worker must never die because a commit failed. Warnings
+	# go to journald, and mneme-sync catches anything left behind.
+	python3 "${BASH_SOURCE%/*}/wiki_git.py" \
+		--wiki-root "$WIKI_DIR" \
+		--action "$action" \
+		--summary "$summary" \
+		-- "$@" || true
+}
+
 write_report() {
 	local slug=$1
 	local report_date=$2
@@ -191,4 +213,9 @@ write_report() {
 		--source maintenance-script 2>/dev/null || true
 
 	log_info "Report written: $filename"
+
+	# Every check-* script writes its report through here, so this single
+	# call gives all of them per-report commits.
+	wiki_git_commit report \
+		"$(slug_to_title "$slug") for $report_date" "$filepath"
 }
