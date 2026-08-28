@@ -27,6 +27,7 @@ sys.path.insert(0, str(SCRIPT_DIR / "lib"))
 import raw_source  # noqa: E402
 import mneme_log  # noqa: E402
 import llm_client  # noqa: E402
+import wiki_git  # noqa: E402
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -534,10 +535,15 @@ def backfill_linked_from(
     wiki_root: Path,
     attachments: list[dict],
     stub_title: str | None,
-) -> None:
-    """Backfill linked_from: <stub> in each successful raw-source file."""
+) -> list[Path]:
+    """Backfill linked_from: <stub> in each successful raw-source file.
+
+    Returns the paths actually rewritten, so the caller can stage exactly
+    what it touched.
+    """
+    touched: list[Path] = []
     if not stub_title:
-        return
+        return touched
     for att in attachments:
         rel = att.get("raw_source_path")
         if not rel:
@@ -545,11 +551,13 @@ def backfill_linked_from(
         raw_path = wiki_root / rel
         try:
             raw_source.set_linked_from(raw_path, stub_title)
+            touched.append(raw_path)
         except (FileNotFoundError, ValueError) as exc:
             print(
                 f"Warning: could not backfill linked_from on {rel}: {exc}",
                 file=sys.stderr,
             )
+    return touched
 
 
 def triage_file(
@@ -654,13 +662,22 @@ def triage_file(
     stub_title = apply_triage_manifest(wiki_root, manifest, item.get("source", "unknown"))
 
     # Backfill linked_from: on any raw-sources we attached.
-    backfill_linked_from(wiki_root, attachments, stub_title)
+    touched = backfill_linked_from(wiki_root, attachments, stub_title)
 
     try:
         inbox_file.unlink()
         print(f"Done: {inbox_file.name}", file=sys.stderr)
     except OSError as exc:
         print(f"Warning: could not delete {inbox_file.name}: {exc}", file=sys.stderr)
+
+    # Commit exactly what this item touched: the new stub, the index entry,
+    # the consumed inbox file, and any raw-sources backfilled above.
+    wiki_git.commit_wiki_changes(
+        wiki_root,
+        [stub_path, wiki_root / INDEX_FILENAME, inbox_file, *touched],
+        "triage",
+        f"filed {stub_title or manifest_title} as {bucket}",
+    )
 
     return True
 
@@ -697,21 +714,9 @@ def main() -> None:
         ok = triage_file(args.file, wiki_root, schema, args.dry_run)
         sys.exit(0 if ok else 1)
 
-    # Pull latest commits so items synced by other clients (e.g. Obsidian) are
-    # visible when this runs as a periodic cron fallback without Obsidian open.
-    pull = subprocess.run(
-        ["git", "pull", "--ff-only", "--quiet"],
-        cwd=str(wiki_root),
-        capture_output=True,
-        text=True,
-    )
-    if pull.returncode != 0:
-        print(
-            f"Warning: git pull failed (exit {pull.returncode}): {pull.stderr.strip()}"
-            " — continuing with local state",
-            file=sys.stderr,
-        )
-
+    # No pull here: mneme-sync owns the remote and rebases every 5 minutes,
+    # so items synced by other clients arrive without this script racing it.
+    # An unlocked pull here could run midway through sync's rebase.
     inbox_dir = wiki_root / INBOX_SUBDIR
     inbox_files = sorted(inbox_dir.glob("*.json"))
     if not inbox_files:
