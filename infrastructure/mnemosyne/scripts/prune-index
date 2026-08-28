@@ -14,6 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 from task_status import default_wiki_root  # noqa: E402
+import wiki_git  # noqa: E402
 
 DEFAULT_WIKI_ROOT = default_wiki_root()
 BUCKET_DIRS = ["ideas", "admin", "reference", "journal", "people",
@@ -56,6 +57,9 @@ def main() -> int:
     if args.apply:
         index.write_text("\n".join(kept) + "\n", encoding="utf-8")
         print(f"index.md rewritten: {len(kept)} lines")
+        wiki_git.commit_wiki_changes(
+            args.wiki_root, [index], "prune-index",
+            f"dropped {len(dropped)} stale entries")
     return 0
 
 
