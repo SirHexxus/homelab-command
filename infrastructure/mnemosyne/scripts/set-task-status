@@ -31,6 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 import mneme_log  # noqa: E402
 import task_status  # noqa: E402
+import wiki_git  # noqa: E402
 
 DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
 
@@ -138,6 +139,8 @@ def main() -> int:
         return 0
 
     mneme_log.log_event("update", "ADMIN", args.title, "set-task-status")
+    wiki_git.commit_wiki_changes(args.wiki_root, [path], "task",
+                                 f"{args.title}: {previous or 'none'} -> {canon}")
     print(f"{args.title}: {previous or '(none)'} -> {canon}")
     return 0
 
