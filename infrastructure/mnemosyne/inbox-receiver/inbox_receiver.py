@@ -130,7 +130,7 @@ def create_app() -> Flask:
             return jsonify({"error": "Git commit failed — item not persisted"}), 500
 
         try:
-            _git(["pull", "--rebase"])
+            _git(["pull", "--rebase", "--autostash"])
             _git(["push"])
             log.info("Committed and pushed: %s", filename)
         except RuntimeError as exc:
