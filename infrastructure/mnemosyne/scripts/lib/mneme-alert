@@ -19,7 +19,13 @@ CONF="${MNEME_TELEGRAM_ENV:-/root/.config/mnemosyne/telegram.env}"
 unit="${1:-unknown-unit}"
 host="$(hostname)"
 now="$(date '+%Y-%m-%d %H:%M %Z')"
-text="⚠️ Mnemosyne worker FAILURE on ${host}: ${unit} at ${now}. Inspect: journalctl -u ${unit} -n 50"
+# Callers that are not OnFailure handlers (e.g. mneme-sync reporting orphaned
+# changes) supply their own wording via MNEME_ALERT_TEXT.
+if [[ -n ${MNEME_ALERT_TEXT:-} ]]; then
+	text="${MNEME_ALERT_TEXT} (${host}, ${now})"
+else
+	text="⚠️ Mnemosyne worker FAILURE on ${host}: ${unit} at ${now}. Inspect: journalctl -u ${unit} -n 50"
+fi
 
 if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_CHAT_ID:-}" ]]; then
 	if curl -s -m 20 "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
