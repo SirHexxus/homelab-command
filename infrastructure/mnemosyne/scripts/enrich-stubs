@@ -35,6 +35,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 import embeddings  # noqa: E402
 import mneme_log  # noqa: E402
+import wiki_git  # noqa: E402
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -414,6 +415,10 @@ def enrich_stub(
         print(f"[dry-run] Would enrich: {title}")
         return "ok"
 
+    # The claude subprocess below rewrites pages we cannot name in advance,
+    # so snapshot the tree and commit only what this run actually changed.
+    before = wiki_git.dirty_paths(wiki_root)
+
     candidates = merge_candidates(wiki_root, title, stub_titles)
     if candidates is None:
         print(f"  (sidecar unavailable — falling back to full catalog for '{title}')",
@@ -458,6 +463,11 @@ def enrich_stub(
     except OSError as exc:
         print(f"Error applying manifest for '{title}': {exc}", file=sys.stderr)
         return "fail"
+
+    changed = [wiki_root / p for p in sorted(wiki_git.dirty_paths(wiki_root) - before)]
+    if changed:
+        wiki_git.commit_wiki_changes(wiki_root, changed, "enrich",
+                                     f"enriched {title}")
 
     print(f"Done: {title}", file=sys.stderr)
     return "ok"
