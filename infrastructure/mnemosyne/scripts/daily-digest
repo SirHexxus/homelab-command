@@ -52,6 +52,7 @@ from gcal import fetch_calendar  # noqa: E402
 from weather import fetch_weather  # noqa: E402
 import mneme_log  # noqa: E402
 import task_status  # noqa: E402
+import wiki_git  # noqa: E402
 
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -928,6 +929,10 @@ def main() -> None:
     report_path = write_report(wiki_root, today, digest_text)
     append_log(wiki_root, today)
     print(f"Report written: {report_path}", file=sys.stderr)
+    # Commit before delivery: the digest is written even if Telegram or the
+    # voice render fails below, so it must not depend on those succeeding.
+    wiki_git.commit_wiki_changes(wiki_root, [report_path],
+                                 "digest", f"daily digest for {today.isoformat()}")
 
     if args.no_send:
         print("Skipping Telegram delivery (--no-send).", file=sys.stderr)
