@@ -37,6 +37,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR / "lib"))
 import mneme_log  # noqa: E402
 import raw_source  # noqa: E402
+import wiki_git  # noqa: E402
 
 EXIT_OK = 0
 EXIT_USAGE = 1
@@ -317,6 +318,7 @@ def main() -> int:
     print(f"Found {len(staged)} staged item(s); batch size {args.batch}.", file=sys.stderr)
 
     written = errors = batches = 0
+    touched: list[Path] = []
     for start in range(0, len(staged), args.batch):
         if args.max_batches and batches >= args.max_batches:
             break
@@ -353,15 +355,21 @@ def main() -> int:
             if not res:
                 errors += 1
                 continue
-            _, title = res
+            rel, title = res
             append_index_stub(wiki_root, bucket, title, summary)
             append_log(wiki_root, bucket, title)
             done_dir.mkdir(parents=True, exist_ok=True)
             path.rename(done_dir / path.name)
+            touched.extend([wiki_root / rel, path, done_dir / path.name])
             written += 1
 
     print(f"\nDone. Stubs written: {written}, batches: {batches}, errors: {errors}",
           file=sys.stderr)
+    # One commit for the batch import rather than hundreds of per-note commits.
+    if touched:
+        wiki_git.commit_wiki_changes(
+            wiki_root, [*touched, wiki_root / "index.md"],
+            "keep-import", f"imported {written} Google Keep notes")
     return EXIT_PARTIAL if errors else EXIT_OK
 
 
