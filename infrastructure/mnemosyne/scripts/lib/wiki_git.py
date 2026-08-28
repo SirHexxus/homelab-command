@@ -58,6 +58,24 @@ def _relative(wiki_root: Path, path: Path) -> str:
         return str(path)
 
 
+def dirty_paths(wiki_root: Path) -> set[str]:
+    """Paths git currently reports as changed, relative to the repo root.
+
+    For callers that delegate edits to a subprocess (enrich-stubs drives an
+    LLM that rewrites pages) and so cannot name their paths in advance:
+    snapshot before, snapshot after, and commit the difference.
+    """
+    listed = _git(wiki_root, ["status", "--porcelain", "-z"])
+    if listed.returncode != 0:
+        return set()
+    out: set[str] = set()
+    for entry in listed.stdout.split("\0"):
+        if len(entry) > 3:
+            # "XY path" -- renames arrive as "XY old\0new", already split.
+            out.add(entry[3:])
+    return out
+
+
 def commit_wiki_changes(wiki_root: Path, paths: Sequence[Path],
                         action: str, summary: str,
                         timeout: float = LOCK_TIMEOUT) -> bool:
