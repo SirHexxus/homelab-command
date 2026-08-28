@@ -23,6 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 import task_status  # noqa: E402
+import wiki_git  # noqa: E402
 
 DEFAULT_WIKI_ROOT = task_status.default_wiki_root()
 TODAY = date.today()
@@ -198,14 +199,23 @@ def main() -> int:
     print(f"=== archive-wiki [{mode}] · {TODAY} ===")
     print(f"journal cutoff < {journal_cutoff} · digest cutoff < {digest_cutoff}\n")
     total = 0
+    # Both halves of every move, so the commit stages the removal from the
+    # old location as well as the arrival in archive/.
+    touched: list[Path] = []
     for name, reason, paths in streams:
         print(f"## {name} ({len(paths)})")
         for p in paths:
             print(f"  {p.relative_to(wiki)}")
             if args.apply:
                 stamp_and_move(p, wiki / "archive" / name, reason)
+                touched.extend([p, wiki / "archive" / name / p.name])
         total += len(paths)
         print()
+
+    if args.apply and touched:
+        wiki_git.commit_wiki_changes(
+            wiki, touched, "archive",
+            f"moved {total} aged pages into archive/")
 
     print(f"## journal-protected ({len(journal_protected)}) — kept (recent inbound link)")
     for p in journal_protected:
