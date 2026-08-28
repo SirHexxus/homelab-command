@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+################################################################################
+# mneme-sync — the single publisher for the Mnemosyne wiki on LXC 103.
+#
+# Every mneme-* worker commits its own changes; nothing but this script talks to
+# the remote. Each run:
+#   1. takes the shared commit lock (the same lock the workers take)
+#   2. commits anything left uncommitted — a worker that mutated files without
+#      committing is a bug, so the work is salvaged AND alerted on, because
+#      refusing to commit is how five weeks of output stranded on 2026-08-28
+#   3. rebases onto the remote and pushes
+#
+# The lock is held across commit+rebase+push, not just the commit: a rebase
+# rewrites HEAD and the working tree, so a worker committing midway through
+# would land on a moving target. Workers hold the same lock only around their
+# own stage+commit, never around slow work such as LLM enrichment.
+#
+# Operational events go to journald, not mneme_log: mneme_log is the page-event
+# log that render-log turns into log.md, and a sync is not a page event.
+################################################################################
+
+set -u
+set -o pipefail
+
+################################################################################
+# Constants
+################################################################################
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME="$(basename "$0")"
+readonly ALERT="$SCRIPT_DIR/lib/mneme-alert"
+
+readonly DEFAULT_WIKI='/opt/inbox-receiver/wiki'
+readonly LOCK_TIMEOUT=120
+readonly MAX_LISTED=10
+
+readonly EXIT_SUCCESS=0
+readonly EXIT_GENERAL_ERROR=1
+readonly EXIT_INVALID_ARGS=2
+readonly EXIT_FILE_NOT_FOUND=3
+
+################################################################################
+# Global Variables
+################################################################################
+
+wiki_root="${MNEME_WIKI_PATH:-$DEFAULT_WIKI}"
+dry_run=false
+
+################################################################################
+# Functions
+################################################################################
+
+show_help() {
+	cat << EOF
+Usage: $SCRIPT_NAME [options]
+
+Commit any stray wiki changes, rebase onto the remote, and push. Intended to
+run on a timer as the only writer to the remote.
+
+Options:
+    -h, --help              Show this help message
+    -n, --dry-run           Report what would be committed and pushed,
+                            changing nothing
+        --wiki-root PATH    Wiki checkout (default: \$MNEME_WIKI_PATH or
+                            $DEFAULT_WIKI)
+
+Exit codes:
+    0  success (including "nothing to do")
+    1  git operation failed
+    2  invalid arguments
+    3  wiki root or git repo not found
+EOF
+}
+
+log_info() {
+	printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
+}
+
+log_error() {
+	printf '[%s] ERROR: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >&2
+}
+
+# Fire a Telegram alert with a custom message, falling back to journald.
+alert() {
+	local text=$1
+
+	if [[ -x $ALERT ]]; then
+		MNEME_ALERT_TEXT="$text" "$ALERT" "$SCRIPT_NAME" || true
+	else
+		logger -t "$SCRIPT_NAME" "$text"
+	fi
+}
+
+git_wiki() {
+	git -C "$wiki_root" "$@"
+}
+
+parse_args() {
+	while [[ $# -gt 0 ]]; do
+		case $1 in
+			-h|--help)
+				show_help
+				exit $EXIT_SUCCESS
+				;;
+			-n|--dry-run)
+				dry_run=true
+				shift
+				;;
+			--wiki-root)
+				if [[ $# -lt 2 ]]; then
+					log_error '--wiki-root requires a path'
+					exit $EXIT_INVALID_ARGS
+				fi
+				wiki_root=$2
+				shift 2
+				;;
+			*)
+				log_error "Unknown option: $1"
+				show_help >&2
+				exit $EXIT_INVALID_ARGS
+				;;
+		esac
+	done
+}
+
+# Commit whatever a worker left behind. Any output here is a bug in that
+# worker, so it is salvaged and alerted on rather than silently folded in.
+commit_orphans() {
+	local -a stray
+	local count listing text noun
+
+	mapfile -t stray < <(git_wiki status --porcelain)
+	count=${#stray[@]}
+	[[ $count -eq 0 ]] && return 0
+	noun='files'
+	[[ $count -eq 1 ]] && noun='file'
+
+	listing=$(printf '%s\n' "${stray[@]:0:$MAX_LISTED}")
+	if [[ $count -gt $MAX_LISTED ]]; then
+		listing+=$'\n'"... and $((count - MAX_LISTED)) more"
+	fi
+
+	log_info "Found $count uncommitted change(s):"
+	printf '%s\n' "$listing"
+
+	if [[ $dry_run == true ]]; then
+		log_info '[dry-run] would commit these as unattributed'
+		return 0
+	fi
+
+	if ! git_wiki add -A; then
+		log_error 'git add failed for orphaned changes'
+		return 1
+	fi
+	if ! git_wiki commit -q \
+		-m "mneme: unattributed changes — $count $noun"; then
+		log_error 'git commit failed for orphaned changes'
+		return 1
+	fi
+
+	text="⚠️ mneme-sync committed $count uncommitted wiki change(s) —"
+	text+=" a worker mutated files without committing:"$'\n'"$listing"
+	alert "$text"
+	log_info "Committed $count orphaned change(s) and alerted"
+	return 0
+}
+
+publish() {
+	local ahead
+
+	if ! git_wiki fetch --quiet origin; then
+		log_error 'git fetch failed'
+		return 1
+	fi
+
+	ahead=$(git_wiki rev-list --count origin/main..HEAD 2>/dev/null) || ahead=0
+
+	if [[ $dry_run == true ]]; then
+		log_info "[dry-run] would rebase and push $ahead commit(s)"
+		return 0
+	fi
+
+	if ! git_wiki pull --rebase --autostash --quiet; then
+		log_error 'git pull --rebase failed; leaving tree for inspection'
+		return 1
+	fi
+
+	if [[ $ahead -eq 0 ]]; then
+		log_info 'Nothing to push'
+		return 0
+	fi
+
+	if ! git_wiki push --quiet origin main; then
+		log_error 'git push failed'
+		return 1
+	fi
+
+	log_info "Pushed $ahead commit(s)"
+	return 0
+}
+
+main() {
+	parse_args "$@"
+
+	if [[ ! -d $wiki_root ]]; then
+		log_error "Wiki root not found: $wiki_root"
+		exit $EXIT_FILE_NOT_FOUND
+	fi
+	if [[ ! -d $wiki_root/.git ]]; then
+		log_error "Not a git repository: $wiki_root"
+		exit $EXIT_FILE_NOT_FOUND
+	fi
+
+	# Same lock the workers take around their stage+commit.
+	exec 9> "$wiki_root/.git/mneme-commit.lock"
+	if ! flock -w $LOCK_TIMEOUT 9; then
+		log_error "Could not acquire commit lock in ${LOCK_TIMEOUT}s"
+		exit $EXIT_GENERAL_ERROR
+	fi
+
+	commit_orphans || exit $EXIT_GENERAL_ERROR
+	publish || exit $EXIT_GENERAL_ERROR
+
+	exit $EXIT_SUCCESS
+}
+
+main "$@"
