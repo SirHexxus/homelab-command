@@ -14,8 +14,111 @@
     },
     {
       "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// n8n sends two different shapes: run-time failures carry `execution`,\n// trigger-activation failures carry `trigger` instead. Flatten both.\nconst j = $input.item.json;\nconst ex = j.execution;\nconst tr = j.trigger;\nconst isTriggerError = !ex && !!tr;\nconst wf = j.workflow ?? {};\nconst base = 'https://automation.hexxusweb.com/workflow/' + (wf.id ?? '');\n\nreturn {\n  json: {\n    isTriggerError,\n    kind: isTriggerError ? 'Trigger Problem' : 'Workflow Failed',\n    wfName: wf.name ?? 'unknown',\n    wfId: wf.id ?? '',\n    node: ex?.lastNodeExecuted ?? 'n/a (trigger activation)',\n    message: ex?.error?.message ?? tr?.error?.message ?? 'unknown',\n    mode: ex?.mode ?? tr?.mode ?? 'unknown',\n    link: ex?.id ? base + '/executions/' + ex.id : base,\n  },\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "1b7c0a54-2f61-4d8e-9a03-5c81e6d4f210",
+      "name": "Normalize Error"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "3c9e1f72-8b40-4d15-a6e2-7f0b93c4d581",
+              "leftValue": "={{ $json.isTriggerError }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        416,
+        0
+      ],
+      "id": "3c9e1f72-8b40-4d15-a6e2-7f0b93c4d581",
+      "name": "Is Trigger Error?"
+    },
+    {
+      "parameters": {
+        "operation": "incr",
+        "key": "=alert:trigger-fail:{{ $json.wfId }}",
+        "expire": true,
+        "ttl": 1800
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        624,
+        -112
+      ],
+      "id": "5d2a8c31-6e97-4b28-90fa-1c73e8b05f42",
+      "name": "Count Trigger Failures",
+      "credentials": {
+        "redis": {
+          "id": "n6IjS0GfR9L8f7P3",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "7f4b2d90-1a58-4c63-8e07-2b95d1a6c308",
+              "leftValue": "={{ Object.values($json)[0] }}",
+              "rightValue": 3,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        832,
+        -112
+      ],
+      "id": "7f4b2d90-1a58-4c63-8e07-2b95d1a6c308",
+      "name": "Failing Repeatedly?"
+    },
+    {
+      "parameters": {
         "chatId": "1135813646",
-        "text": "=🛑 Workflow Failed\n\nWorkflow: {{ $json.workflow.name }}\nNode: {{ $json.execution.lastNodeExecuted }}\nError: {{ $json.execution.error?.message ?? 'unknown' }}\nMode: {{ $json.execution.mode }}\nExec: https://automation.hexxusweb.com/workflow/{{ $json.workflow.id }}/executions/{{ $json.execution.id }}",
+        "text": "=🛑 {{ $('Normalize Error').item.json.kind }}\n\nWorkflow: {{ $('Normalize Error').item.json.wfName }}\nNode: {{ $('Normalize Error').item.json.node }}\nError: {{ $('Normalize Error').item.json.message }}\nMode: {{ $('Normalize Error').item.json.mode }}\nLink: {{ $('Normalize Error').item.json.link }}{{ $('Normalize Error').item.json.isTriggerError ? '\\n\\n⚠️ Trigger has failed repeatedly without self-healing.' : '' }}",
         "additionalFields": {
           "appendAttribution": false
         }
@@ -23,7 +126,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        208,
+        1040,
         0
       ],
       "id": "f6a48b9c-5e19-4088-85e4-d6a4bce765ee",
@@ -43,11 +146,63 @@
       "main": [
         [
           {
+            "node": "Normalize Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Error": {
+      "main": [
+        [
+          {
+            "node": "Is Trigger Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Trigger Error?": {
+      "main": [
+        [
+          {
+            "node": "Count Trigger Failures",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Send a text message",
             "type": "main",
             "index": 0
           }
         ]
+      ]
+    },
+    "Count Trigger Failures": {
+      "main": [
+        [
+          {
+            "node": "Failing Repeatedly?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Failing Repeatedly?": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
       ]
     }
   },
