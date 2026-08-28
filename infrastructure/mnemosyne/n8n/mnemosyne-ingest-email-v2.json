@@ -6,7 +6,7 @@
         "format": "resolved",
         "options": {
           "customEmailConfig": "[\"UNSEEN\"]",
-          "forceReconnect": 60
+          "forceReconnect": 15
         }
       },
       "type": "n8n-nodes-base.emailReadImap",
