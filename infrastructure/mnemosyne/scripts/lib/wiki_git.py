@@ -49,6 +49,18 @@ def _tracked(wiki_root: Path, rel: str) -> bool:
     return found.returncode == 0
 
 
+def _rebase_in_progress(wiki_root: Path) -> bool:
+    """True if a halted rebase has left replay state behind."""
+    git_dir = wiki_root / ".git"
+    return any((git_dir / name).exists()
+               for name in ("rebase-merge", "rebase-apply"))
+
+
+def _detached_head(wiki_root: Path) -> bool:
+    """True if HEAD is not on a branch."""
+    return _git(wiki_root, ["symbolic-ref", "--quiet", "HEAD"]).returncode != 0
+
+
 def _relative(wiki_root: Path, path: Path) -> str:
     """Path as git wants it: relative to the repo root."""
     try:
@@ -112,6 +124,18 @@ def commit_wiki_changes(wiki_root: Path, paths: Sequence[Path],
                           f"leaving changes for mneme-sync", file=sys.stderr)
                     return False
                 time.sleep(LOCK_POLL)
+
+        # A halted rebase leaves HEAD detached and the working tree rolled
+        # back mid-replay. Committing there strands the work on a ref nothing
+        # points at, and -- because the replay has re-added the inbox items a
+        # later commit deletes -- invites the next worker to file them all
+        # over again. That is the 2026-09-01 cascade, where one failed push
+        # became six duplicate pages. Leave the tree for mneme-sync.
+        if _rebase_in_progress(wiki_root) or _detached_head(wiki_root):
+            print("Warning: repo mid-rebase or on a detached HEAD; refusing "
+                  "to commit — leaving changes for mneme-sync",
+                  file=sys.stderr)
+            return False
 
         # Drop paths git cannot match: a caller that used `git mv` has
         # already staged the rename, so the old name is gone from both the
