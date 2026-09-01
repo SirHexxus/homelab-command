@@ -2,16 +2,19 @@
 """Mnemosyne inbox receiver — minimal Flask app for the interim ingest path.
 
 Accepts IngestItem JSON payloads from n8n via POST /inbox, writes each item as
-a timestamped JSON file to wiki/inbox/, then commits and pushes to GitHub.
+a timestamped JSON file to wiki/inbox/, then commits it under the shared mneme
+commit lock. Pushing is mneme-sync's job -- this app never talks to the remote.
 No LLM, no classification — that happens later via claude -p on the laptop.
 """
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import os
 import subprocess
+import time
 import uuid
 from datetime import datetime, timezone
 from functools import wraps
@@ -27,6 +30,13 @@ WIKI_ROOT = Path(os.environ.get("WIKI_ROOT", "/opt/inbox-receiver/wiki"))
 INBOX_DIR = WIKI_ROOT / "inbox"
 INBOX_TOKEN = os.environ.get("INBOX_TOKEN", "")
 PORT = int(os.environ.get("PORT", "8080"))
+
+# The shared commit lock every mneme-* worker takes around its own
+# stage+commit. Kept in sync with scripts/lib/wiki_git.py by name, not by
+# import: this app ships with only Flask and no path into the scripts tree.
+LOCK_NAME = "mneme-commit.lock"
+LOCK_TIMEOUT = 120.0
+LOCK_POLL = 0.2
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,6 +75,69 @@ def _git(args: list[str]) -> subprocess.CompletedProcess:
             f"git {' '.join(args)} failed (rc={result.returncode}): {result.stderr.strip()}"
         )
     return result
+
+
+def _rebase_in_progress() -> bool:
+    """True if a halted rebase has left replay state behind."""
+    git_dir = WIKI_ROOT / ".git"
+    return any((git_dir / name).exists()
+               for name in ("rebase-merge", "rebase-apply"))
+
+
+def _detached_head() -> bool:
+    """True if HEAD is not on a branch."""
+    result = subprocess.run(
+        ["git", "-C", str(WIKI_ROOT), "symbolic-ref", "--quiet", "HEAD"],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode != 0
+
+
+def _commit_inbox_item(rel: str, message: str) -> None:
+    """Stage and commit one inbox item under the shared commit lock.
+
+    Publishing is mneme-sync's job alone. This app used to run its own
+    `git pull --rebase && git push`, unlocked, which on 2026-09-01 collided
+    with a sync already rebasing: the repo was left on a detached HEAD, the
+    caller got a 500 and retried, and the retry plus the re-triage of items
+    the halted replay had restored turned two notes into six pages. Commit
+    locally, return success, and let the next sync publish within minutes.
+
+    Raises RuntimeError if the item could not be committed.
+    """
+    lock_path = WIKI_ROOT / ".git" / LOCK_NAME
+    deadline = time.monotonic() + LOCK_TIMEOUT
+
+    try:
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_WRONLY, 0o644)
+    except OSError as exc:
+        raise RuntimeError(f"cannot open commit lock: {exc}") from exc
+
+    try:
+        while True:
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(
+                        f"commit lock busy after {LOCK_TIMEOUT:.0f}s"
+                    ) from None
+                time.sleep(LOCK_POLL)
+
+        if _rebase_in_progress() or _detached_head():
+            raise RuntimeError(
+                "repo mid-rebase or on a detached HEAD; refusing to commit"
+            )
+
+        _git(["add", "--", rel])
+        _git(["commit", "-q", "-m", message])
+    finally:
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        finally:
+            os.close(lock_fd)
 
 
 # ── App factory ───────────────────────────────────────────────────────────────
@@ -122,21 +195,13 @@ def create_app() -> Flask:
 
         rel = str(filepath.relative_to(WIKI_ROOT))
         try:
-            _git(["add", rel])
-            _git(["commit", "-m", f"mneme: inbox {source} — {ts}"])
+            _commit_inbox_item(rel, f"mneme: inbox {source} — {ts}")
         except RuntimeError as exc:
             log.error("Git commit failed: %s", exc)
             filepath.unlink(missing_ok=True)
             return jsonify({"error": "Git commit failed — item not persisted"}), 500
 
-        try:
-            _git(["pull", "--rebase", "--autostash"])
-            _git(["push"])
-            log.info("Committed and pushed: %s", filename)
-        except RuntimeError as exc:
-            log.error("Git push failed (item committed locally): %s", exc)
-            return jsonify({"error": "Git push failed — item committed locally but not synced"}), 500
-
+        log.info("Committed: %s (mneme-sync publishes)", filename)
         return jsonify({"status": "ok", "file": filename})
 
     return app
