@@ -144,6 +144,7 @@
 | eero Pro 6 | 10.0.20.100 | Bridge mode; DHCP static mapping |
 | Wife's Laptop | 10.0.20.101 | DHCP |
 | Living Room TV | 10.0.20.102 | DHCP; stays here (eero SSID limit) |
+| Onn school tablet | DHCP | Themis-managed (Device Owner). On VLAN 20 via family SSID — eero 2-SSID limit prevents a dedicated segment. Revisit with the UniFi AP replacement |
 | James's Laptop (WiFi) | 10.0.20.103 | DHCP |
 | James's Phone | 10.0.20.104 | DHCP |
 | Wife's Phone | 10.0.20.105 | DHCP |
@@ -173,6 +174,7 @@
 | Splunk Free | 10.0.50.20 | LXC (planned) | SIEM log aggregation |
 | Wazuh Manager | 10.0.50.21 | LXC (planned) | Host-based IDS |
 | Grafana | 10.0.50.22 | LXC (planned) | TimescaleDB dashboards |
+| Themis | 10.0.50.23 | LXC (planned) | MDM. Tomcat 9 + Headwind + Postgres. Allocated, not built — MVP runs off-rack. See Themis Design Doc v1.0 |
 | Hephaestus | 10.0.50.30 | VM (planned) | Shared Docker Compose host; wger + future services (Nextcloud, Vaultwarden) |
 
 ### VLAN 60 -- DMZ
