@@ -1,6 +1,6 @@
 # Homelab Command Project — Project Roadmap
-**Version:** 2.2
-**Last Updated:** 2026-05-24
+**Version:** 2.3
+**Last Updated:** 2026-09-09
 **Philosophy:** See `docs/homelab-philosophy-v1.0.md` for the values and goals behind this homelab.
 
 ---
@@ -46,6 +46,7 @@ They have been removed from this roadmap to keep scope clean.
 | Orpheus Design Doc | v1.1 | ✅ Complete |
 | Hermes Design Doc | v1.1 | ✅ Complete |
 | Ariadne Design Doc | v1.0 | ✅ Complete |
+| Themis Design Doc | v1.0 | ✅ Complete |
 
 ### Remaining
 | Document | Version | Status |
@@ -305,6 +306,41 @@ log pipelines). The timeline reflects real learning time, not just deployment ti
 
 ---
 
+## Themis — Endpoint Management (Parallel Track)
+
+Themis sits **off the Phase 1–5 critical path.** It answers an immediate family need — a child's
+school tablet restricted to Acellus during school hours — rather than an application deliverable,
+and its MVP deliberately runs off-rack so it is not blocked by the ISP change and the
+server-closet move. Full design: `docs/themis-design-doc.md`.
+
+### MVP — Sophy kiosk (off-rack)
+- [ ] **Gate 1 spike:** confirm the Headwind REST API reassigns `configurationId` in one
+      authenticated call *(blocks everything below — design changes if it fails)*
+- [ ] Incus system container on the ThinkPad; Ansible role set written against it
+- [ ] Tomcat 9 + Headwind + local Postgres provisioned
+- [ ] Let's Encrypt DNS-01 cert for `themis.sirhexx.com`; verify LAN resolution (Gate 7)
+- [ ] Tablet enrolled via ADB; Sophy: School and Sophy: Free Time policy groups built
+- [ ] Verify user restrictions (Gate 5), Acellus behaviour (Gate 3), check-in latency (Gate 4)
+- [ ] NFC/Tasker macro + nightly cron lock tested end to end on the LAN
+- [ ] QR provisioning payload validated including signature checksum (Gate 6)
+
+### Rack migration — *gated on the server-closet move*
+- [ ] LXC 111 provisioned at 10.0.50.23 via Terraform
+- [ ] `group_vars` re-pointed at shared Postgres (10.0.50.14); database migrated
+- [ ] DNS A record updated; tablet reconnects **without re-enrollment**
+- [ ] Ariadne proxy host added; local nginx role retired
+- [ ] pfSense rules for the tablet segment; logs forwarded to Iris/Argus
+- [ ] Themis Postgres added to the backup set, with a **tested restore**
+
+### Fleet phase — *gated on Gate 2 and the §11 security controls*
+- [ ] **Gate 2:** verify Headwind Work Profile support; if inadequate, evaluate a self-hosted
+      Android Management API controller instead
+- [ ] Adult device policy groups (update rings, managed app baseline, compliance state)
+- [ ] Always-on VPN enforcement; MFA on the admin console; scoped API tokens
+- [ ] Portfolio write-up framed in Mobility-as-a-Service vocabulary
+
+---
+
 ## Deferred Projects (Post-Application)
 
 | Project | Notes |
@@ -344,6 +380,9 @@ Career Advancement pursuit in Mnemosyne.
 
 ## Version History
 
+- v2.3 (2026-09-09): Add Themis (endpoint management / MDM) as a parallel track off the Phase 1–5
+  critical path — MVP runs off-rack on the ThinkPad pending the ISP change and server-closet move;
+  register Themis Design Doc v1.0; allocate VMID 111 / 10.0.50.23
 - v2.2 (2026-05-24): Phase 2 Mnemosyne current-path audit — checked off n8n→inbox ingest, inotifywait systemd watcher, hourly `triage-inbox` cron, `daily-digest` cron, and `infrastructure/mnemosyne/scripts/` maintenance; remaining items narrowed to sleep window + `!!` bypass, Weekly Summary script, README verification
 - v2.1 (2026-05-20): Hermes off hold via direct Gemini API billing ($5/mo cap, `gemini-3.5-flash` pinned); Phase 2 Hermes section rewritten — Telegram bot superseded by n8n, blockers removed, post-hold-lift candidates queued for 2026-06-01 Decide gate; Phase 2 Mnemosyne section relabeled (Interim→Current path, Full→Target path / Phase 2T); Hermes Design Doc bumped to v1.1; file renamed v1.8→v2.1
 - v2.0 (2026-04-27): Hermes replanning complete — hold triggers documented, replanning item checked off; Mnemosyne Phase 2 restructured into interim cron path (active) vs full pipeline (deferred); Phase 5 CRDC submission window adjusted to mid-August for family trip July 25–Aug 12
@@ -367,4 +406,4 @@ Career Advancement pursuit in Mnemosyne.
 
 ---
 
-*Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0 · Homelab Philosophy v1.0*
+*Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.9 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0 · Themis Design Doc v1.0 · Homelab Philosophy v1.0*
