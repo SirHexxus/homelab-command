@@ -32,6 +32,7 @@ See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all h
 | [Mnemosyne Design Doc](mnemosyne-design-doc-v1.1.md) | v1.1 | Mnemosyne | Personal knowledge management - git-backed wiki with AI-assisted capture |
 | [Mnemosyne Worker Migration](mnemosyne-worker-migration.md) | v1.0 | Mnemosyne | Migration plan moving pipeline cron off the laptop onto the LXC 103 worker (n8n/LXC split, LLM engine decision, cutover slices) |
 | [Orpheus Design Doc](orpheus-design-doc-v1.1.md) | v1.1 | Orpheus | Family media platform - video, photos, music, audiobooks, ebooks |
+| [Themis Design Doc](themis-design-doc.md) | v1.0 | Themis | Android endpoint management - MDM policy groups, enrollment modes, fleet phasing |
 
 ## Operational guides
 
