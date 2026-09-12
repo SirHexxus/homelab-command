@@ -1,0 +1,78 @@
+---
+# roles/mneme_workers/defaults/main.yml
+#
+# The mneme-* worker fleet on the inbox-receiver LXC (103, 10.0.50.19).
+# Scripts and units were hand-placed until 2026-09-01; this role is now the
+# source of truth for both.
+
+# Where the scripts land. The deployed units reference this path literally,
+# so changing it re-templates all 38 units in the same run.
+mneme_root: /opt/mnemosyne/homelab-command
+mneme_scripts_dir: "{{ mneme_root }}/infrastructure/mnemosyne/scripts"
+mneme_wiki_root: /opt/inbox-receiver/wiki
+
+# Optional; units load it with `-` so a missing file is not an error.
+mneme_telegram_env: /root/.config/mnemosyne/telegram.env
+
+# Remove mneme-* units on the host that this role does not declare. Off by
+# default: an incomplete list would silently tear down live workers.
+mneme_purge_unmanaged: false
+
+# Timer-driven workers. Each entry yields mneme-<name>.service (oneshot,
+# static) plus mneme-<name>.timer (enabled). `schedule` is a systemd
+# OnCalendar expression.
+mneme_workers:
+  - name: sync
+    exec: "{{ mneme_scripts_dir }}/mneme-sync --wiki-root {{ mneme_wiki_root }}"
+    schedule: "*-*-* *:0/5:00"
+  - name: triage
+    exec: "{{ mneme_scripts_dir }}/triage-inbox --wiki-root {{ mneme_wiki_root }}"
+    schedule: "*-*-* *:00:00"
+  - name: render-log
+    exec: "{{ mneme_scripts_dir }}/render-log --wiki-root {{ mneme_wiki_root }}"
+    schedule: "*-*-* *:05,35:00"
+  - name: embed
+    exec: "{{ mneme_scripts_dir }}/embed-wiki --wiki-root {{ mneme_wiki_root }}"
+    schedule: "*-*-* 06:55:00"
+  - name: digest
+    exec: "{{ mneme_scripts_dir }}/daily-digest --wiki-root {{ mneme_wiki_root }}"
+    schedule: "*-*-* 07:00:00"
+  - name: sweep
+    exec: "{{ mneme_scripts_dir }}/maintenance/sweep-closed-tasks --apply"
+    schedule: "*-*-* 06:50:00"
+  - name: check-drift
+    exec: "{{ mneme_scripts_dir }}/maintenance/check-updated-drift"
+    schedule: "Sun *-*-* 08:00:00"
+  - name: check-followups
+    exec: "{{ mneme_scripts_dir }}/maintenance/check-person-followups"
+    schedule: "*-*-* 07:00:00"
+  - name: check-frontmatter
+    exec: "{{ mneme_scripts_dir }}/maintenance/check-frontmatter-types"
+    schedule: "Sun *-*-* 08:00:00"
+  - name: check-ghost-links
+    exec: "{{ mneme_scripts_dir }}/maintenance/check-ghost-links"
+    schedule: "*-*-* 07:00:00"
+  - name: check-inbox-drain
+    exec: "{{ mneme_scripts_dir }}/maintenance/check-inbox-drain"
+    schedule: "*-*-* 07:00:00"
+  - name: check-index
+    exec: "{{ mneme_scripts_dir }}/maintenance/check-index-completeness"
+    schedule: "*-*-* 07:00:00"
+  - name: check-log-coverage
+    exec: "{{ mneme_scripts_dir }}/maintenance/check-log-coverage"
+    schedule: "Sun *-*-* 08:00:00"
+  - name: check-overdue
+    exec: "{{ mneme_scripts_dir }}/maintenance/check-overdue-tasks"
+    schedule: "*-*-* 07:00:00"
+  - name: orphan-enrich
+    exec: "{{ mneme_scripts_dir }}/maintenance/check-orphan-files --enrich"
+    schedule: "Sun *-*-* 09:00:00"
+  - name: required-enrich
+    exec: "{{ mneme_scripts_dir }}/maintenance/audit-required-fields --enrich"
+    schedule: "Sun *-*-* 09:00:00"
+  - name: stale-enrich
+    exec: "{{ mneme_scripts_dir }}/maintenance/triage-stale-projects --enrich"
+    schedule: "Sun *-*-* 09:00:00"
+  - name: stub-enrich
+    exec: "{{ mneme_scripts_dir }}/maintenance/check-stub-pages --enrich"
+    schedule: "Sun *-*-* 09:00:00"

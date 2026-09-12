@@ -1,0 +1,139 @@
+# roles/mneme_workers/tasks/main.yml
+#
+# Deploys the mneme-* script tree and its systemd fleet to the
+# inbox-receiver LXC. Safe to re-run: every task converges on the declared
+# state and only the units whose content actually changed get reloaded.
+
+# =============================================================================
+# 1. SCRIPT TREE
+# =============================================================================
+
+- name: Install rsync (required by the synchronize module)
+  apt:
+    name: rsync
+    state: present
+
+- name: Create the mneme script root
+  file:
+    path: "{{ mneme_scripts_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Sync the mneme script tree
+  synchronize:
+    src: "{{ playbook_dir }}/../scripts/"
+    dest: "{{ mneme_scripts_dir }}/"
+    delete: yes
+    recursive: yes
+    rsync_opts:
+      # Without these, rsync's archive mode keeps pushing the control node's
+      # uid/gid and directory mode onto the target, undoing the file task
+      # above and reporting `changed` on every run. Source file modes still
+      # carry over, so scripts keep their exec bit.
+      - "--no-owner"
+      - "--no-group"
+      - "--chmod=D755"
+      - "--exclude=__pycache__"
+      - "--exclude=*.pyc"
+      - "--exclude=.env"
+      # Hand-made backups predating this role. Excluded so `delete` leaves
+      # them alone rather than quietly discarding someone's safety net.
+      - "--exclude=*.bak-*"
+  notify: restart mneme-watch-inbox
+
+# =============================================================================
+# 2. SYSTEMD UNITS
+# =============================================================================
+
+- name: Deploy the alert template unit
+  template:
+    src: mneme-alert@.service.j2
+    dest: /etc/systemd/system/mneme-alert@.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload systemd
+
+- name: Deploy worker service units
+  template:
+    src: mneme-worker.service.j2
+    dest: "/etc/systemd/system/mneme-{{ item.name }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ mneme_workers }}"
+  loop_control:
+    label: "mneme-{{ item.name }}.service"
+  notify: reload systemd
+
+- name: Deploy worker timer units
+  template:
+    src: mneme-worker.timer.j2
+    dest: "/etc/systemd/system/mneme-{{ item.name }}.timer"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ mneme_workers }}"
+  loop_control:
+    label: "mneme-{{ item.name }}.timer"
+  notify: reload systemd
+
+- name: Deploy the inbox watcher unit
+  template:
+    src: mneme-watch-inbox.service.j2
+    dest: /etc/systemd/system/mneme-watch-inbox.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart mneme-watch-inbox
+
+# Units must exist on disk before the enable tasks below reference them.
+- name: Apply pending unit changes
+  meta: flush_handlers
+
+# =============================================================================
+# 3. ACTIVATION
+# =============================================================================
+
+- name: Enable and start worker timers
+  systemd:
+    name: "mneme-{{ item.name }}.timer"
+    enabled: yes
+    state: started
+  loop: "{{ mneme_workers }}"
+  loop_control:
+    label: "mneme-{{ item.name }}.timer"
+
+- name: Enable and start the inbox watcher
+  systemd:
+    name: mneme-watch-inbox
+    enabled: yes
+    state: started
+
+# =============================================================================
+# 4. PURGE UNDECLARED UNITS (opt-in)
+# =============================================================================
+
+- name: Find mneme-* units on the host
+  find:
+    paths: /etc/systemd/system
+    patterns: "mneme-*.service,mneme-*.timer"
+    file_type: file
+  register: mneme_units_present
+  when: mneme_purge_unmanaged | bool
+
+- name: Remove mneme-* units this role does not declare
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ mneme_units_present.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when:
+    - mneme_purge_unmanaged | bool
+    - item.path | basename not in mneme_managed_units
+  notify: reload systemd

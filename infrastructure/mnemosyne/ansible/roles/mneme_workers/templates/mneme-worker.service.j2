@@ -1,0 +1,15 @@
+# {{ ansible_managed }}
+# Oneshot worker, triggered by mneme-{{ item.name }}.timer. No [Install]
+# section: the timer is the only thing that should start it.
+[Unit]
+Description=Mnemosyne worker: {{ item.name }}
+OnFailure=mneme-alert@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory={{ mneme_scripts_dir }}
+Environment=HOME=/root
+Environment=MNEME_WIKI_PATH={{ mneme_wiki_root }}
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-{{ mneme_telegram_env }}
+ExecStart={{ item.exec }}

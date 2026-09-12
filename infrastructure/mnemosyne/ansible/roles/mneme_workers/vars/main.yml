@@ -1,0 +1,11 @@
+---
+# roles/mneme_workers/vars/main.yml
+#
+# Every unit filename this role owns. Derived from mneme_workers so the
+# purge task can never disown a unit the role itself just wrote.
+
+mneme_managed_units: "{{ ['mneme-alert@.service', 'mneme-watch-inbox.service']
+  + (mneme_workers | map(attribute='name')
+     | map('regex_replace', '^(.*)$', 'mneme-\\1.service') | list)
+  + (mneme_workers | map(attribute='name')
+     | map('regex_replace', '^(.*)$', 'mneme-\\1.timer') | list) }}"

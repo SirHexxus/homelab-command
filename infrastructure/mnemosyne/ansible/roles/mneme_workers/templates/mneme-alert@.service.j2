@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+# Instantiated by OnFailure= in every worker unit; %i is the failed unit.
+[Unit]
+Description=Telegram alert for failed mnemosyne unit %i
+
+[Service]
+Type=oneshot
+ExecStart={{ mneme_scripts_dir }}/lib/mneme-alert %i
