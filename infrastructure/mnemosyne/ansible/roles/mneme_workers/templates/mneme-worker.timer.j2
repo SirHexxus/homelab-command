@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Timer for mneme-{{ item.name }}
+
+[Timer]
+OnCalendar={{ item.schedule }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

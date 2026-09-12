@@ -1,0 +1,21 @@
+# {{ ansible_managed }}
+# Long-running daemon, not a timer. It triages inbox items the moment they
+# land, so it is the worker most likely to be running while another writer
+# has the wiki repo mid-rebase -- see the commit-state guard in
+# scripts/lib/wiki_git.py.
+[Unit]
+Description=Mnemosyne inbox watcher (real-time triage)
+After=network-online.target
+OnFailure=mneme-alert@%n.service
+
+[Service]
+ExecStart={{ mneme_scripts_dir }}/watch-inbox --wiki-root {{ mneme_wiki_root }}
+WorkingDirectory={{ mneme_scripts_dir }}
+Environment=HOME=/root
+Environment=MNEME_WIKI_PATH={{ mneme_wiki_root }}
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

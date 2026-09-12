@@ -1,0 +1,30 @@
+# provision.yml - Mnemosyne worker fleet
+#
+# Deploys the mneme-* script tree and its systemd timers/services to the
+# inbox-receiver LXC (103, 10.0.50.19). The inbox-receiver Flask app itself
+# is provisioned separately, from inbox-receiver/ansible/provision.yml.
+#
+#   ansible-playbook -i inventory.ini provision.yml
+#
+# To also remove mneme-* units that this role no longer declares:
+#
+#   ansible-playbook -i inventory.ini provision.yml -e mneme_purge_unmanaged=true
+
+---
+- name: Provision the Mnemosyne worker fleet
+  hosts: mneme_workers
+
+  tasks:
+    - name: Install mneme workers
+      include_role:
+        name: mneme_workers
+
+  post_tasks:
+    - name: Collect worker timer state
+      command: systemctl list-timers 'mneme-*' --all --no-pager
+      register: mneme_timer_state
+      changed_when: false
+
+    - name: Show worker timer state
+      debug:
+        var: mneme_timer_state.stdout_lines
