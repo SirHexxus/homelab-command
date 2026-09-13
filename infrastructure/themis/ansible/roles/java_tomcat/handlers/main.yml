@@ -1,0 +1,9 @@
+---
+# roles/java_tomcat/handlers/main.yml
+
+- name: restart tomcat9
+  systemd:
+    name: tomcat9
+    state: restarted
+    daemon_reload: true
+  ignore_errors: "{{ ansible_check_mode }}"

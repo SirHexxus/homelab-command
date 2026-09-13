@@ -1,0 +1,28 @@
+# {{ ansible_managed }}
+# Apache Tomcat {{ tomcat_version }} for Headwind MDM (Themis)
+[Unit]
+Description=Apache Tomcat 9 (Headwind MDM)
+After=network.target postgresql.service
+
+[Service]
+Type=forking
+User={{ tomcat_user }}
+Group={{ tomcat_user }}
+Environment="CATALINA_HOME={{ tomcat_home }}"
+Environment="CATALINA_BASE={{ tomcat_home }}"
+Environment="CATALINA_PID={{ tomcat_home }}/temp/tomcat.pid"
+Environment="JAVA_OPTS=-Djava.awt.headless=true -Xms256m -Xmx{{ tomcat_heap_max }}"
+ExecStart={{ tomcat_home }}/bin/startup.sh
+ExecStop={{ tomcat_home }}/bin/shutdown.sh
+Restart=on-failure
+RestartSec=10
+
+# Hardening: Headwind writes only under its base dir and Tomcat's own tree.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths={{ tomcat_root }}/apache-tomcat-{{ tomcat_version }} -{{ headwind_base_dir }}
+
+[Install]
+WantedBy=multi-user.target

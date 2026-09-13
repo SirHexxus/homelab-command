@@ -1,5 +1,125 @@
-# roles/java_tomcat/tasks/main.yml - OpenJDK + Tomcat 9 for Headwind
-#
-# TODO: not yet written. See docs/themis-design-doc.md §8 / §13.
-
 ---
+# roles/java_tomcat/tasks/main.yml - OpenJDK 21 + Apache Tomcat 9
+#
+# Debian 13 ships tomcat10/11 only, and Headwind MDM 5.x is Tomcat 9 (javax)
+# code. So Tomcat comes from the upstream tarball into /opt/tomcat9 with its
+# own systemd unit. The HTTP connector is bound to loopback: nginx_local (or
+# Ariadne after the rack move) is the only thing that talks to it.
+# See docs/themis-design-doc.md §5 and §9.2 (heap cap).
+
+# =========================================================================
+# 1. JAVA + SYSTEM USER
+# =========================================================================
+- name: Install OpenJDK runtime
+  apt:
+    name: openjdk-21-jre-headless
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create tomcat system user
+  user:
+    name: "{{ tomcat_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ tomcat_root }}"
+    create_home: false
+
+# =========================================================================
+# 2. TOMCAT TARBALL
+# =========================================================================
+- name: Create Tomcat install root
+  file:
+    path: "{{ tomcat_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Download Tomcat {{ tomcat_version }}
+  get_url:
+    url: "{{ tomcat_download_url }}"
+    dest: "{{ tomcat_root }}/apache-tomcat-{{ tomcat_version }}.tar.gz"
+    checksum: "sha512:{{ tomcat_sha512 }}"
+    mode: '0644'
+
+- name: Unpack Tomcat
+  unarchive:
+    src: "{{ tomcat_root }}/apache-tomcat-{{ tomcat_version }}.tar.gz"
+    dest: "{{ tomcat_root }}"
+    remote_src: true
+    creates: "{{ tomcat_root }}/apache-tomcat-{{ tomcat_version }}/bin/catalina.sh"
+  register: tomcat_unpack
+
+# The tarball unpacks root-only (0750/0640); the tomcat user must be able to
+# read bin/, lib/ and conf/ but must not be able to modify them. Once, at
+# unpack — the writable directories below get their own ownership afterwards.
+- name: Make the Tomcat tree readable by the tomcat group
+  file:
+    path: "{{ tomcat_root }}/apache-tomcat-{{ tomcat_version }}"
+    owner: root
+    group: "{{ tomcat_user }}"
+    mode: 'u=rwX,g=rX,o='
+    recurse: true
+  when: tomcat_unpack.changed
+
+- name: Point the current symlink at this version
+  file:
+    src: "{{ tomcat_root }}/apache-tomcat-{{ tomcat_version }}"
+    dest: "{{ tomcat_home }}"
+    state: link
+  notify: restart tomcat9
+
+# The stock ROOT is replaced by Headwind's; headwind_mdm clears it when it
+# deploys a new WAR, so it is deliberately not in this list.
+- name: Remove stock webapps
+  file:
+    path: "{{ tomcat_home }}/webapps/{{ item }}"
+    state: absent
+  loop:
+    - docs
+    - examples
+    - manager
+    - host-manager
+
+- name: Make the writable Tomcat directories owned by tomcat
+  file:
+    path: "{{ tomcat_home }}/{{ item }}"
+    state: directory
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_user }}"
+    recurse: true
+  loop:
+    - logs
+    - temp
+    - webapps
+    - work
+
+# =========================================================================
+# 3. CONFIGURE
+# =========================================================================
+- name: Bind the HTTP connector to loopback only
+  replace:
+    path: "{{ tomcat_home }}/conf/server.xml"
+    regexp: '<Connector port="8080" protocol="HTTP/1.1"(?! address=)'
+    replace: '<Connector port="8080" protocol="HTTP/1.1" address="127.0.0.1"'
+  notify: restart tomcat9
+
+- name: Install tomcat9 systemd unit
+  template:
+    src: tomcat9.service.j2
+    dest: /etc/systemd/system/tomcat9.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart tomcat9
+
+# =========================================================================
+# 4. ENABLE SERVICE
+# =========================================================================
+- name: Enable and start tomcat9
+  systemd:
+    name: tomcat9
+    enabled: true
+    state: started
+    daemon_reload: true
