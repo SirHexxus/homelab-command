@@ -167,7 +167,11 @@
 - name: Check whether the seed data is already loaded
   community.postgresql.postgresql_query:
     query: SELECT count(*) AS n FROM applications
-  args: "{{ headwind_db_conn }}"
+    login_host: "{{ postgres_host }}"
+    login_port: "{{ postgres_port }}"
+    login_user: "{{ postgres_user }}"
+    login_password: "{{ postgres_password }}"
+    login_db: "{{ postgres_db }}"
   register: headwind_seed_state
   no_log: true
 
@@ -184,7 +188,11 @@
 - name: Load the seed SQL
   community.postgresql.postgresql_script:
     path: "{{ headwind_src_dir }}/hmdm_init.rendered.sql"
-  args: "{{ headwind_db_conn }}"
+    login_host: "{{ postgres_host }}"
+    login_port: "{{ postgres_port }}"
+    login_user: "{{ postgres_user }}"
+    login_password: "{{ postgres_password }}"
+    login_db: "{{ postgres_db }}"
   when: headwind_seed_state.query_result[0].n | int == 0
   no_log: true
 
@@ -205,7 +213,11 @@
       UPDATE applicationversions
       SET url = REPLACE(url, 'https://h-mdm.com', 'https://{{ themis_domain }}')
       WHERE url LIKE 'https://h-mdm.com/%'
-  args: "{{ headwind_db_conn }}"
+    login_host: "{{ postgres_host }}"
+    login_port: "{{ postgres_port }}"
+    login_user: "{{ postgres_user }}"
+    login_password: "{{ postgres_password }}"
+    login_db: "{{ postgres_db }}"
   no_log: true
 
 # =========================================================================
@@ -220,5 +232,9 @@
         AND (password IS DISTINCT FROM %(hash)s OR passwordreset)
     named_args:
       hash: "{{ ((headwind_admin_password | md5 | upper) ~ headwind_password_salt) | sha1 }}"
-  args: "{{ headwind_db_conn }}"
+    login_host: "{{ postgres_host }}"
+    login_port: "{{ postgres_port }}"
+    login_user: "{{ postgres_user }}"
+    login_password: "{{ postgres_password }}"
+    login_db: "{{ postgres_db }}"
   no_log: true
