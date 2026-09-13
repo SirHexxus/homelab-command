@@ -97,7 +97,9 @@
 
 > **Note:** Dell PowerEdge R710 (TrueNAS Scale) has two active NICs — eno1 (10.0.10.30, VLAN 10, management + PBS) and eno4 (10.0.80.5, VLAN 80, media serving). Media apps (Jellyfin, ABS, Navidrome, CalibreWeb, *Arr, qBittorrent) run directly on TrueNAS co-located with ZFS storage. VLAN 80 requires switch port 4 reconfigured as VLAN 80 untagged access port.
 
-> **WiFi limitation:** eero Pro 6 supports 2 SSIDs in bridge mode. Nintendo Switch and Smart TV remain on VLAN 20 (Personal) until eero is replaced with a VLAN-capable AP (e.g., UniFi).
+> **WiFi limitation:** eero Pro 6 supports 2 SSIDs in bridge mode (SSID 1 → VLAN 20 Personal, SSID 2 → VLAN 70 Guest). The Nintendo Switch remains on VLAN 20 over WiFi until eero is replaced with a VLAN-capable AP (e.g., UniFi).
+>
+> **Living-room TV (updated 2026-09-09):** the Smart TV is no longer a managed network client. The VIZIO VQD65R-1010 is to be network-isolated entirely (deny-all MAC block at pfSense) and driven as a dumb display by a wired HTPC on VLAN 80. The 2-SSID limit therefore stops constraining the living room: the HTPC takes a Cat6 drop to the switch, and the DRM streaming stick uses the Guest SSID (VLAN 70) for internet-only access with no route inward.
 
 > **External monitoring:** Uptime Kuma will run on an external VPS (provider TBD) for outside-in service availability monitoring of DMZ endpoints.
 
