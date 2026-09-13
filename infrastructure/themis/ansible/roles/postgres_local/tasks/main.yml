@@ -1,5 +1,45 @@
-# roles/postgres_local/tasks/main.yml - in-container Postgres for the PoC only (skipped when postgres_host is remote)
-#
-# TODO: not yet written. See docs/themis-design-doc.md §9 / §13.
-
 ---
+# roles/postgres_local/tasks/main.yml - In-container PostgreSQL for the PoC
+#
+# Runs only while postgres_host == 'localhost' (see provision.yml). After the
+# rack move the database lives on the shared Postgres LXC (10.0.50.14) and
+# this role is skipped; see docs/themis-design-doc.md §10.
+
+# =========================================================================
+# 1. INSTALL
+# =========================================================================
+- name: Install PostgreSQL and the Ansible driver
+  apt:
+    name:
+      - postgresql
+      - python3-psycopg2
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Enable and start PostgreSQL
+  systemd:
+    name: postgresql
+    enabled: true
+    state: started
+
+# =========================================================================
+# 2. DATABASE + ROLE
+# =========================================================================
+- name: Create the Headwind database role
+  community.postgresql.postgresql_user:
+    name: "{{ postgres_user }}"
+    password: "{{ postgres_password }}"
+    state: present
+  become: true
+  become_user: postgres
+  no_log: true
+
+- name: Create the Headwind database
+  community.postgresql.postgresql_db:
+    name: "{{ postgres_db }}"
+    owner: "{{ postgres_user }}"
+    encoding: UTF-8
+    state: present
+  become: true
+  become_user: postgres
