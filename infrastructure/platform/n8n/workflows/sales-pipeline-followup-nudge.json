@@ -1,0 +1,172 @@
+{
+  "name": "Pipeline Follow-Up Nudge (Claude)",
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "vXSYJNLnQlyeQ79i",
+    "timezone": "America/Los_Angeles",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "nodes": [
+    {
+      "id": "a1",
+      "name": "Weekday Mornings 09:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -260,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 9,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "a2",
+      "name": "Get Pipeline Rows",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -40,
+        0
+      ],
+      "alwaysOutputData": true,
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "hDWNYxoRip0JcCJb",
+          "cachedResultName": "pipeline"
+        },
+        "returnAll": true,
+        "filters": {}
+      }
+    },
+    {
+      "id": "a3",
+      "name": "Pick Follow-Up",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        180,
+        0
+      ],
+      "parameters": {
+        "jsCode": "\n// Pick the single most urgent overdue follow-up. One nudge, one action.\n// State lives in the table itself: next_step_due IS the follow-up date, and\n// pushing it forward is the snooze. No extra columns required.\nconst STAGE_WEIGHT = {\n  'Prospect': 0, 'Meeting Booked': 1, 'Qualified': 2,\n  'Proposal Sent': 3, 'Decision Pending': 4,\n};\n\nconst laToday = () => {\n  const s = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });\n  const d = new Date(s);\n  return new Date(d.getFullYear(), d.getMonth(), d.getDate());\n};\nconst dayOf = (v) => {\n  if (!v) return null;\n  const d = new Date(v);\n  if (isNaN(d)) return null;\n  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());\n};\nconst daysBetween = (a, b) => Math.round((a - b) / 86400000);\n\nconst today = laToday();\nconst rows = $input.all().map(i => i.json).filter(r => r && r.name);\nconst live = rows.filter(r => r.stage && !String(r.stage).startsWith('Closed'));\n\nconst due = [];\nfor (const r of live) {\n  const dueDay = dayOf(r.next_step_due);\n  if (!dueDay) continue;\n  const overdue = daysBetween(today, dueDay);\n  if (overdue < 0) continue;                      // not due yet\n  const touchDay = dayOf(r.last_touch);\n  const sinceTouch = touchDay ? daysBetween(today, touchDay) : null;\n  if (sinceTouch === 0) continue;                 // already actioned today\n  due.push({ r, overdue, sinceTouch, weight: STAGE_WEIGHT[r.stage] ?? 0 });\n}\n\nif (due.length === 0) {\n  return [{ json: { fire: false } }];\n}\n\n// Money on the table wins. A Proposal Sent seven days overdue beats a Prospect\n// sixty days overdue: the first has a live counterparty and a clock, the second\n// is neglect that will otherwise hijack this nudge every day forever.\ndue.sort((a, b) => (b.weight - a.weight) || (b.overdue - a.overdue));\nconst top = due[0];\nconst r = top.r;\n\nlet head;\nif (top.overdue >= 14)     head = '\\u{1F6A8} Follow-up badly overdue';\nelse if (top.overdue >= 7) head = '\\u{1F534} Follow-up a week overdue';\nelse if (top.overdue >= 3) head = '\\u{1F7E0} Follow-up overdue';\nelse                       head = '\\u{1F514} Follow-up due';\n\nconst who = r.company ? `${r.name} (${r.company})` : r.name;\nconst overdueTxt = top.overdue === 0 ? 'due today'\n  : `${top.overdue} day${top.overdue === 1 ? '' : 's'} overdue`;\nconst touchTxt = top.sinceTouch === null ? 'never touched'\n  : `last touch ${top.sinceTouch}d ago`;\n\nlet step = String(r.next_step || '').trim();\nif (!step) step = '(no documented next step - that is the problem)';\nif (step.length > 220) step = step.slice(0, 217) + '...';\n\nconst rest = due.slice(1);\nlet tail = '';\nif (rest.length) {\n  const oldest = Math.max(...rest.map(d => d.overdue));\n  tail = `\\n\\n${rest.length} other row${rest.length === 1 ? '' : 's'} overdue, ` +\n         `oldest ${oldest}d. Clear or close them.`;\n}\n\nconst text =\n  `${head}\\n\\n` +\n  `${who}\\n` +\n  `${r.stage} \u00b7 ${overdueTxt} \u00b7 ${touchTxt}\\n\\n` +\n  `Next step:\\n${step}\\n\\n` +\n  `\u2192 Do this one thing today, then update the row.` +\n  `${tail}`;\n\nreturn [{ json: { fire: true, text, id: r.id, name: r.name, overdue: top.overdue } }];\n"
+      }
+    },
+    {
+      "id": "a4",
+      "name": "Anything Due?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.fire }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "a5",
+      "name": "Send Nudge",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        620,
+        -100
+      ],
+      "parameters": {
+        "chatId": "1135813646",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "jfhTkDLLipHkDAGz",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekday Mornings 09:00": {
+      "main": [
+        [
+          {
+            "node": "Get Pipeline Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Pipeline Rows": {
+      "main": [
+        [
+          {
+            "node": "Pick Follow-Up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Follow-Up": {
+      "main": [
+        [
+          {
+            "node": "Anything Due?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anything Due?": {
+      "main": [
+        [
+          {
+            "node": "Send Nudge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  }
+}
