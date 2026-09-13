@@ -1,0 +1,10 @@
+# group_vars/all.yml - Values shared by the themis host and the Ariadne
+# cert source (cert-sync.yml runs a play on each).
+
+---
+# The tablet enrolls against this name. It must not change across the rack
+# move — the tablet must reconnect without re-enrollment (design doc §8).
+themis_domain: themis.sirhexx.com
+
+# Where nginx_local expects the synced Let's Encrypt files.
+themis_cert_dir: /etc/nginx/certs/themis
