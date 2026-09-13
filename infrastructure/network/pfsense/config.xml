@@ -1603,6 +1603,13 @@
 			<descr>Routing to Umami</descr>
 			<aliases></aliases>
 		</hosts>
+		<hosts>
+			<host>themis</host>
+			<domain>sirhexx.com</domain>
+			<ip>10.0.20.103</ip>
+			<descr>DNS Host override for the Themis tablet MDM application MVP</descr>
+			<aliases></aliases>
+		</hosts>
 	</unbound>
 	<vlans>
 		<vlan>
