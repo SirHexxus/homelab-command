@@ -5,11 +5,9 @@
 #   variable           PoC (Incus)     Rack (LXC 111)
 #   postgres_host      localhost       10.0.50.14
 #   themis_proxy_mode  local           ariadne
-#   themis_domain      unchanged — the tablet must reconnect without re-enrollment
+#   themis_domain      unchanged — see group_vars/all.yml
 
 ---
-themis_domain: themis.sirhexx.com
-
 # localhost → postgres_local role runs; anything else → shared Postgres (LXC 105)
 postgres_host: localhost
 postgres_port: 5432
@@ -17,9 +15,31 @@ postgres_db: hmdm
 postgres_user: hmdm
 postgres_password: "{{ vault_themis_postgres_password }}"
 
-# local   → nginx_local role terminates TLS in-container (Let's Encrypt DNS-01)
+# local   → nginx_local role terminates TLS in-container with the cert
+#           synced from Ariadne (cert-sync.yml)
 # ariadne → Ariadne fronts it: rpadd themis.sirhexx.com 10.0.50.23:8080
 themis_proxy_mode: local
 
+# --- Tomcat (java_tomcat) ---------------------------------------------------
+tomcat_version: 9.0.121
+tomcat_download_url: "https://dlcdn.apache.org/tomcat/tomcat-9/v{{ tomcat_version }}/bin/apache-tomcat-{{ tomcat_version }}.tar.gz"
+tomcat_sha512: 16494dd4745f808d3c506807b5275521fd71044d976f441d18eeeab0f5a38bc1b5344ca395292f6f26eb7612cd8c8e746d01ccdfb29893d394052d9f4b1f4c11
+tomcat_root: /opt/tomcat
+tomcat_home: /opt/tomcat9
+tomcat_user: tomcat
+# Capped: the PoC host has no headroom (design doc §9.1)
+tomcat_heap_max: 768m
+
+# --- Headwind MDM (headwind_mdm) --------------------------------------------
+headwind_version: "5.41"
+headwind_launcher_version: "6.39"
+headwind_base_dir: /opt/hmdm
+headwind_admin_email: admin@sirhexx.com
+# Reverse proxies whose X-Real-IP Headwind should trust (comma-separated)
+headwind_proxy_addresses: 127.0.0.1
+
 headwind_admin_password: "{{ vault_themis_admin_password }}"
-headwind_api_key: "{{ vault_themis_api_key }}"
+# Dedicated panel user (role: Admin) for sophy-switch / cron; created once in
+# the web panel, never automated — see infrastructure/themis/CLAUDE.md.
+headwind_api_user: themis-api
+headwind_api_password: "{{ vault_themis_api_password }}"

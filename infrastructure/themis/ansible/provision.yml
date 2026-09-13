@@ -2,12 +2,15 @@
 #
 # Provisions Tomcat 9 + Headwind MDM against either the Incus PoC container or
 # LXC 111 — the target is chosen in inventory.ini, the PoC/rack differences in
-# group_vars/themis.yml. Roles are stubs until the Gate 1 spike passes
-# (docs/themis-design-doc.md §12): confirm the Headwind REST API reassigns
-# configurationId in one authenticated call before writing automation.
+# group_vars/themis.yml. Order of first bring-up:
 #
-#   ansible-playbook -i inventory.ini provision.yml
-#   ansible-playbook -i inventory.ini provision.yml --tags headwind
+#   1. bin/incus-poc-up (host prep) and set ansible_host in inventory.ini
+#   2. ansible-vault create group_vars/vault.yml   (vault_themis_* — 3 values)
+#   3. rpadd themis.sirhexx.com 127.0.0.1:9 on Ariadne, then cert-sync.yml
+#   4. ansible-playbook -i inventory.ini provision.yml --ask-vault-pass
+#
+#   ansible-playbook -i inventory.ini provision.yml --ask-vault-pass
+#   ansible-playbook -i inventory.ini provision.yml --ask-vault-pass --tags headwind
 
 ---
 - name: Provision Themis
