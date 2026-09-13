@@ -93,8 +93,12 @@ def request(base_url: str, method: str, path: str, body: dict | list | None = No
 
 
 def login(config: dict[str, str]) -> str:
-    """Exchange credentials for a JWT. Headwind expects the MD5 hex of the password."""
-    password_md5 = hashlib.md5(config['THEMIS_PASSWORD'].encode()).hexdigest()
+    """Exchange credentials for a JWT.
+
+    Headwind expects the MD5 hex of the password, upper-cased — the case is
+    baked into the stored hash, and the web panel sends it upper-cased.
+    """
+    password_md5 = hashlib.md5(config['THEMIS_PASSWORD'].encode()).hexdigest().upper()
     payload = request(config['THEMIS_URL'], 'POST', '/public/jwt/login',
                       {'login': config['THEMIS_USER'], 'password': password_md5})
     token = payload.get('id_token')

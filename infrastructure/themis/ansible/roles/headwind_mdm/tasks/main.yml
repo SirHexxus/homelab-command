@@ -219,6 +219,6 @@
       WHERE login = 'admin'
         AND (password IS DISTINCT FROM %(hash)s OR passwordreset)
     named_args:
-      hash: "{{ ((headwind_admin_password | md5) ~ headwind_password_salt) | sha1 }}"
+      hash: "{{ ((headwind_admin_password | md5 | upper) ~ headwind_password_salt) | sha1 }}"
   args: "{{ headwind_db_conn }}"
   no_log: true
