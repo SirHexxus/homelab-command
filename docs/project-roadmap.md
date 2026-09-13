@@ -323,11 +323,13 @@ server-closet move. Full design: `docs/themis-design-doc.md`.
 - [x] Tomcat 9 + Headwind + local Postgres provisioned *(2026-09-13; `provision.yml` converges)*
 - [x] Let's Encrypt cert for `themis.sirhexx.com` issued via Ariadne and synced in
       (`cert-sync.yml`); pfSense host override; verify LAN resolution (Gate 7) *(2026-09-13)*
-- [ ] Both tablets enrolled via ADB; per-device `<number>: School` / `<number>: Free Time`
-      configurations built (different school apps by age; Jellyfin in Free Time)
-- [ ] Verify user restrictions (Gate 5), school-app behaviour (Gate 3); ~~check-in latency
-      (Gate 4)~~ *measured 1.2 s over MQTT, 2026-09-13*
-- [ ] NFC/Tasker macro + nightly cron lock tested end to end on the LAN
+- [x] Both tablets enrolled via ADB; per-device `<number>: School` / `<number>: Free Time`
+      configurations built (different school apps by age; Jellyfin, camera, games in Free Time);
+      shared `Sophy: Locked` parent lock *(2026-09-13)*
+- [x] Verify user restrictions (Gate 5), school-app behaviour (Gate 3 — Acellus; ABC Mouse
+      lesson run pending), check-in latency (Gate 4: 1.2 s over MQTT) *(2026-09-13)*
+- [x] Cron: 20:00 → Locked, 06:00 → School on both tablets *(2026-09-13)*
+- [ ] NFC/Tasker macro on the parent phone (same API call as `sophy-switch`)
 - [ ] QR provisioning payload validated including signature checksum (Gate 6)
 
 ### Rack migration — *gated on the server-closet move*
@@ -447,4 +449,4 @@ Career Advancement pursuit in Mnemosyne.
 
 ---
 
-*Companion documents: Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.5 · Argus Design Doc v1.2 · Orpheus Design Doc v1.3 · Ariadne Design Doc v1.0 · Themis Design Doc v1.1 · Phemius Design Doc v1.0 · Homelab Philosophy v1.0*
+*Companion documents: Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.5 · Argus Design Doc v1.2 · Orpheus Design Doc v1.3 · Ariadne Design Doc v1.0 · Themis Design Doc v1.2 · Phemius Design Doc v1.0 · Homelab Philosophy v1.0*

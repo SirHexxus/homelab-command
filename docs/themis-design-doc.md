@@ -1,7 +1,7 @@
 # Themis Project: Mobile Device Management Design Doc
-**Version:** 1.1
+**Version:** 1.2
 **Last Updated:** 2026-09-13
-**Status:** MVP in progress — Ansible roles written; Sophy kiosk PoC being stood up in an Incus container on the ThinkPad ahead of the ISP change and server-closet move.
+**Status:** **MVP live** on the off-rack PoC — both tablets enrolled as Device Owner, per-device School/Free Time profiles, shared parent lock, 20:00/06:00 schedule. Rack migration pending the server-closet move.
 
 ---
 
@@ -160,9 +160,24 @@ the control plane is identical for both.
 | Setting | Value |
 |---------|-------|
 | Kiosk engine | Disabled |
-| App whitelist | Still a whitelist, just a wider one: Jellyfin (Orpheus, per-child account with parental limits) and a handful of games. No browser, no YouTube, no Play Store |
+| App whitelist | Still a whitelist, just a wider one: Jellyfin (Orpheus, per-child account with parental limits), the camera, and a handful of games (Mouse Timer today; Khan Academy Kids installed but hidden pending review). No browser, no YouTube, no Play Store |
 | Status bar | Restored |
 | Navigation | Native Android navigation and launcher restored |
+
+**`Sophy: Locked`** — shared parent lock
+
+One configuration for every tablet: kiosk mode with the Headwind launcher itself as the pinned
+app and an empty app list, status bar blocked, School's restrictions, and a "This tablet is
+locked. Ask a parent." header. Headwind's own device-lock flag is a premium-side feature the
+community server never sets, so a configuration is the equivalent. It serves bedtime, family
+time, and consequences alike. `unlock` always releases to School (fail-closed); Free Time is a
+deliberate parent action and is never scheduled. Locked → School is a kiosk-to-kiosk change the
+launcher ignores while pinned as its own content app, so `sophy-switch` bounces that transition
+through Free Time for a few seconds (observed and fixed 2026-09-13).
+
+**Schedule (laptop cron during the PoC):** 20:00 → `Sophy: Locked`, 06:00 → `<number>: School`,
+both tablets, every day. The 06:00 job also releases a consequence lock; a lock that must
+survive the morning is a follow-up.
 
 Jellyfin reaches Orpheus at 10.0.80.5:8096 across VLAN 20 → 80, which the existing
 "Allow Personal to Media" pfSense rule already permits. Each child signs into the Jellyfin app
@@ -199,6 +214,18 @@ kiosk, launcher replacement, and app whitelist are its core competency. It is ch
 MVP on that basis, not as a committed long-term platform for the fleet phase.
 
 Tomcat heap is capped (`-Xmx768m`) during the laptop PoC; see §9.
+
+> [!WARNING]
+> **Use the `master` launcher build, not `os`.** The installer hard-codes the open-source
+> `hmdm-<ver>-os.apk`, in which `ProUtils.kioskModeRequired()` is a stub returning `false` —
+> apps are whitelisted but never pinned. Kiosk mode is a Community-edition feature; it lives in
+> the closed-source `hmdm-<ver>-master.apk`, signed with the same key (verified 2026-09-13), so
+> it installs over `os` as a plain update with Device Owner intact. `group_vars` pins
+> `headwind_launcher_variant: master` and the role points the launcher's version record at it.
+>
+> The `master` build signs its MQTT login with a secret that is not the server default, so
+> with `mqtt.auth=1` its push connection is refused and it degrades to 15-minute polling. The
+> broker runs with `mqtt.auth=0` (§11).
 
 ---
 
@@ -240,6 +267,16 @@ adb shell dpm set-device-owner com.hmdm.launcher/.AdminReceiver
 
 This bypasses the HTTPS chicken-and-egg entirely and unblocks profile testing immediately. It
 does not exercise the QR flow, which must still be validated before final deployment.
+
+> [!IMPORTANT]
+> **Finish every ADB task before the tablet's first School switch.** School applies
+> `no_debugging_features`, which switches USB debugging off; clearing the restriction later does
+> not switch it back on — that takes a human in Developer options. Order used on 2026-09-13:
+> install the `master` launcher, `set-device-owner`, `stay_on_while_plugged_in`, sideload
+> Aurora Store and the apps, pull APK backups, *then* enroll. A fully managed device cannot add
+> a personal Google account (the flow demands a managed one), so the Play Store is unusable;
+> Aurora Store's anonymous mode installs the same apps, and Headwind whitelists them by package
+> name with no URL.
 
 > [!TIP]
 > Every QR enrollment attempt costs a factory reset. Iterate on the payload against an emulator
@@ -398,6 +435,17 @@ forwarding to Iris/Argus, and Postgres backup coverage.
 
 ## 11. Security Model & Blast Radius
 
+**Accepted risks recorded 2026-09-13 (PoC):**
+
+- **MQTT push without authentication** (`mqtt.auth=0`, §5). The channel carries "re-fetch your
+  configuration" nudges and the other push types the launcher understands (reboot, run app,
+  exit kiosk); policy itself is fetched over HTTPS. Reachable only on the LAN via the Incus
+  proxy device. Revisit if Headwind documents the `master` build's signing secret.
+- **Launcher admin password = panel admin password**, on the tablets. Chosen for a 7" screen;
+  a compromised tablet would expose the panel credential. Split them before the fleet phase.
+- **Aurora Store remains installed** on both tablets for app updates; it is not in any Sophy
+  profile and `no_install_unknown_sources` blocks it from installing while a profile is active.
+
 The MVP's worst case is an annoyed child. The fleet phase's worst case is materially different:
 an attacker holding the Themis admin credential would have app-install, remote-wipe, and
 location authority over every daily-driver phone in the household. The controls below are
@@ -428,9 +476,9 @@ and are all answerable on the laptop PoC.
 |---|------|----------------|--------|
 | 1 | **Does the Headwind REST API reassign `configurationId` in a single authenticated call?** | **Passed 2026-09-13** — from source (`DeviceResource.updateDevice`, bulk branch; §7.1) and on hardware: `sophy-switch` flipped `sophy-01` and the tablet acted on it | MVP |
 | 2 | **Does Headwind support Work Profile adequately?** | If not, the fleet phase moves to a self-hosted Android Management API controller | Fleet |
-| 3 | **School-app package names and network behaviour** | `com.acellus.acellus` is an assumption and ABC Mouse's package is unverified. Both lean on WebView, Play Services, and external content; too tight a whitelist breaks lessons mid-school-day | MVP |
+| 3 | **School-app package names and network behaviour** | **Passed for Acellus 2026-09-13** — `com.acellus.acellus` confirmed; two lessons completed inside the kiosk with the single-app whitelist. ABC Mouse (`com.aofl.abcmouse`) on the second tablet: package confirmed, lesson run pending | MVP |
 | 4 | **Actual check-in / push latency** | **Measured 2026-09-13: 1.2 s** from API call to the tablet's check-in, over MQTT push on the LAN (Onn 7" Core, Android 16, launcher 6.39). "Instant" is a fair expectation on-network; Doze behaviour off-charger still to observe | MVP |
-| 5 | **Which user restrictions Headwind exposes** | Factory reset, safe boot, and USB debugging restrictions determine whether the kiosk is actually enforceable | MVP |
+| 5 | **Which user restrictions Headwind exposes** | **Passed 2026-09-13** — the configuration's `restrictions` field is a comma-separated list applied verbatim via `addUserRestriction`, so `no_factory_reset`, `no_safe_boot`, `no_debugging_features` (plus `no_install_unknown_sources`, `no_modify_accounts`) are all set; kiosk additionally blocks the status bar, screenshots, USB storage, and Settings | MVP |
 | 6 | **Does the Onn model support QR provisioning?** | Budget MediaTek and Android Go tablets are inconsistent here | MVP |
 | 7 | **Does the LAN resolve a public name to a private IP?** | **Answered 2026-09-13** — Unbound already exempts `sirhexx.com` via `private-domain`; a host override supplies the private answer (§8). Verify with `dig @10.0.20.1` from VLAN 20 | MVP |
 

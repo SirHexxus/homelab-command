@@ -460,4 +460,4 @@ property of the use case, not a house style, is the judgement worth showing.
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Orpheus Design Doc v1.3 · Network & Services Architecture v1.9 · IaC Runbook v1.5 · Hardware Catalog v1.3 · Homelab Philosophy v1.0 · Themis Design Doc v1.1*
+*Part of the Homelab Command Project. Companion documents: Orpheus Design Doc v1.3 · Network & Services Architecture v1.9 · IaC Runbook v1.5 · Hardware Catalog v1.3 · Homelab Philosophy v1.0 · Themis Design Doc v1.2*
