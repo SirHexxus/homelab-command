@@ -116,6 +116,7 @@ IP/VMID assignments, service state, and repo-specific conventions for homelab-co
 | hephaestus | 10.0.50.30 | 109 | 50 | Terraform + Ansible | Shared Docker Compose host VM; Firecrawl (:3002) |
 | hermes | 10.0.50.17 | 110 | 50 | Terraform + Ansible | Chiron/Hermes-Agent runtime |
 | themis | 10.0.50.23 | 111 | 50 | Ansible (Terraform deferred) | MDM. **Allocated, not built** — MVP runs in an Incus container on the ThinkPad until the rack move |
+| phemius-livingroom | TBD (DHCP reservation) | — | 80 | Ansible | Bare metal Kodi HTPC (N150 mini PC). **Planned — no hardware**; `phemius-office` follows in Phase 2 |
 | npm (Ariadne) | 10.0.60.10 | 120 | 60 | Terraform (ariadne) | NGINX Proxy Manager |
 | authelia (Ariadne) | 10.0.60.11 | 121 | 60 | Terraform (ariadne) | Auth gateway |
 | umami | 10.0.50.18 | 122 | 50 | Terraform (ariadne) | Analytics |
@@ -130,6 +131,7 @@ IP/VMID assignments, service state, and repo-specific conventions for homelab-co
 - VLAN 50: 10.0.50.24+ available except .30 (10.0.50.10–23 assigned; .20–22 reserved for Argus; .23 = themis; .30 = hephaestus)
 - VLAN 60: 10.0.60.12+ available (10.0.60.10–11 assigned above)
 - VLAN 66: 10.0.66.11+ available (10.0.66.10 = recon)
+- VLAN 80: 10.0.80.5 = TrueNAS eno4 (all media apps); client hosts (Phemius) get DHCP reservations at pfSense — no static allocations yet
 
 ### Service IaC State Reference
 
@@ -150,7 +152,8 @@ IP/VMID assignments, service state, and repo-specific conventions for homelab-co
 | TP-Link switch | — | ✅ Written | `infrastructure/network/switch/` |
 | Mnemosyne | ✅ Written | ✅ Written | `infrastructure/mnemosyne/` — inbox-receiver (VMID 103) deployed |
 | Argus | — | Planned | Phase 3 |
-| Themis | Deferred | Planned | `infrastructure/themis/` — MDM (VMID 111); Terraform deferred until the rack move |
+| Themis | Deferred | Skeleton | `infrastructure/themis/` — MDM (VMID 111); stub roles, Terraform deferred until the rack move |
+| Phemius | — | Skeleton | `infrastructure/phemius/` — bare metal Kodi HTPC (Iris precedent); stub roles |
 
 ### Key File Paths
 

@@ -434,4 +434,4 @@ See: **Mnemosyne Design Doc**, **Argus Design Doc**, and **Ariadne Design Doc** 
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.3 · Project Roadmap v2.3 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.5 · Argus Design Doc v1.2 · Orpheus Design Doc v1.3 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.3 · Project Roadmap v2.4 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.5 · Argus Design Doc v1.2 · Orpheus Design Doc v1.3 · Ariadne Design Doc v1.0*

@@ -711,4 +711,4 @@ Argus-specific post-recovery steps:
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Project Roadmap v2.3 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.5 · Orpheus Design Doc v1.3 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Project Roadmap v2.4 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.5 · Orpheus Design Doc v1.3 · Ariadne Design Doc v1.0*

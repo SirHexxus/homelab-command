@@ -435,4 +435,4 @@ The Ariadne project demonstrates competencies worth documenting for any security
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Project Roadmap v2.3 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.5 · Argus Design Doc v1.2 · Orpheus Design Doc v1.3*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Project Roadmap v2.4 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.5 · Argus Design Doc v1.2 · Orpheus Design Doc v1.3*

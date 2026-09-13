@@ -661,4 +661,4 @@ See `infrastructure/ariadne/ansible/provision.yml` Play 0 as the reference imple
 
 ---
 
-*Part of the Homelab Command Project. See `docs/README.md` for the full document index. Companion documents: Homelab Philosophy v1.0 · Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Project Roadmap v2.3 · Mnemosyne Design Doc v1.2 · Argus Design Doc v1.2 · Orpheus Design Doc v1.3 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. See `docs/README.md` for the full document index. Companion documents: Homelab Philosophy v1.0 · Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Project Roadmap v2.4 · Mnemosyne Design Doc v1.2 · Argus Design Doc v1.2 · Orpheus Design Doc v1.3 · Ariadne Design Doc v1.0*
