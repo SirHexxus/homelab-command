@@ -1,0 +1,264 @@
+#!/usr/bin/env bash
+################################################################################
+# Script Name: incus-poc-up
+# Description: Prepare the ThinkPad as the off-rack Themis PoC host: install
+#              incus + adb, add a swapfile, initialise Incus, launch the Debian
+#              13 system container, enable root SSH into it, and expose the
+#              two ports the tablets need (443 HTTPS, 31000 MQTT push).
+#              Every step checks before it acts; re-running is a no-op.
+#              See docs/themis-design-doc.md §9 and §14.
+# Version: 1.0.0
+# Created: 2026-09-13
+#
+# Usage: sudo bin/incus-poc-up [options]
+#
+# Options:
+#   -h, --help      Show this help message
+#   -n, --dry-run   Print each action without performing it
+#
+# Dependencies: apt, sudo (run as root; the invoking user's SSH public key is
+#               read from $SUDO_USER's home)
+# Exit Codes:
+#   0 - Success
+#   1 - A step failed
+#   2 - Invalid arguments or not running as root
+################################################################################
+
+set -u
+set -o pipefail
+
+################################################################################
+# Constants
+################################################################################
+
+readonly SCRIPT_NAME="$(basename "$0")"
+readonly CONTAINER='themis-poc'
+readonly IMAGE='images:debian/13'
+readonly SWAPFILE='/swapfile'
+readonly SWAP_SIZE='4G'
+readonly IP_WAIT_SECONDS=60
+
+################################################################################
+# Global Variables
+################################################################################
+
+dry_run=false
+
+################################################################################
+# Functions
+################################################################################
+
+show_help() {
+	cat << EOF
+Usage: sudo $SCRIPT_NAME [options]
+
+Prepare this laptop as the Themis PoC host (Incus container "$CONTAINER").
+
+Options:
+    -h, --help      Show this help message
+    -n, --dry-run   Print each action without performing it
+
+EOF
+}
+
+log_info() {
+	echo "[INFO] $*" >&2
+}
+
+log_skip() {
+	echo "[SKIP] $*" >&2
+}
+
+log_error() {
+	echo "[ERROR] $*" >&2
+}
+
+# Run a command, or only print it under --dry-run.
+run() {
+	if [[ "$dry_run" == true ]]; then
+		echo "[DRY-RUN] $*" >&2
+		return 0
+	fi
+	"$@"
+}
+
+# Same as run(), but the command is a shell snippet executed inside the
+# container as root.
+run_in() {
+	if [[ "$dry_run" == true ]]; then
+		echo "[DRY-RUN] incus exec $CONTAINER -- sh -c '$*'" >&2
+		return 0
+	fi
+	incus exec "$CONTAINER" -- sh -c "$*"
+}
+
+install_packages() {
+	local pkg missing=()
+	for pkg in incus adb; do
+		if dpkg -s "$pkg" > /dev/null 2>&1; then
+			log_skip "$pkg already installed"
+		else
+			missing+=("$pkg")
+		fi
+	done
+	if [[ ${#missing[@]} -gt 0 ]]; then
+		log_info "Installing: ${missing[*]}"
+		run apt-get install -y "${missing[@]}" || return 1
+	fi
+	if id -nG "$SUDO_USER" | grep -qw incus-admin; then
+		log_skip "$SUDO_USER already in incus-admin"
+	else
+		log_info "Adding $SUDO_USER to incus-admin (takes effect on next login)"
+		run usermod -aG incus-admin "$SUDO_USER" || return 1
+	fi
+}
+
+ensure_swap() {
+	if [[ -n "$(swapon --show --noheadings)" ]]; then
+		log_skip "swap already active"
+		return 0
+	fi
+	log_info "Creating $SWAP_SIZE swapfile at $SWAPFILE"
+	run fallocate -l "$SWAP_SIZE" "$SWAPFILE" || return 1
+	run chmod 600 "$SWAPFILE" || return 1
+	run mkswap "$SWAPFILE" || return 1
+	run swapon "$SWAPFILE" || return 1
+	if ! grep -q "^$SWAPFILE " /etc/fstab; then
+		if [[ "$dry_run" == true ]]; then
+			echo "[DRY-RUN] append '$SWAPFILE none swap sw 0 0' to /etc/fstab" >&2
+		else
+			echo "$SWAPFILE none swap sw 0 0" >> /etc/fstab
+		fi
+	fi
+}
+
+ensure_incus_init() {
+	if incus network show incusbr0 > /dev/null 2>&1; then
+		log_skip "incus already initialised (incusbr0 present)"
+		return 0
+	fi
+	log_info "Initialising incus with the minimal profile"
+	run incus admin init --minimal
+}
+
+container_ipv4() {
+	incus list "$CONTAINER" -c 4 -f csv | cut -d' ' -f1
+}
+
+ensure_container() {
+	if incus info "$CONTAINER" > /dev/null 2>&1; then
+		log_skip "container $CONTAINER already exists"
+	else
+		log_info "Launching $CONTAINER from $IMAGE"
+		run incus launch "$IMAGE" "$CONTAINER" || return 1
+	fi
+	[[ "$dry_run" == true ]] && return 0
+
+	local waited=0
+	while [[ -z "$(container_ipv4)" ]]; do
+		if [[ $waited -ge $IP_WAIT_SECONDS ]]; then
+			log_error "$CONTAINER has no IPv4 lease after ${IP_WAIT_SECONDS}s"
+			return 1
+		fi
+		sleep 2
+		waited=$((waited + 2))
+	done
+}
+
+ensure_ssh() {
+	local pubkey="/home/$SUDO_USER/.ssh/id_rsa.pub"
+	if [[ ! -r "$pubkey" ]]; then
+		log_error "SSH public key not found: $pubkey"
+		return 1
+	fi
+
+	if run_in 'dpkg -s openssh-server > /dev/null 2>&1'; then
+		log_skip "openssh-server already installed in $CONTAINER"
+	else
+		log_info "Installing openssh-server + python3 in $CONTAINER"
+		run_in 'apt-get update -q && apt-get install -y -q openssh-server python3' \
+			|| return 1
+	fi
+
+	log_info "Installing $pubkey as root's authorized key"
+	run_in 'mkdir -p /root/.ssh && chmod 700 /root/.ssh' || return 1
+	run incus file push "$pubkey" "$CONTAINER/root/.ssh/authorized_keys" \
+		--mode 0600 --uid 0 --gid 0 || return 1
+
+	log_info "Allowing key-only root login"
+	run_in 'printf "PermitRootLogin prohibit-password\n" \
+		> /etc/ssh/sshd_config.d/root-key.conf && systemctl restart ssh' \
+		|| return 1
+}
+
+ensure_proxy_device() {
+	local name=$1 port=$2
+	if incus config device show "$CONTAINER" 2> /dev/null \
+		| grep -q "^$name:"; then
+		log_skip "proxy device $name already present"
+		return 0
+	fi
+	log_info "Adding proxy device $name (host :$port -> container :$port)"
+	run incus config device add "$CONTAINER" "$name" proxy \
+		"listen=tcp:0.0.0.0:$port" "connect=tcp:127.0.0.1:$port"
+}
+
+report() {
+	local ip
+	ip="$(container_ipv4 2> /dev/null)"
+	cat << EOF
+
+Done. Container "$CONTAINER" is at ${ip:-<pending>}.
+
+Next:
+  1. In infrastructure/themis/ansible/inventory.ini set:
+       themis-poc ansible_host=${ip:-<ip>}
+  2. ssh root@${ip:-<ip>}      # should log in with ~/.ssh/id_rsa
+  3. cd infrastructure/themis/ansible && ansible -i inventory.ini -m ping themis
+
+EOF
+}
+
+################################################################################
+# Main Script Logic
+################################################################################
+
+main() {
+	install_packages || return 1
+	ensure_swap || return 1
+	ensure_incus_init || return 1
+	ensure_container || return 1
+	ensure_ssh || return 1
+	ensure_proxy_device https 443 || return 1
+	ensure_proxy_device mqtt 31000 || return 1
+	report
+}
+
+################################################################################
+# Entry Point
+################################################################################
+
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		-h|--help)
+			show_help
+			exit 0
+			;;
+		-n|--dry-run)
+			dry_run=true
+			shift
+			;;
+		*)
+			log_error "Unknown option: $1"
+			show_help
+			exit 2
+			;;
+	esac
+done
+
+if [[ $EUID -ne 0 || -z "${SUDO_USER:-}" ]]; then
+	log_error "Run with sudo (the invoking user's SSH key is needed)"
+	exit 2
+fi
+
+main || exit 1
