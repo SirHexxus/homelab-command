@@ -1,0 +1,277 @@
+#!/usr/bin/env python3
+"""Report the HDR format mix of a video library, and optionally its codec uniformity.
+
+Answers two planning questions:
+
+  1. How much of the library is Dolby Vision? Kodi on Linux cannot drive DV, so
+     DV titles tone-map to HDR10 or fall back to SDR on an HTPC.
+
+  2. (--codecs) How uniform is the library? Virtual-channel servers such as
+     Tunarr can remux without re-encoding ("direct" modes, near-zero CPU) only
+     when programs share codec, resolution, frame rate, and audio layout.
+     A library that varies on those axes needs a normalisation pass or full
+     transcoding instead.
+
+Classification is read from the video stream via ffprobe:
+    Dolby Vision  ->  a "DOVI configuration record" side-data block
+    HDR10+        ->  SMPTE 2094-40 dynamic metadata
+    HDR10         ->  color_transfer smpte2084 (PQ)
+    HLG           ->  color_transfer arib-std-b67
+    SDR           ->  anything else
+
+Read-only. Never writes to or modifies the scanned files.
+
+Examples:
+    ./bin/scan-hdr-formats /mnt/truenas-media/movies
+    ./bin/scan-hdr-formats /mnt/truenas-media/movies /mnt/truenas-media/shows
+    ./bin/scan-hdr-formats /mnt/truenas-media/movies --list-dv
+    ./bin/scan-hdr-formats /mnt/truenas-media/movies --codecs
+    ./bin/scan-hdr-formats /mnt/truenas-media/movies --codecs --json report.json
+"""
+
+import argparse
+import json
+import subprocess
+import sys
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+VIDEO_SUFFIXES = frozenset({'.mkv', '.mp4', '.m4v', '.ts', '.avi', '.mov', '.webm'})
+
+FORMAT_ORDER = ('Dolby Vision', 'HDR10+', 'HDR10', 'HLG', 'SDR', 'Unreadable')
+
+CODEC_AXES = ('video codec', 'resolution', 'frame rate', 'audio codec', 'audio channels')
+
+FFPROBE_TIMEOUT_SECONDS = 60
+
+# Frame rates within this tolerance of a broadcast standard are reported as that
+# standard, so 24000/1001 and 23.976 do not split into separate buckets.
+FPS_TOLERANCE = 0.01
+
+COMMON_FPS = (23.976, 24.0, 25.0, 29.97, 30.0, 48.0, 50.0, 59.94, 60.0)
+
+UNKNOWN = 'unknown'
+
+
+def probe_streams(path: Path) -> list[dict] | None:
+    """Return every stream's ffprobe JSON for a file, or None if it cannot be read."""
+    command = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_streams', str(path)]
+    try:
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=FFPROBE_TIMEOUT_SECONDS
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    try:
+        return json.loads(result.stdout).get('streams', [])
+    except json.JSONDecodeError:
+        return None
+
+
+def first_stream(streams: list[dict] | None, codec_type: str) -> dict | None:
+    """Return the first stream of the given codec_type, or None."""
+    if not streams:
+        return None
+    return next((s for s in streams if s.get('codec_type') == codec_type), None)
+
+
+def classify_stream(stream: dict | None) -> str:
+    """Map an ffprobe video stream to one of FORMAT_ORDER."""
+    if stream is None:
+        return 'Unreadable'
+
+    side_data_types = {
+        entry.get('side_data_type', '') for entry in stream.get('side_data_list', [])
+    }
+
+    if any('DOVI' in kind or 'Dolby Vision' in kind for kind in side_data_types):
+        return 'Dolby Vision'
+    if any('2094' in kind or 'HDR Dynamic Metadata' in kind for kind in side_data_types):
+        return 'HDR10+'
+
+    transfer = stream.get('color_transfer', '')
+    if transfer == 'smpte2084':
+        return 'HDR10'
+    if transfer == 'arib-std-b67':
+        return 'HLG'
+
+    return 'SDR'
+
+
+def normalise_fps(raw: str) -> str:
+    """Turn an ffprobe rate fraction such as '24000/1001' into a labelled rate."""
+    if not raw or '/' not in raw:
+        return UNKNOWN
+
+    numerator, _, denominator = raw.partition('/')
+    try:
+        value = int(numerator) / int(denominator)
+    except (ValueError, ZeroDivisionError):
+        return UNKNOWN
+
+    if value <= 0:
+        return UNKNOWN
+
+    for standard in COMMON_FPS:
+        if abs(value - standard) < FPS_TOLERANCE:
+            return f'{standard:g}'
+
+    return f'{value:.3f}'
+
+
+def describe(video: dict | None, audio: dict | None) -> dict[str, str]:
+    """Summarise the axes that decide whether a library can be remuxed as-is."""
+    if video is None:
+        return {axis: UNKNOWN for axis in CODEC_AXES}
+
+    width = video.get('width')
+    height = video.get('height')
+    resolution = f'{width}x{height}' if width and height else UNKNOWN
+
+    return {
+        'video codec': video.get('codec_name', UNKNOWN),
+        'resolution': resolution,
+        'frame rate': normalise_fps(video.get('r_frame_rate', '')),
+        'audio codec': audio.get('codec_name', UNKNOWN) if audio else 'none',
+        'audio channels': str(audio.get('channels', UNKNOWN)) if audio else 'none',
+    }
+
+
+def find_videos(roots: list[Path]) -> list[Path]:
+    """Collect every video file under the given roots, sorted for stable output."""
+    found: list[Path] = []
+    for root in roots:
+        if not root.exists():
+            print(f'warning: {root} does not exist — skipping', file=sys.stderr)
+            continue
+        found.extend(
+            path for path in root.rglob('*')
+            if path.is_file() and path.suffix.lower() in VIDEO_SUFFIXES
+        )
+    return sorted(found)
+
+
+def scan(paths: list[Path], workers: int) -> list[dict]:
+    """Probe every path in parallel, returning one record per file."""
+    results: list[dict] = []
+    total = len(paths)
+
+    def probe_one(path: Path) -> dict:
+        streams = probe_streams(path)
+        video = first_stream(streams, 'video')
+        record: dict = {'path': str(path), 'format': classify_stream(video)}
+        record.update(describe(video, first_stream(streams, 'audio')))
+        return record
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for index, record in enumerate(pool.map(probe_one, paths), start=1):
+            results.append(record)
+            if index % 25 == 0 or index == total:
+                print(f'  scanned {index}/{total}', end='\r', file=sys.stderr)
+
+    print(file=sys.stderr)
+    return results
+
+
+def print_format_report(results: list[dict], list_dv: bool) -> None:
+    """Print the HDR format mix, plus the Dolby Vision titles when asked."""
+    counts = Counter(record['format'] for record in results)
+    total = len(results)
+
+    print(f'\nScanned {total} files\n')
+    width = max(len(fmt) for fmt in FORMAT_ORDER)
+    for fmt in FORMAT_ORDER:
+        count = counts.get(fmt, 0)
+        if count:
+            print(f'  {fmt:<{width}}  {count:>5}  ({count / total:>5.1%})')
+
+    dv_count = counts.get('Dolby Vision', 0)
+    print(f'\nDolby Vision: {dv_count} of {total} ({dv_count / total:.1%})')
+
+    if list_dv and dv_count:
+        print('\nDolby Vision titles:')
+        for record in results:
+            if record['format'] == 'Dolby Vision':
+                print(f"  {record['path']}")
+
+
+def print_codec_report(results: list[dict], top: int) -> None:
+    """Print per-axis distributions and a remux-readiness verdict."""
+    readable = [record for record in results if record['format'] != 'Unreadable']
+    total = len(readable)
+
+    print('\n' + '=' * 60)
+    print('Codec uniformity (direct-remux readiness)')
+    print('=' * 60)
+
+    if total == 0:
+        print('\nNo readable files to analyse.')
+        return
+
+    dominant_shares: list[float] = []
+
+    for axis in CODEC_AXES:
+        counts = Counter(record[axis] for record in readable)
+        print(f'\n{axis.title()} — {len(counts)} distinct')
+        for value, count in counts.most_common(top):
+            print(f'  {value:<24}  {count:>5}  ({count / total:>5.1%})')
+        if len(counts) > top:
+            remainder = total - sum(count for _, count in counts.most_common(top))
+            print(f'  {"(other)":<24}  {remainder:>5}  ({remainder / total:>5.1%})')
+        dominant_shares.append(counts.most_common(1)[0][1] / total)
+
+    weakest = min(dominant_shares)
+    weakest_axis = CODEC_AXES[dominant_shares.index(weakest)]
+
+    print('\n' + '-' * 60)
+    print(f'Least uniform axis: {weakest_axis} — dominant value covers {weakest:.1%}')
+    if weakest >= 0.95:
+        verdict = 'Highly uniform. Direct/remux mode should work with little or no normalisation.'
+    elif weakest >= 0.75:
+        verdict = ('Mostly uniform. Try direct mode first; expect glitches at boundaries '
+                   'involving the minority values.')
+    else:
+        verdict = ('Heterogeneous. Direct mode is likely to stutter at program boundaries — '
+                   'plan a normalisation pass or full transcoding.')
+    print(verdict)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description='Report the HDR format mix of a video library.'
+    )
+    parser.add_argument('roots', nargs='+', type=Path, help='Directories to scan recursively')
+    parser.add_argument('--list-dv', action='store_true', help='List every Dolby Vision title')
+    parser.add_argument('--codecs', action='store_true',
+                        help='Also report codec/resolution/frame-rate/audio uniformity')
+    parser.add_argument('--top', type=int, default=6,
+                        help='Values to show per axis with --codecs (default 6)')
+    parser.add_argument('--json', type=Path, metavar='FILE', help='Also write full results as JSON')
+    parser.add_argument('--workers', type=int, default=4,
+                        help='Parallel ffprobe workers (default 4)')
+    args = parser.parse_args()
+
+    paths = find_videos(args.roots)
+    if not paths:
+        print('No video files found under the given roots.', file=sys.stderr)
+        sys.exit(1)
+
+    print(f'Probing {len(paths)} files...', file=sys.stderr)
+    results = scan(paths, args.workers)
+
+    print_format_report(results, args.list_dv)
+    if args.codecs:
+        print_codec_report(results, args.top)
+
+    if args.json:
+        args.json.write_text(json.dumps(results, indent=2))
+        print(f'\nWrote {args.json}')
+
+
+if __name__ == '__main__':
+    main()
