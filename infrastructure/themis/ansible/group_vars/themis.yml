@@ -33,10 +33,20 @@ tomcat_heap_max: 768m
 # --- Headwind MDM (headwind_mdm) --------------------------------------------
 headwind_version: "5.41"
 headwind_launcher_version: "6.39"
+# "master" is the feature-complete launcher (kiosk mode, remote control) —
+# Community edition, free, same signing key as "os". The installer defaults to
+# "os", whose kiosk-mode code is a stub that never pins anything.
+headwind_launcher_variant: master
 headwind_base_dir: /opt/hmdm
 headwind_admin_email: admin@sirhexx.com
 # Reverse proxies whose X-Real-IP Headwind should trust (comma-separated)
 headwind_proxy_addresses: 127.0.0.1
+# MQTT push auth. The launcher signs in with sha1("hmdm" + a build-time secret);
+# the closed-source "master" build's secret is not the server default, so with
+# auth on it is refused and pushes degrade to 15-minute polling. Off = accepted
+# risk on the LAN (design doc §11): the push channel only carries "re-fetch
+# your config" nudges — policy itself is served over HTTPS.
+headwind_mqtt_auth: 0
 
 headwind_admin_password: "{{ vault_themis_admin_password }}"
 # Dedicated panel user (role: Admin) for sophy-switch / cron; created once in
