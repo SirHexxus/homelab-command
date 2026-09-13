@@ -1,0 +1,5 @@
+# roles/headwind_mdm/tasks/main.yml - Headwind MDM WAR, config, initial admin + API key
+#
+# TODO: not yet written. See docs/themis-design-doc.md §8 / §13.
+
+---
