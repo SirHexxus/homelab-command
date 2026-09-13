@@ -1,5 +1,73 @@
-# roles/nginx_local/tasks/main.yml - PoC-only nginx + Let's Encrypt DNS-01; retired once Ariadne fronts Themis
-#
-# TODO: not yet written. See docs/themis-design-doc.md §8 / §10.
-
 ---
+# roles/nginx_local/tasks/main.yml - TLS termination inside the PoC container
+#
+# Runs only while themis_proxy_mode == 'local' (see provision.yml). After the
+# rack move Ariadne fronts Themis and this role is retired.
+#
+# The certificate is NOT issued here. Ariadne issues and renews it like every
+# other sirhexx.com host; cert-sync.yml copies it in. A self-signed
+# placeholder is deliberately not provided — a tablet that ever sees one has
+# to be factory-reset to re-enroll (infrastructure/themis/CLAUDE.md rule 2).
+
+# =========================================================================
+# 1. INSTALL
+# =========================================================================
+- name: Install nginx
+  apt:
+    name: nginx
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# =========================================================================
+# 2. CERTIFICATE PRESENCE
+# =========================================================================
+- name: Check for the synced certificate
+  stat:
+    path: "{{ themis_cert_dir }}/{{ item }}"
+  loop:
+    - fullchain.pem
+    - privkey.pem
+  register: themis_cert_files
+
+- name: Assert the certificate has been synced from Ariadne
+  assert:
+    that: themis_cert_files.results | map(attribute='stat.exists') | list is all
+    fail_msg: >
+      No certificate in {{ themis_cert_dir }}. Run
+      'ansible-playbook -i inventory.ini cert-sync.yml' first
+      (issue it on Ariadne with rpadd if it does not exist yet).
+
+# =========================================================================
+# 3. CONFIGURE
+# =========================================================================
+- name: Remove the default site
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: reload nginx
+
+- name: Deploy the Themis server block
+  template:
+    src: themis.conf.j2
+    dest: /etc/nginx/sites-available/themis.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload nginx
+
+- name: Enable the Themis server block
+  file:
+    src: /etc/nginx/sites-available/themis.conf
+    dest: /etc/nginx/sites-enabled/themis.conf
+    state: link
+  notify: reload nginx
+
+# =========================================================================
+# 4. ENABLE SERVICE
+# =========================================================================
+- name: Enable and start nginx
+  systemd:
+    name: nginx
+    enabled: true
+    state: started

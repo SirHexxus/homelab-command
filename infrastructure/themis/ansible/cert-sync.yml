@@ -1,0 +1,58 @@
+# cert-sync.yml - Copy the themis.sirhexx.com certificate from Ariadne
+#
+# Ariadne owns issuance and renewal (certbot, HTTP-01) for every sirhexx.com
+# host; the PoC container only needs a copy for nginx_local. Re-run after each
+# renewal (certbot renews ~30 days before expiry) — check with
+#   ssh root@10.0.60.10 certbot certificates -d themis.sirhexx.com
+#
+# One-time, on Ariadne, before the first run:
+#   rpadd themis.sirhexx.com 127.0.0.1:9
+# (the upstream is a deliberate dead end — Themis is not internet-facing;
+#  Ariadne exists here only to hold the certificate, design doc §8)
+#
+#   ansible-playbook -i inventory.ini cert-sync.yml
+
+---
+- name: Fetch the certificate from Ariadne
+  hosts: ariadne
+  gather_facts: false
+  tasks:
+    - name: Fetch certificate files
+      fetch:
+        src: "/etc/letsencrypt/live/{{ themis_domain }}/{{ item }}"
+        dest: ".certs/{{ item }}"
+        flat: true
+      loop:
+        - fullchain.pem
+        - privkey.pem
+
+- name: Install the certificate on Themis
+  hosts: themis
+  gather_facts: false
+  tasks:
+    - name: Create certificate directory
+      file:
+        path: "{{ themis_cert_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Copy certificate files
+      copy:
+        src: ".certs/{{ item }}"
+        dest: "{{ themis_cert_dir }}/{{ item }}"
+        owner: root
+        group: root
+        mode: '0600'
+      loop:
+        - fullchain.pem
+        - privkey.pem
+      register: themis_cert_copy
+
+    - name: Reload nginx if it is installed and the certificate changed
+      systemd:
+        name: nginx
+        state: reloaded
+      when: themis_cert_copy.changed
+      failed_when: false
