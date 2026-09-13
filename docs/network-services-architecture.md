@@ -176,7 +176,7 @@
 | Splunk Free | 10.0.50.20 | LXC (planned) | SIEM log aggregation |
 | Wazuh Manager | 10.0.50.21 | LXC (planned) | Host-based IDS |
 | Grafana | 10.0.50.22 | LXC (planned) | TimescaleDB dashboards |
-| Themis | 10.0.50.23 | LXC (planned) | MDM. Tomcat 9 + Headwind + Postgres. Allocated, not built — MVP runs off-rack. See Themis Design Doc v1.1 |
+| Themis | 10.0.50.23 | LXC (planned) | MDM. Tomcat 9 + Headwind + Postgres. Allocated, not built — MVP runs off-rack. See Themis Design Doc v1.2 |
 | Hephaestus | 10.0.50.30 | VM (planned) | Shared Docker Compose host; wger + future services (Nextcloud, Vaultwarden) |
 
 ### VLAN 60 -- DMZ
