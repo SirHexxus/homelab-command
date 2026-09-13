@@ -12,6 +12,11 @@ app it runs, plus one shared parent-lock configuration:
 "unlock" is an alias for "school": a lock always releases to the fail-closed
 state; Free Time is a deliberate parent action, never automatic.
 
+Leaving Locked for School is a kiosk-to-kiosk change, which the launcher does
+not act on while it is pinned as its own content app (observed 2026-09-13). So
+that transition is bounced through Free Time — a few seconds of the launcher
+desktop — before School is applied.
+
 Talks to the Headwind MDM private REST API: log in for a JWT, resolve the
 device and the target configuration to their ids, then reassign the device's
 configurationId in one PUT — the server pushes the change to the tablet over
@@ -40,6 +45,7 @@ import hashlib
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -65,6 +71,9 @@ ALL_DEVICES = ('sophy-01', 'sophy-02')
 REQUIRED_ENV = ('THEMIS_URL', 'THEMIS_USER', 'THEMIS_PASSWORD')
 
 HTTP_TIMEOUT_SECONDS = 15
+
+# How long to leave a tablet in Free Time when bouncing out of Locked.
+BOUNCE_SECONDS = 6
 
 
 # ── Functions ─────────────────────────────────────────────────────────────────
@@ -190,10 +199,23 @@ def switch(config: dict[str, str], number: str, mode: str, dry_run: bool,
         print(f'{number}: already in {target_name!r}')
         return
 
+    bounce_name = configuration_name(number, 'free')
+    needs_bounce = (current_name == SHARED_MODES['lock']
+                    and target_name == configuration_name(number, 'school'))
+    if needs_bounce and bounce_name not in configurations:
+        print(f'Error: configuration {bounce_name!r} does not exist on the server; '
+              f'it is needed to leave {current_name!r}', file=sys.stderr)
+        sys.exit(1)
+
     if dry_run:
-        print(f'{number}: would move {current_name!r} -> {target_name!r} '
+        via = f' via {bounce_name!r}' if needs_bounce else ''
+        print(f'{number}: would move {current_name!r} -> {target_name!r}{via} '
               f'(device id {device["id"]}, configuration id {target_id})')
         return
+
+    if needs_bounce:
+        assign_configuration(base_url, token, device['id'], configurations[bounce_name])
+        time.sleep(BOUNCE_SECONDS)
 
     assign_configuration(base_url, token, device['id'], target_id)
     after = get_device(base_url, token, number)
