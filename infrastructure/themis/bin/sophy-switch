@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+"""Move a Themis-managed tablet between its Sophy policy configurations.
+
+Every tablet has its own pair of Headwind configurations, named after the
+device number so nothing in this repo says whose tablet it is or which school
+app it runs:
+
+    <number>: School        e.g. "sophy-01: School"
+    <number>: Free Time     e.g. "sophy-01: Free Time"
+
+Talks to the Headwind MDM private REST API: log in for a JWT, resolve the
+device and the target configuration to their ids, then reassign the device's
+configurationId in one PUT — the server pushes the change to the tablet over
+MQTT (design doc §7, Gate 1). This is the backend for the cron lock and the
+NFC/Tasker macro.
+
+Credentials come from the environment only (never arguments, never a file
+in this repo):
+
+    THEMIS_URL       https://themis.sirhexx.com
+    THEMIS_USER      panel user with the edit_devices permission
+    THEMIS_PASSWORD  its password
+
+For cron, put those in ~/.config/themis/env (mode 0600) and source it.
+
+Examples:
+    sophy-switch sophy-01 school
+    sophy-switch sophy-01 free --dry-run
+    sophy-switch --list
+"""
+
+# ── Standard library imports ──────────────────────────────────────────────────
+import argparse
+import hashlib
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+MODES = {
+    'school': 'School',
+    'free': 'Free Time',
+}
+
+REQUIRED_ENV = ('THEMIS_URL', 'THEMIS_USER', 'THEMIS_PASSWORD')
+
+HTTP_TIMEOUT_SECONDS = 15
+
+
+# ── Functions ─────────────────────────────────────────────────────────────────
+
+def env_config() -> dict[str, str]:
+    """Read the server URL and credentials from the environment."""
+    missing = [name for name in REQUIRED_ENV if not os.environ.get(name)]
+    if missing:
+        print(f"Error: missing environment variable(s): {', '.join(missing)}",
+              file=sys.stderr)
+        sys.exit(2)
+    return {name: os.environ[name].strip() for name in REQUIRED_ENV}
+
+
+def request(base_url: str, method: str, path: str, body: dict | list | None = None,
+            token: str | None = None) -> dict:
+    """Send one JSON request to the Headwind REST API and return the parsed body."""
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(f'{base_url.rstrip("/")}/rest{path}', data=data,
+                                 method=method)
+    req.add_header('Content-Type', 'application/json')
+    req.add_header('Accept', 'application/json')
+    if token:
+        req.add_header('Authorization', f'Bearer {token}')
+
+    try:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as resp:
+            payload = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        print(f'Error: {method} {path} -> HTTP {exc.code} {exc.reason}', file=sys.stderr)
+        sys.exit(1)
+    except urllib.error.URLError as exc:
+        print(f'Error: cannot reach {base_url}: {exc.reason}', file=sys.stderr)
+        sys.exit(1)
+    except json.JSONDecodeError:
+        print(f'Error: {method} {path} returned a non-JSON body', file=sys.stderr)
+        sys.exit(1)
+
+    if isinstance(payload, dict) and payload.get('status') not in (None, 'OK'):
+        message = payload.get('message') or payload.get('status')
+        print(f'Error: {method} {path} -> {message}', file=sys.stderr)
+        sys.exit(1)
+    return payload
+
+
+def login(config: dict[str, str]) -> str:
+    """Exchange credentials for a JWT. Headwind expects the MD5 hex of the password."""
+    password_md5 = hashlib.md5(config['THEMIS_PASSWORD'].encode()).hexdigest()
+    payload = request(config['THEMIS_URL'], 'POST', '/public/jwt/login',
+                      {'login': config['THEMIS_USER'], 'password': password_md5})
+    token = payload.get('id_token')
+    if not token:
+        print('Error: login succeeded but no id_token in the response', file=sys.stderr)
+        sys.exit(1)
+    return token
+
+
+def list_configurations(base_url: str, token: str) -> dict[str, int]:
+    """Return {configuration name: id} for every configuration on the server."""
+    payload = request(base_url, 'GET', '/private/configurations/list', token=token)
+    return {item['name']: item['id'] for item in payload['data']}
+
+
+def get_device(base_url: str, token: str, number: str) -> dict:
+    """Return the device record for a device number (the ID shown in the panel)."""
+    payload = request(base_url, 'GET', f'/private/devices/number/{number}', token=token)
+    device = payload.get('data')
+    if not device:
+        print(f'Error: no device with number {number!r}', file=sys.stderr)
+        sys.exit(1)
+    return device
+
+
+def assign_configuration(base_url: str, token: str, device_id: int,
+                         configuration_id: int) -> None:
+    """Reassign one device to a configuration; the server pushes it to the tablet."""
+    request(base_url, 'PUT', '/private/devices',
+            {'ids': [device_id], 'configurationId': configuration_id}, token=token)
+
+
+def configuration_name(number: str, mode: str) -> str:
+    """Return the configuration name for a device number and mode."""
+    return f'{number}: {MODES[mode]}'
+
+
+def print_configurations(configurations: dict[str, int]) -> None:
+    """List the server's configurations, marking the per-device Sophy pairs."""
+    by_id = {cfg_id: name for name, cfg_id in configurations.items()}
+    suffixes = tuple(f': {label}' for label in MODES.values())
+    for cfg_id in sorted(by_id):
+        marker = '*' if by_id[cfg_id].endswith(suffixes) else ' '
+        print(f'{marker} {cfg_id:>4}  {by_id[cfg_id]}')
+
+
+def switch(config: dict[str, str], number: str, mode: str, dry_run: bool) -> None:
+    """Resolve ids, then move the device (or report what would happen)."""
+    base_url = config['THEMIS_URL']
+    token = login(config)
+
+    configurations = list_configurations(base_url, token)
+    target_name = configuration_name(number, mode)
+    if target_name not in configurations:
+        print(f'Error: configuration {target_name!r} does not exist on the server; '
+              f'create it in the panel first', file=sys.stderr)
+        sys.exit(1)
+    target_id = configurations[target_name]
+
+    device = get_device(base_url, token, number)
+    current_id = device.get('configurationId')
+    current_name = next((name for name, cfg_id in configurations.items()
+                         if cfg_id == current_id), f'#{current_id}')
+
+    if current_id == target_id:
+        print(f'{number}: already in {target_name!r}')
+        return
+
+    if dry_run:
+        print(f'{number}: would move {current_name!r} -> {target_name!r} '
+              f'(device id {device["id"]}, configuration id {target_id})')
+        return
+
+    assign_configuration(base_url, token, device['id'], target_id)
+    after = get_device(base_url, token, number)
+    if after.get('configurationId') != target_id:
+        print(f'Error: {number} still reports configuration {after.get("configurationId")}',
+              file=sys.stderr)
+        sys.exit(1)
+    print(f'{number}: {current_name!r} -> {target_name!r}')
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description='Move a Themis-managed tablet between the Sophy configurations.',
+    )
+    parser.add_argument('number', nargs='?', help='Device number as shown in the panel')
+    parser.add_argument('mode', nargs='?', choices=sorted(MODES),
+                        help='Target configuration: ' + ', '.join(
+                            f'{key} = "<number>: {label}"' for key, label in MODES.items()))
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Resolve everything but do not reassign the device')
+    parser.add_argument('--list', action='store_true',
+                        help='List configurations on the server and exit')
+    args = parser.parse_args()
+
+    config = env_config()
+
+    if args.list:
+        print_configurations(list_configurations(config['THEMIS_URL'], login(config)))
+        return
+
+    if not args.number or not args.mode:
+        parser.error('number and mode are required unless --list is given')
+
+    switch(config, args.number, args.mode, dry_run=args.dry_run)
+
+
+if __name__ == '__main__':
+    main()
