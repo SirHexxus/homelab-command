@@ -426,10 +426,10 @@ and are all answerable on the laptop PoC.
 
 | # | Gate | Why it matters | Blocks |
 |---|------|----------------|--------|
-| 1 | **Does the Headwind REST API reassign `configurationId` in a single authenticated call?** | **Answered from source 2026-09-13 — yes** (`DeviceResource.updateDevice`, bulk branch; see §7.1). Remaining: confirm on a real tablet and record the push latency (Gate 4) | MVP |
+| 1 | **Does the Headwind REST API reassign `configurationId` in a single authenticated call?** | **Passed 2026-09-13** — from source (`DeviceResource.updateDevice`, bulk branch; §7.1) and on hardware: `sophy-switch` flipped `sophy-01` and the tablet acted on it | MVP |
 | 2 | **Does Headwind support Work Profile adequately?** | If not, the fleet phase moves to a self-hosted Android Management API controller | Fleet |
 | 3 | **School-app package names and network behaviour** | `com.acellus.acellus` is an assumption and ABC Mouse's package is unverified. Both lean on WebView, Play Services, and external content; too tight a whitelist breaks lessons mid-school-day | MVP |
-| 4 | **Actual check-in / push latency** | Determines whether "instant" unlock is a reasonable expectation | MVP |
+| 4 | **Actual check-in / push latency** | **Measured 2026-09-13: 1.2 s** from API call to the tablet's check-in, over MQTT push on the LAN (Onn 7" Core, Android 16, launcher 6.39). "Instant" is a fair expectation on-network; Doze behaviour off-charger still to observe | MVP |
 | 5 | **Which user restrictions Headwind exposes** | Factory reset, safe boot, and USB debugging restrictions determine whether the kiosk is actually enforceable | MVP |
 | 6 | **Does the Onn model support QR provisioning?** | Budget MediaTek and Android Go tablets are inconsistent here | MVP |
 | 7 | **Does the LAN resolve a public name to a private IP?** | **Answered 2026-09-13** — Unbound already exempts `sirhexx.com` via `private-domain`; a host override supplies the private answer (§8). Verify with `dig @10.0.20.1` from VLAN 20 | MVP |

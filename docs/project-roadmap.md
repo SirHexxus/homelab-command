@@ -318,14 +318,15 @@ server-closet move. Full design: `docs/themis-design-doc.md`.
 - [x] **Gate 1 spike:** confirm the Headwind REST API reassigns `configurationId` in one
       authenticated call — *answered from source 2026-09-13 (`DeviceResource.updateDevice`);
       hardware confirmation folds into Gate 4*
-- [ ] Incus system container on the ThinkPad (`bin/incus-poc-up`); Ansible role set written
-      against it
-- [ ] Tomcat 9 + Headwind + local Postgres provisioned
-- [ ] Let's Encrypt cert for `themis.sirhexx.com` issued via Ariadne and synced in
-      (`cert-sync.yml`); pfSense host override; verify LAN resolution (Gate 7)
+- [x] Incus system container on the ThinkPad (`bin/incus-poc-up`); Ansible role set written
+      against it *(2026-09-13)*
+- [x] Tomcat 9 + Headwind + local Postgres provisioned *(2026-09-13; `provision.yml` converges)*
+- [x] Let's Encrypt cert for `themis.sirhexx.com` issued via Ariadne and synced in
+      (`cert-sync.yml`); pfSense host override; verify LAN resolution (Gate 7) *(2026-09-13)*
 - [ ] Both tablets enrolled via ADB; per-device `<number>: School` / `<number>: Free Time`
       configurations built (different school apps by age; Jellyfin in Free Time)
-- [ ] Verify user restrictions (Gate 5), Acellus behaviour (Gate 3), check-in latency (Gate 4)
+- [ ] Verify user restrictions (Gate 5), school-app behaviour (Gate 3); ~~check-in latency
+      (Gate 4)~~ *measured 1.2 s over MQTT, 2026-09-13*
 - [ ] NFC/Tasker macro + nightly cron lock tested end to end on the LAN
 - [ ] QR provisioning payload validated including signature checksum (Gate 6)
 
