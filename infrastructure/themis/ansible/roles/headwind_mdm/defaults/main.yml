@@ -5,7 +5,6 @@ headwind_src_dir: "{{ headwind_base_dir }}/src"
 headwind_installer_zip: "hmdm-{{ headwind_version }}-install-ubuntu.zip"
 headwind_installer_url: "https://h-mdm.com/files/{{ headwind_installer_zip }}"
 headwind_launcher_apk: "hmdm-{{ headwind_launcher_version }}-os.apk"
-headwind_launcher_url: "https://h-mdm.com/files/{{ headwind_launcher_apk }}"
 headwind_install_flag: "{{ headwind_base_dir }}/hmdm_install_flag"
 
 # Headwind stores sha1(MD5HEX(password) + salt) with the MD5 hex in UPPER

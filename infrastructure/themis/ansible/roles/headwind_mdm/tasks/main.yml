@@ -197,15 +197,30 @@
   no_log: true
 
 # =========================================================================
-# 5. LAUNCHER APK MIRROR
+# 5. APK MIRROR
 # =========================================================================
-- name: Mirror the launcher APK locally
+# The seed data references the launcher and a few Headwind plugin APKs on
+# h-mdm.com. Like the upstream installer, mirror every one of them locally,
+# then point the application records at this server.
+- name: List the APKs the application records reference
+  community.postgresql.postgresql_query:
+    query: SELECT url FROM applicationversions WHERE url IS NOT NULL
+    login_host: "{{ postgres_host }}"
+    login_port: "{{ postgres_port }}"
+    login_user: "{{ postgres_user }}"
+    login_password: "{{ postgres_password }}"
+    login_db: "{{ postgres_db }}"
+  register: headwind_apk_urls
+  no_log: true
+
+- name: Mirror the referenced APKs locally
   get_url:
-    url: "{{ headwind_launcher_url }}"
-    dest: "{{ headwind_base_dir }}/files/{{ headwind_launcher_apk }}"
+    url: "https://h-mdm.com/files/{{ item }}"
+    dest: "{{ headwind_base_dir }}/files/{{ item }}"
     owner: "{{ tomcat_user }}"
     group: "{{ tomcat_user }}"
     mode: '0644'
+  loop: "{{ headwind_apk_urls.query_result | map(attribute='url') | map('basename') | unique | list }}"
 
 - name: Point application URLs at this server instead of h-mdm.com
   community.postgresql.postgresql_query:
