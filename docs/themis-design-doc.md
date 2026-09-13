@@ -1,7 +1,7 @@
 # Themis Project: Mobile Device Management Design Doc
-**Version:** 1.0
-**Last Updated:** September 2026
-**Status:** Planned — no infrastructure deployed. MVP (Sophy kiosk) targeted at an off-rack laptop PoC pending the ISP change and server-closet move.
+**Version:** 1.1
+**Last Updated:** 2026-09-13
+**Status:** MVP in progress — Ansible roles written; Sophy kiosk PoC being stood up in an Incus container on the ThinkPad ahead of the ISP change and server-closet move.
 
 ---
 
@@ -108,7 +108,7 @@ cultivated judgment rather than an imposed device lock.
 **Control flow — manual profile switch:**
 
 ```
-Parent taps NFC tag → Tasker fires HTTP POST with scoped API token
+Parent taps NFC tag → Tasker fires HTTP POST as the dedicated `themis-api` user
 → nginx → Headwind REST API → reassign device configurationId in Postgres
 → tablet picks up new policy on next check-in → launcher applies profile
 ```
@@ -116,8 +116,8 @@ Parent taps NFC tag → Tasker fires HTTP POST with scoped API token
 **Control flow — scheduled lock:**
 
 ```
-cron (Themis host, 20:00 local) → curl → Headwind REST API
-→ reassign to Sophy: School → tablet check-in → kiosk returns to foreground
+cron (PoC: ThinkPad; rack: Themis host) → `bin/sophy-switch` → Headwind REST API
+→ reassign to Sophy: School → MQTT push → kiosk returns to foreground
 ```
 
 > [!NOTE]
@@ -132,30 +132,42 @@ cron (Themis host, 20:00 local) → curl → Headwind REST API
 
 Device state is expressed as a named policy group. The MVP defines one group with two modes.
 
-### 4.1 Sophy — the child's tablet
+### 4.1 Sophy — the children's tablets
 
 Named for Sophrosyne, the Greek virtue of moderation and self-command. Sophy is the household
 name for the kiosk policy; it is what the family actually says out loud ("Sophy locked the
-tablet"). The service is Themis; Sophy is one policy group inside it.
+tablet"). The service is Themis; Sophy is the family of policy groups inside it.
 
-**Sophy: School** — default state
+There are two tablets, and their school apps differ by age, so **each tablet has its own pair of
+configurations**, named after its Headwind device number: `sophy-01: School`,
+`sophy-01: Free Time`, `sophy-02: School`, `sophy-02: Free Time`. Which child holds which
+number, and which school app each School profile carries, is panel content — it is never written
+down in this repo. `bin/sophy-switch` derives the configuration name from the device number, so
+the control plane is identical for both.
+
+**`<number>: School`** — default state
 
 | Setting | Value |
 |---------|-------|
 | Kiosk engine | Enabled — `com.hmdm.launcher` is the device launcher |
-| App whitelist | Acellus (package TBD — see §12, Gate 3), system calculator, PDF reader |
+| App whitelist | The tablet's school app (Acellus on one, ABC Mouse on the other — packages TBD, §12 Gate 3), system calculator, PDF reader |
 | Status bar | Notification shade locked out |
 | Navigation | Home, Back, and Recents disabled or hijacked by the launcher |
 | Settings | Hidden behind the launcher administrator password |
 
-**Sophy: Free Time** — unlocked state
+**`<number>: Free Time`** — unlocked state
 
 | Setting | Value |
 |---------|-------|
 | Kiosk engine | Disabled |
-| App whitelist | Broadened — YouTube, games, browser |
+| App whitelist | Still a whitelist, just a wider one: Jellyfin (Orpheus, per-child account with parental limits) and a handful of games. No browser, no YouTube, no Play Store |
 | Status bar | Restored |
 | Navigation | Native Android navigation and launcher restored |
+
+Jellyfin reaches Orpheus at 10.0.80.5:8096 across VLAN 20 → 80, which the existing
+"Allow Personal to Media" pfSense rule already permits. Each child signs into the Jellyfin app
+once, in Free Time, with their own restricted Jellyfin user (the same accounts Phemius plans
+for its Kids profile); the credentials live in Jellyfin and on the tablet, not here.
 
 **Required user restrictions.** The kiosk profile is not self-protecting. Device Owner is a
 privileged app, **not root**, and it is removed by a factory reset from recovery — which is the
@@ -243,13 +255,23 @@ A parent taps an NFC tag or a home-screen shortcut on their own phone. Tasker or
 fires an authenticated HTTP POST at `themis.sirhexx.com`, and Headwind's REST API reassigns the
 tablet's `configurationId`.
 
-**Credential handling:** the macro uses a scoped API token, never the admin console credential.
-Tasker stores it in plaintext on the phone, so the token must be independently revocable and
-limited to configuration reassignment.
+**Credential handling:** Headwind has no API tokens — the private REST API authenticates panel
+users with a JWT (`POST /rest/public/jwt/login`, MD5 of the password). The macro therefore uses a
+dedicated panel user, `themis-api`, never the admin credential. Tasker stores its password in
+plaintext on the phone, so the user must be independently disable-able and hold the least role
+that still carries `edit_devices` (verify whether the built-in *User* role qualifies; otherwise
+*Admin* until a custom role is defined).
+
+**The call itself** (`server/.../DeviceResource.java`, `updateDevice`):
+`PUT /rest/private/devices` with `{"ids": [<deviceId>], "configurationId": <cfgId>}` updates the
+assignment and calls `pushService.notifyDeviceOnSettingUpdate` for each device — one
+authenticated request, push included. `infrastructure/themis/bin/sophy-switch` wraps login →
+lookup → PUT and is the single backend for both the macro and the cron lock.
 
 ### 7.2 Scheduled automation
 
-A cron job on the Themis host reassigns the tablet to Sophy: School at 20:00 local. The kiosk
+A cron job (on the ThinkPad during the PoC, on the Themis host after the rack move) runs
+`bin/sophy-switch <device> school` at the lock time. The kiosk
 launcher returns to the foreground on the next check-in, closing whatever recreational app is
 open.
 
@@ -260,7 +282,7 @@ open.
 | Only the nightly lock is defined | Add a morning school-hours lock; define weekend and holiday behaviour |
 | No timezone/DST handling | Pin cron to local time and document DST behaviour |
 | Tablet offline at 20:00 | Policy applies at next check-in — acceptable, document it |
-| Themis host offline at 20:00 | Lock does not fire. Not dependable until Themis is on the rack (§9) |
+| Cron host asleep at lock time | Lock does not fire. Not dependable until Themis is on the rack (§9) |
 
 ---
 
@@ -274,26 +296,44 @@ open.
 > the address changes and costs a factory reset to recover. A DNS name makes the migration a
 > record edit the tablet simply follows.
 
-**Certificate:** Let's Encrypt via **DNS-01** challenge. DNS-01 requires no inbound reachability,
-so a genuinely trusted certificate can be issued for a host that only exists on the LAN, with a
-public A record pointing at a private address. This single decision satisfies three requirements
-at once: the trusted chain that QR provisioning demands, a stable name, and migration survival.
+**Certificate:** Let's Encrypt, **issued and renewed by Ariadne** exactly like every other
+`sirhexx.com` host. The pfSense DDNS client publishes a wildcard `*.sirhexx.com` A record at the
+WAN address and forwards 80/443 to Ariadne, so `rpadd themis.sirhexx.com 127.0.0.1:9` on Ariadne
+completes the normal HTTP-01 flow with no DNS or firewall changes. The upstream is a deliberate
+dead end: Themis is not internet-facing (§9); Ariadne's only job here is to own the certificate.
+`ansible/cert-sync.yml` copies `fullchain.pem`/`privkey.pem` into the PoC container for
+`nginx_local`; re-run it after each renewal (certbot renews ~30 days before expiry).
 
-`sirhexx.com` DNS is managed via the pfSense DDNS client against Namecheap (see Ariadne Design
-Doc §3.1); DNS-01 additionally requires provider API credentials.
+This satisfies the same three requirements the original DNS-01 plan targeted — a publicly trusted
+chain for QR provisioning, a stable name, and migration survival — without a Namecheap API
+credential. **DNS-01** (`acme.sh --dns dns_namecheap`) remains the fallback if Ariadne is
+unavailable when the certificate is needed; it requires Namecheap API eligibility and a
+whitelisted WAN IPv4.
 
-> [!CAUTION]
-> Some routers strip private-IP answers for public hostnames as DNS-rebinding protection. Test
-> resolution with `dig` from the tablet's VLAN before committing to this path.
+> [!IMPORTANT]
+> The certificate must exist **before the first enrollment**, ADB path included. The launcher is
+> enrolled against `https://themis.sirhexx.com`; a self-signed placeholder it once trusted is
+> not something it can be talked out of later. `nginx_local` refuses to start without the synced
+> certificate for this reason.
+
+**LAN resolution:** on the LAN, `themis.sirhexx.com` must resolve to the Themis host directly,
+not to the WAN address — the tablets need a straight TCP path for MQTT push on `:31000`, which an
+HTTP reverse proxy cannot carry, and they must keep working while the rack is down. A pfSense
+Unbound host override (`themis.sirhexx.com → 10.0.20.103` for the PoC, `10.0.50.23` after the
+move) does this; `config.xml` in `infrastructure/network/pfsense/` mirrors it. Unbound's
+`custom_options` already carries `private-domain: "sirhexx.com"`, so DNS-rebinding protection
+does not strip the private answer (Gate 7).
 
 ---
 
 ## 9. MVP Deployment: Off-Rack PoC
 
-The Proxmox node is unavailable pending an ISP change and a move to a dedicated air-conditioned
-server closet. The MVP therefore runs on the ThinkPad, which already sits on the homelab network
-at 10.0.20.103 (VLAN 20) and 10.0.10.68 (VLAN 10). The tablet joins the family SSID and lands on
-VLAN 20 alongside it — same L2 segment, no inter-VLAN routing, no firewall rules, no ingress.
+The Proxmox node is expected to go dark within weeks of the MVP for an ISP change and a move to
+a dedicated air-conditioned server closet. The MVP therefore runs on the ThinkPad, which already
+sits on the homelab network at 10.0.20.103 (VLAN 20) and 10.0.10.68 (VLAN 10), so the tablets
+stay manageable through the outage. The tablet joins the family SSID and lands on VLAN 20
+alongside it — same L2 segment, no inter-VLAN routing, no firewall rules, no ingress. While the
+rack is still up, Ariadne is used opportunistically for the certificate (§8).
 
 **No external availability is required for the MVP.**
 
@@ -316,7 +356,14 @@ A Docker Compose stack would prove Headwind runs but would teach nothing about t
 deployment, and the role would have to be written twice.
 
 Cap the Tomcat heap given the absence of swap. Adding a swapfile before starting is cheap
-insurance.
+insurance. `bin/incus-poc-up` does the host preparation idempotently: packages, a 4 GiB
+swapfile, `incus admin init --minimal`, the container, root SSH, and the port exposure below.
+
+**Networking:** the container sits on Incus's NAT bridge (`incusbr0`). macvlan is not an option
+over Wi-Fi, so the two ports the tablets need are exposed with Incus proxy devices on the
+laptop's addresses — `:443` (nginx) and `:31000` (MQTT push). Tomcat's `:8080` stays
+container-local. Ansible reaches the container at its bridge address; the laptop is both the
+Incus host and the controller.
 
 ### 9.3 Known limitations of the PoC
 
@@ -379,13 +426,13 @@ and are all answerable on the laptop PoC.
 
 | # | Gate | Why it matters | Blocks |
 |---|------|----------------|--------|
-| 1 | **Does the Headwind REST API reassign `configurationId` in a single authenticated call?** | The entire manual-switch and cron workflow rests on this. Spike it against a throwaway device before building any macro or script | MVP |
+| 1 | **Does the Headwind REST API reassign `configurationId` in a single authenticated call?** | **Answered from source 2026-09-13 — yes** (`DeviceResource.updateDevice`, bulk branch; see §7.1). Remaining: confirm on a real tablet and record the push latency (Gate 4) | MVP |
 | 2 | **Does Headwind support Work Profile adequately?** | If not, the fleet phase moves to a self-hosted Android Management API controller | Fleet |
-| 3 | **Acellus package name and network behaviour** | `com.acellus.acellus` is an assumption. Acellus leans on WebView, Play Services, and external content; too tight a whitelist breaks lessons mid-school-day | MVP |
+| 3 | **School-app package names and network behaviour** | `com.acellus.acellus` is an assumption and ABC Mouse's package is unverified. Both lean on WebView, Play Services, and external content; too tight a whitelist breaks lessons mid-school-day | MVP |
 | 4 | **Actual check-in / push latency** | Determines whether "instant" unlock is a reasonable expectation | MVP |
 | 5 | **Which user restrictions Headwind exposes** | Factory reset, safe boot, and USB debugging restrictions determine whether the kiosk is actually enforceable | MVP |
 | 6 | **Does the Onn model support QR provisioning?** | Budget MediaTek and Android Go tablets are inconsistent here | MVP |
-| 7 | **Does the LAN resolve a public name to a private IP?** | DNS-rebinding protection would break the §8 certificate strategy | MVP |
+| 7 | **Does the LAN resolve a public name to a private IP?** | **Answered 2026-09-13** — Unbound already exempts `sirhexx.com` via `private-domain`; a host override supplies the private answer (§8). Verify with `dig @10.0.20.1` from VLAN 20 | MVP |
 
 ---
 
@@ -397,18 +444,23 @@ secrets management, and workflow standards.
 ```
 infrastructure/themis/
 ├── CLAUDE.md
+├── bin/
+│   ├── incus-poc-up          # ThinkPad host prep (idempotent, --dry-run)
+│   └── sophy-switch          # login → lookup → PUT configurationId (--dry-run)
 ├── terraform/
 │   └── .gitkeep              # no Proxmox target until the rack move completes
 └── ansible/
     ├── ansible.cfg           # roles_path = roles:../../ansible/roles
-    ├── inventory.ini         # PoC: Incus container. Rack: 10.0.50.23
+    ├── inventory.ini         # [themis]: PoC container or 10.0.50.23; [ariadne]: cert source
     ├── provision.yml
+    ├── cert-sync.yml         # Ariadne → container copy of the Let's Encrypt files
     ├── group_vars/
-    │   └── themis.yml        # postgres_host, themis_domain, themis_proxy_mode
+    │   ├── all.yml           # themis_domain, themis_cert_dir (shared with Ariadne play)
+    │   └── themis.yml        # postgres_host, themis_proxy_mode, Tomcat/Headwind versions
     └── roles/
-        ├── java_tomcat/
+        ├── java_tomcat/      # OpenJDK 21 + upstream Tomcat 9 tarball, loopback-only
         ├── postgres_local/   # PoC only; skipped when postgres_host is remote
-        ├── headwind_mdm/
+        ├── headwind_mdm/     # replicates hmdm_install.sh idempotently
         └── nginx_local/      # PoC only; Ariadne takes over after migration
 ```
 
@@ -416,7 +468,7 @@ infrastructure/themis/
 
 - `vault_themis_postgres_password`
 - `vault_themis_admin_password`
-- `vault_themis_api_key`
+- `vault_themis_api_password` — the `themis-api` panel user (§7.1)
 
 **Not IaC-managed:** the QR provisioning payload, device enrollment itself, policy group contents
 authored in the Headwind console, and the Tasker/MacroDroid macros on the parent phone. Device
@@ -429,20 +481,22 @@ is public. Policy content lives in the Headwind database; this doc describes its
 
 **MVP — laptop PoC:**
 
-1. Install `incus`; launch a Debian 13 system container; add a swapfile on the host.
-2. Write the Ansible role set against the container via `inventory.ini`.
-3. Provision Tomcat 9, PostgreSQL, and Headwind MDM; cap the Tomcat heap.
-4. **Spike Gate 1** — confirm the `configurationId` reassignment API call works. Stop here if it
-   does not; the design changes.
-5. Issue the Let's Encrypt DNS-01 certificate for `themis.sirhexx.com`; verify LAN resolution
-   (Gate 7).
-6. Factory-reset the tablet; enroll via ADB (§6.1) to unblock testing.
-7. Build the Sophy: School and Sophy: Free Time policy groups; verify restrictions (Gate 5) and
-   Acellus behaviour (Gate 3).
-8. Measure check-in latency (Gate 4).
-9. Wire the Tasker/NFC macro and the cron lock; test both end to end on the LAN.
-10. Validate the QR provisioning payload, including the signature checksum, on an emulator or
-    spare device (Gate 6). Re-enroll the tablet via QR.
+1. `sudo bin/incus-poc-up` on the ThinkPad; set `ansible_host` in `inventory.ini`; create
+   `group_vars/vault.yml`.
+2. On Ariadne: `rpadd themis.sirhexx.com 127.0.0.1:9`. pfSense host override
+   `themis.sirhexx.com → 10.0.20.103` (GUI, mirrored in `config.xml`). Verify Gate 7 with `dig`.
+3. `cert-sync.yml`, then `provision.yml` — Tomcat 9 (heap capped), PostgreSQL, Headwind, nginx.
+4. In the panel: change nothing about `admin` (Ansible set its password); create `themis-api`;
+   add devices `sophy-01` and `sophy-02`; create the four configurations (`<number>: School`
+   and `<number>: Free Time` for each), with the right school app in each School profile and
+   Jellyfin in each Free Time profile.
+5. Enroll the first tablet via ADB (§6.1) against `https://themis.sirhexx.com`.
+6. **Gate 1 on hardware:** `bin/sophy-switch sophy-01 free` — record the push latency (Gate 4).
+7. Verify restrictions (Gate 5) and the school app's behaviour (Gate 3); enroll the second
+   tablet and repeat with its school app.
+8. Cron lock/unlock on the ThinkPad; Tasker/NFC macro on the parent phone; test both on the LAN.
+9. Validate the QR provisioning payload, including the signature checksum, on an emulator
+   (Gate 6); one real QR enrollment to confirm.
 
 **Rack migration (post server-closet move):**
 

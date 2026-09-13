@@ -46,7 +46,7 @@ They have been removed from this roadmap to keep scope clean.
 | Orpheus Design Doc | v1.3 | ✅ Complete |
 | Hermes Design Doc | v1.1 | ✅ Complete |
 | Ariadne Design Doc | v1.0 | ✅ Complete |
-| Themis Design Doc | v1.0 | ✅ Complete |
+| Themis Design Doc | v1.1 | ✅ Complete |
 | Phemius Design Doc | v1.0 | ✅ Complete |
 
 ### Remaining
@@ -315,12 +315,16 @@ and its MVP deliberately runs off-rack so it is not blocked by the ISP change an
 server-closet move. Full design: `docs/themis-design-doc.md`.
 
 ### MVP — Sophy kiosk (off-rack)
-- [ ] **Gate 1 spike:** confirm the Headwind REST API reassigns `configurationId` in one
-      authenticated call *(blocks everything below — design changes if it fails)*
-- [ ] Incus system container on the ThinkPad; Ansible role set written against it
+- [x] **Gate 1 spike:** confirm the Headwind REST API reassigns `configurationId` in one
+      authenticated call — *answered from source 2026-09-13 (`DeviceResource.updateDevice`);
+      hardware confirmation folds into Gate 4*
+- [ ] Incus system container on the ThinkPad (`bin/incus-poc-up`); Ansible role set written
+      against it
 - [ ] Tomcat 9 + Headwind + local Postgres provisioned
-- [ ] Let's Encrypt DNS-01 cert for `themis.sirhexx.com`; verify LAN resolution (Gate 7)
-- [ ] Tablet enrolled via ADB; Sophy: School and Sophy: Free Time policy groups built
+- [ ] Let's Encrypt cert for `themis.sirhexx.com` issued via Ariadne and synced in
+      (`cert-sync.yml`); pfSense host override; verify LAN resolution (Gate 7)
+- [ ] Both tablets enrolled via ADB; per-device `<number>: School` / `<number>: Free Time`
+      configurations built (different school apps by age; Jellyfin in Free Time)
 - [ ] Verify user restrictions (Gate 5), Acellus behaviour (Gate 3), check-in latency (Gate 4)
 - [ ] NFC/Tasker macro + nightly cron lock tested end to end on the LAN
 - [ ] QR provisioning payload validated including signature checksum (Gate 6)
@@ -442,4 +446,4 @@ Career Advancement pursuit in Mnemosyne.
 
 ---
 
-*Companion documents: Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.5 · Argus Design Doc v1.2 · Orpheus Design Doc v1.3 · Ariadne Design Doc v1.0 · Themis Design Doc v1.0 · Phemius Design Doc v1.0 · Homelab Philosophy v1.0*
+*Companion documents: Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.5 · Argus Design Doc v1.2 · Orpheus Design Doc v1.3 · Ariadne Design Doc v1.0 · Themis Design Doc v1.1 · Phemius Design Doc v1.0 · Homelab Philosophy v1.0*
