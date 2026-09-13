@@ -5,7 +5,7 @@ platform (NousResearch, MIT, Python 3.11+) on a Hermes LXC, plus the local
 **Chiron** persona/skill layer that customizes it for this homelab.
 
 Replaces the homegrown `hermes` role (kept on disk until the Week 8 cascade
-rename). See `docs/hermes-design-doc-v1.1.md` and the Mnemosyne sprint page
+rename). See `docs/hermes-design-doc.md` and the Mnemosyne sprint page
 `Migrate to Hermes-Agent Platform and Rename Hermes to Chiron` for context.
 
 ## What it does

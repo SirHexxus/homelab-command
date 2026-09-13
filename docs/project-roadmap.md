@@ -1,7 +1,7 @@
 # Homelab Command Project — Project Roadmap
 **Version:** 2.3
 **Last Updated:** 2026-09-09
-**Philosophy:** See `docs/homelab-philosophy-v1.0.md` for the values and goals behind this homelab.
+**Philosophy:** See `docs/homelab-philosophy.md` for the values and goals behind this homelab.
 
 ---
 
@@ -36,14 +36,14 @@ They have been removed from this roadmap to keep scope clean.
 ### Completed
 | Document | Version | Status |
 |----------|---------|--------|
-| Hardware Catalog | v1.2 | ✅ Complete |
-| Network & Services Architecture | v1.6 | ✅ Complete |
+| Hardware Catalog | v1.3 | ✅ Complete |
+| Network & Services Architecture | v1.9 | ✅ Complete |
 | Homelab Philosophy | v1.0 | ✅ Complete |
-| Project Roadmap | v2.2 | ✅ This document |
+| Project Roadmap | v2.3 | ✅ This document |
 | Mnemosyne Design Doc | v1.2 | ✅ Complete |
-| IaC Runbook | v1.2 | ✅ Complete |
+| IaC Runbook | v1.5 | ✅ Complete |
 | Argus Design Doc | v1.2 | ✅ Complete |
-| Orpheus Design Doc | v1.1 | ✅ Complete |
+| Orpheus Design Doc | v1.3 | ✅ Complete |
 | Hermes Design Doc | v1.1 | ✅ Complete |
 | Ariadne Design Doc | v1.0 | ✅ Complete |
 | Themis Design Doc | v1.0 | ✅ Complete |
@@ -62,7 +62,7 @@ They have been removed from this roadmap to keep scope clean.
 
 The phases below support the homelab's core purpose: skill building, portfolio, and family
 services. Current external pursuits (certs, job application) are tracked separately in Mnemosyne.
-See `docs/homelab-philosophy-v1.0.md` for the full context.
+See `docs/homelab-philosophy.md` for the full context.
 
 **Original timeline:** 16 weeks from February 16, 2026. Phases have slipped — targets below
 reflect revised estimates as of 2026-04-16.
@@ -145,7 +145,7 @@ reflect revised estimates as of 2026-04-16.
 *Note: Cert prep items previously in this phase have been moved to Mnemosyne (Career Advancement pursuit).*
 
 ### Hermes (AI Agent) — ✅ OFF HOLD as of 2026-05-20
-**Status:** Off hold via direct Gemini API billing (~$2/mo projected, $5/mo cap; `gemini-3.5-flash` pinned). Detailed backlog tracked in `apps/hermes/ToDo.md`; design context in `apps/hermes/THOUGHTS.md` and `docs/hermes-design-doc-v1.1.md`.
+**Status:** Off hold via direct Gemini API billing (~$2/mo projected, $5/mo cap; `gemini-3.5-flash` pinned). Detailed backlog tracked in `apps/hermes/ToDo.md`; design context in `apps/hermes/THOUGHTS.md` and `docs/hermes-design-doc.md`.
 
 **What is complete and working:**
 - [x] LLM router (Gemini + Claude clients, task_type routing)
@@ -406,4 +406,4 @@ Career Advancement pursuit in Mnemosyne.
 
 ---
 
-*Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.9 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0 · Themis Design Doc v1.0 · Homelab Philosophy v1.0*
+*Companion documents: Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.5 · Argus Design Doc v1.2 · Orpheus Design Doc v1.3 · Ariadne Design Doc v1.0 · Themis Design Doc v1.0 · Homelab Philosophy v1.0*

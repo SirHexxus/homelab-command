@@ -83,7 +83,7 @@ The IaC that touches Orpheus lives in:
 
 **Automatic PM trigger:** Any work involving the *Arr stack (Prowlarr, Radarr, Sonarr,
 Lidarr, Readarr, Bazarr, qBittorrent) is a fresh deployment project — stop and confirm
-before proceeding. Read `docs/orpheus-design-doc-v1.1.md` §12 first.
+before proceeding. Read `docs/orpheus-design-doc.md` §12 first.
 
 Additional escalation triggers:
 - ZFS dataset restructuring or deletion
@@ -92,5 +92,5 @@ Additional escalation triggers:
 
 ## Reference
 
-Design doc: `docs/orpheus-design-doc-v1.1.md`. VLAN topology: see root `CLAUDE.md`.
-See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all homelab decisions.
+Design doc: `docs/orpheus-design-doc.md`. VLAN topology: see root `CLAUDE.md`.
+See `docs/homelab-philosophy.md` for the values and principles behind all homelab decisions.

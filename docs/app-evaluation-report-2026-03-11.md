@@ -34,17 +34,17 @@
 
 | App | Source | Project | Phase |
 |-----|--------|---------|-------|
-| Splunk Free | `argus-design-doc-v1.2.md`, `network-services-architecture-v1.6.md` | Argus | Phase 3 |
-| Wazuh Manager | `argus-design-doc-v1.2.md`, `network-services-architecture-v1.6.md` | Argus | Phase 3 |
-| Grafana | `argus-design-doc-v1.2.md`, `network-services-architecture-v1.6.md` | Argus | Phase 3 |
-| Suricata | `argus-design-doc-v1.2.md`, `ariadne-design-doc-v1.0.md` | Argus + Ariadne | Phase 3, pfSense pkg |
-| Crowdsec | `argus-design-doc-v1.2.md`, `ariadne-design-doc-v1.0.md` | Argus + Ariadne | Phase 3/5, pfSense pkg |
-| Fail2ban | `argus-design-doc-v1.2.md`, `ariadne-design-doc-v1.0.md` | Ariadne | Phase 3, per-host |
-| Uptime Kuma | `argus-design-doc-v1.2.md` Phase 5, `ariadne-design-doc-v1.0.md` §9 | Ariadne | Phase 5, external VPS |
-| Pi-hole | `network-services-architecture-v1.6.md` | Infra | LOW, no prereqs |
-| Home Assistant | `project-roadmap-v1.4.md`, `network-services-architecture-v1.6.md` | IoT | ⏳ Post-June |
-| Authentik | `project-roadmap-v1.4.md`, `network-services-architecture-v1.6.md` | Identity | ⏳ Post-June |
-| Nextcloud | `project-roadmap-v1.4.md`, `orpheus-design-doc-v1.1.md` | Productivity | ⏳ Post-June |
+| Splunk Free | `argus-design-doc.md`, `network-services-architecture.md` | Argus | Phase 3 |
+| Wazuh Manager | `argus-design-doc.md`, `network-services-architecture.md` | Argus | Phase 3 |
+| Grafana | `argus-design-doc.md`, `network-services-architecture.md` | Argus | Phase 3 |
+| Suricata | `argus-design-doc.md`, `ariadne-design-doc.md` | Argus + Ariadne | Phase 3, pfSense pkg |
+| Crowdsec | `argus-design-doc.md`, `ariadne-design-doc.md` | Argus + Ariadne | Phase 3/5, pfSense pkg |
+| Fail2ban | `argus-design-doc.md`, `ariadne-design-doc.md` | Ariadne | Phase 3, per-host |
+| Uptime Kuma | `argus-design-doc.md` Phase 5, `ariadne-design-doc.md` §9 | Ariadne | Phase 5, external VPS |
+| Pi-hole | `network-services-architecture.md` | Infra | LOW, no prereqs |
+| Home Assistant | `project-roadmap.md`, `network-services-architecture.md` | IoT | ⏳ Post-June |
+| Authentik | `project-roadmap.md`, `network-services-architecture.md` | Identity | ⏳ Post-June |
+| Nextcloud | `project-roadmap.md`, `orpheus-design-doc.md` | Productivity | ⏳ Post-June |
 
 ---
 

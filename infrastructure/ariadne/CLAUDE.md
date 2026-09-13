@@ -65,7 +65,7 @@ infrastructure/ariadne/
 | analytics.sirhexx.com | Umami 10.0.50.18:3000 | Umami analytics |
 | automation.hexxusweb.com | n8n 10.0.50.13:5678 | n8n workflows |
 
-Additional media subdomain configs in `roles/media_proxy/` — see `docs/orpheus-design-doc-v1.1.md` §8.
+Additional media subdomain configs in `roles/media_proxy/` — see `docs/orpheus-design-doc.md` §8.
 
 ## Hard Constraints
 
@@ -84,5 +84,5 @@ Stop and confirm if the work involves any of the following:
 
 ## Reference
 
-IaC conventions: see root `CLAUDE.md`. Design doc: `docs/ariadne-design-doc-v1.0.md`.
-See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all homelab decisions.
+IaC conventions: see root `CLAUDE.md`. Design doc: `docs/ariadne-design-doc.md`.
+See `docs/homelab-philosophy.md` for the values and principles behind all homelab decisions.

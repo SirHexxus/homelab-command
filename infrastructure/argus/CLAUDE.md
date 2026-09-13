@@ -4,11 +4,11 @@
 This service has not been implemented — both IaC directories are empty placeholders. Phase 3
 has not begun. Do not write IaC here until Phase 3 is active.
 
-When Phase 3 begins: read `docs/argus-design-doc-v1.2.md` in full before writing any IaC.
+When Phase 3 begins: read `docs/argus-design-doc.md` in full before writing any IaC.
 Check `.claude/agents/homelab-iac-specialist.md` for current VMID allocations before
 assigning VMIDs to the planned LXCs.
 
-See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all homelab decisions.
+See `docs/homelab-philosophy.md` for the values and principles behind all homelab decisions.
 
 ## Definition of Done
 

@@ -12,7 +12,7 @@
 
 ## 1. Purpose & Philosophy
 
-See `docs/homelab-philosophy-v1.0.md` for the broader goals this service supports. Mnemosyne serves the skill-building and personal productivity goals - and directly addresses the ADHD executive function challenges called out in the philosophy doc's documentation section.
+See `docs/homelab-philosophy.md` for the broader goals this service supports. Mnemosyne serves the skill-building and personal productivity goals - and directly addresses the ADHD executive function challenges called out in the philosophy doc's documentation section.
 
 Mnemosyne is a personal knowledge management system designed to solve a specific problem: ADHD executive function failures cause valuable thoughts, information, and context to evaporate before they can be acted on. The system's job is to make capture frictionless, storage automatic, and retrieval intelligent.
 
@@ -526,4 +526,4 @@ Remote: private GitHub repo (`mnemosyne-wiki`). Obsidian reads the local clone d
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Network & Services Architecture v1.9 · Project Roadmap v1.4 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Network & Services Architecture v1.9 · Project Roadmap v2.3 · IaC Runbook v1.5 · Argus Design Doc v1.2 · Orpheus Design Doc v1.3 · Ariadne Design Doc v1.0*

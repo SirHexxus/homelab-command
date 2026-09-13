@@ -100,7 +100,7 @@ Any information that needs to be persisted long-term (notes, tasks, references,
 project updates) is saved to Mnemosyne via `lib/skills/mneme.py`.
 
 **Requires**: Mnemosyne Postgres (`mnemosyne` DB at 10.0.50.14 with
-pgvector) to be running. See `mnemosyne-design-doc-v1.1.md`.
+pgvector) to be running. See `mnemosyne-design-doc.md`.
 
 Configure in `config/config.yml`:
 ```yaml

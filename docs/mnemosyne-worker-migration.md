@@ -118,4 +118,4 @@ Telegram note → n8n → inbox-receiver → worker triage fires (watch-inbox, n
 
 ---
 
-*Related: `docs/mnemosyne-design-doc-v1.1.md` (system design), wiki pages [[Payload-Shape-Aware Triage and URL-Resolving Raw Enrichment]], [[N8n for Document Text Extraction]], [[Rebuild Payload-Shape-Aware Triage in n8n for Deterministic Inputs]] (Active), journal [[2026-07-11 — n8n Review Fixes, Photo OCR Pipeline, and Sales Pipeline MVP]].*
+*Related: `docs/mnemosyne-design-doc.md` (system design), wiki pages [[Payload-Shape-Aware Triage and URL-Resolving Raw Enrichment]], [[N8n for Document Text Extraction]], [[Rebuild Payload-Shape-Aware Triage in n8n for Deterministic Inputs]] (Active), journal [[2026-07-11 — n8n Review Fixes, Photo OCR Pipeline, and Sales Pipeline MVP]].*

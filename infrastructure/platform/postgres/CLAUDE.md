@@ -69,4 +69,4 @@ These are PM-scope decisions.
 ## Reference
 
 IaC conventions: see root `CLAUDE.md`.
-See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all homelab decisions.
+See `docs/homelab-philosophy.md` for the values and principles behind all homelab decisions.

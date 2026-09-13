@@ -27,7 +27,7 @@
 
 Ariadne is the perimeter layer of the homelab - the thread that determines what crosses between the outside world and the internal network, and where it goes when it does. Named for the Cretan princess who gave Theseus the *clew* (the ball of thread, etymological root of "clue") that made the Minotaur's labyrinth navigable, Ariadne doesn't fight at the gate - she manages the path through the structure.
 
-See `docs/homelab-philosophy-v1.0.md` for the broader goals this service supports. Ariadne serves the privacy, security, and family services goals: family members get clean access to hosted services; the network boundary is enforced; nothing internal is directly exposed.
+See `docs/homelab-philosophy.md` for the broader goals this service supports. Ariadne serves the privacy, security, and family services goals: family members get clean access to hosted services; the network boundary is enforced; nothing internal is directly exposed.
 
 The DMZ (VLAN 60) is the physical expression of that philosophy. No internal service is exposed directly to the internet. All inbound traffic enters through NGINX Proxy Manager, passes through Authelia's authentication layer where required, and is routed to its destination. Everything that crosses pays a toll. Everything that doesn't belong gets stopped.
 
@@ -435,4 +435,4 @@ The Ariadne project demonstrates competencies worth documenting for any security
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · Mnemosyne Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Project Roadmap v2.3 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.5 · Argus Design Doc v1.2 · Orpheus Design Doc v1.3*

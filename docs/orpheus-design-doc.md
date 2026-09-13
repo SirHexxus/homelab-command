@@ -7,7 +7,7 @@
 
 ## 1. Purpose & Philosophy
 
-See `docs/homelab-philosophy-v1.0.md` for the broader goals this service supports. Orpheus is the most direct expression of the family services and cost-saving goals: it gives family members real, accessible alternatives to paid streaming and cloud services, owned and operated locally.
+See `docs/homelab-philosophy.md` for the broader goals this service supports. Orpheus is the most direct expression of the family services and cost-saving goals: it gives family members real, accessible alternatives to paid streaming and cloud services, owned and operated locally.
 
 The Orpheus provides a self-hosted, family-accessible media platform covering video, photos, audiobooks, ebooks, music, podcasts, comics/manga, and ROMs. It replaces cloud services (Google Photos, Audible, streaming) with owned infrastructure wherever practical.
 
@@ -423,4 +423,4 @@ Post-recovery steps:
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · Mnemosyne Design Doc v1.1 · IaC Runbook v1.2 · Argus Design Doc v1.2 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Project Roadmap v2.3 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.5 · Argus Design Doc v1.2 · Ariadne Design Doc v1.0*

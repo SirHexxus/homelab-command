@@ -10,7 +10,7 @@ The IaC monorepo for the full homelab: Terraform + Ansible for every service,
 network IaC, application code, and design docs. A single Proxmox node
 (puppetmaster) hosts everything via LXC containers and VMs.
 
-- **Philosophy:** `docs/homelab-philosophy-v1.0.md` — read first.
+- **Philosophy:** `docs/homelab-philosophy.md` — read first.
 - **Service roster** (hosts, VMIDs, IPs, VLANs, status): the table in root
   `CLAUDE.md`. Treat it as the source of truth for what runs where.
 - **IaC conventions** (Terraform provider, LXC templates, Ansible `roles_path`,

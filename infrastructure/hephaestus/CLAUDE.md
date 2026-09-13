@@ -63,5 +63,5 @@ infrastructure/hephaestus/
 ## Reference
 
 - Root conventions: `../../CLAUDE.md`
-- Philosophy: `../../docs/homelab-philosophy-v1.0.md`
+- Philosophy: `../../docs/homelab-philosophy.md`
 - Upstream: https://github.com/firecrawl/firecrawl (SELF_HOST.md)

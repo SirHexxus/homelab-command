@@ -33,7 +33,7 @@ for the household and is the one man Odysseus spares on his return. The distinct
 is deliberate and load-bearing: **Orpheus is the library, Phemius is who plays it in the living
 room.**
 
-See `docs/homelab-philosophy-v1.0.md` for the broader goals this service supports. Phemius serves
+See `docs/homelab-philosophy.md` for the broader goals this service supports. Phemius serves
 the family-services and privacy goals directly: it replaces a vendor smart-TV OS with an interface
 the household owns, and it removes a telemetry endpoint from the living room rather than merely
 firewalling one.
@@ -304,7 +304,7 @@ Kids' libraries are always reachable without a gate; the gate exists to keep eve
 | onn 4K Pro | Quarantine (40, or 70 guest via WiFi) | DHCP | Internet-only, no route inward |
 | Vizio panel | None | Deny-all MAC block | See §4 |
 
-Wiring the HTPC removes the constraint recorded at `network-services-architecture-v1.6.md:100` —
+Wiring the HTPC removes the constraint recorded at `network-services-architecture.md:100` —
 the eero Pro 6's 2-SSID limit only ever applied to wireless clients, so a wired drop to the
 TP-Link puts Phemius on any segment.
 
@@ -377,7 +377,7 @@ rather than diffuse.
 ## 14. IaC Integration
 
 Phemius follows the repo's standard service layout. It is bare metal, so there is no Terraform
-target — the **Iris precedent** applies. See `docs/iac-runbook-v1.2.md` for tooling and workflow.
+target — the **Iris precedent** applies. See `docs/iac-runbook.md` for tooling and workflow.
 
 ```
 infrastructure/phemius/
@@ -460,4 +460,4 @@ property of the use case, not a house style, is the judgement worth showing.
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Orpheus Design Doc v1.1 · Network & Services Architecture v1.9 · IaC Runbook v1.2 · Hardware Catalog v1.3 · Homelab Philosophy v1.0 · Themis Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Orpheus Design Doc v1.3 · Network & Services Architecture v1.9 · IaC Runbook v1.5 · Hardware Catalog v1.3 · Homelab Philosophy v1.0 · Themis Design Doc v1.0*

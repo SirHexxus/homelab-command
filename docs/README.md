@@ -3,12 +3,12 @@
 Reference documents for the homelab-command monorepo. All design decisions, infrastructure
 conventions, and operational procedures live here.
 
-See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all homelab decisions.
+See `docs/homelab-philosophy.md` for the values and principles behind all homelab decisions.
 
 > **Versioning policy (D4 / AUD-015, 2026-06-14):** document filenames are version-free; the
 > authoritative version lives in each doc's header and the Version column below. Filenames are
-> **not** renamed on version bumps, so links never break. The S5.1 docs sweep will strip the
-> existing `-vX.Y` suffixes from filenames and update references.
+> **not** renamed on version bumps, so links never break. The `-vX.Y` filename suffixes were
+> stripped in the S5.1 sweep (2026-09-13).
 
 ---
 
@@ -16,22 +16,22 @@ See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all h
 
 | Document | Version | Purpose |
 |----------|---------|---------|
-| [Homelab Philosophy](homelab-philosophy-v1.0.md) | v1.0 | Goals, principles, and the values behind every homelab decision |
-| [Project Roadmap](project-roadmap-v2.2.md) | v2.3 | Phased delivery plan, current pursuits, and project structure |
-| [IaC Runbook](iac-runbook-v1.2.md) | v1.3 | Terraform + Ansible conventions, workflow, secrets, and recovery procedures |
-| [Hardware Catalog](hardware-catalog-v1.2.md) | v1.2 | Physical inventory - compute, storage, and networking equipment |
-| [Network & Services Architecture](network-services-architecture-v1.6.md) | v1.9 | VLAN topology, IP schema, firewall architecture, and services inventory |
+| [Homelab Philosophy](homelab-philosophy.md) | v1.0 | Goals, principles, and the values behind every homelab decision |
+| [Project Roadmap](project-roadmap.md) | v2.3 | Phased delivery plan, current pursuits, and project structure |
+| [IaC Runbook](iac-runbook.md) | v1.5 | Terraform + Ansible conventions, workflow, secrets, and recovery procedures |
+| [Hardware Catalog](hardware-catalog.md) | v1.3 | Physical inventory - compute, storage, and networking equipment |
+| [Network & Services Architecture](network-services-architecture.md) | v1.9 | VLAN topology, IP schema, firewall architecture, and services inventory |
 
 ## Service design docs
 
 | Document | Version | Service | Purpose |
 |----------|---------|---------|---------|
-| [Argus Design Doc](argus-design-doc-v1.2.md) | v1.2 | Argus | AI-augmented SIEM - log collection, threat detection, incident response |
-| [Ariadne Design Doc](ariadne-design-doc-v1.0.md) | v1.0 | Ariadne | DMZ and perimeter - reverse proxy, authentication, VPN, outbound filtering |
-| [Hermes Design Doc](hermes-design-doc-v1.1.md) | v1.1 | Hermes | Autonomous-execution subsystem encapsulating Layers 1–4 of the Five-Layer AI Stack |
-| [Mnemosyne Design Doc](mnemosyne-design-doc-v1.1.md) | v1.1 | Mnemosyne | Personal knowledge management - git-backed wiki with AI-assisted capture |
+| [Argus Design Doc](argus-design-doc.md) | v1.2 | Argus | AI-augmented SIEM - log collection, threat detection, incident response |
+| [Ariadne Design Doc](ariadne-design-doc.md) | v1.0 | Ariadne | DMZ and perimeter - reverse proxy, authentication, VPN, outbound filtering |
+| [Hermes Design Doc](hermes-design-doc.md) | v1.1 | Hermes | Autonomous-execution subsystem encapsulating Layers 1–4 of the Five-Layer AI Stack |
+| [Mnemosyne Design Doc](mnemosyne-design-doc.md) | v1.2 | Mnemosyne | Personal knowledge management - git-backed wiki with AI-assisted capture |
 | [Mnemosyne Worker Migration](mnemosyne-worker-migration.md) | v1.0 | Mnemosyne | Migration plan moving pipeline cron off the laptop onto the LXC 103 worker (n8n/LXC split, LLM engine decision, cutover slices) |
-| [Orpheus Design Doc](orpheus-design-doc-v1.1.md) | v1.1 | Orpheus | Family media platform - video, photos, music, audiobooks, ebooks |
+| [Orpheus Design Doc](orpheus-design-doc.md) | v1.3 | Orpheus | Family media platform - video, photos, music, audiobooks, ebooks |
 | [Phemius Design Doc](phemius-design-doc.md) | v1.0 | Phemius | Living-room media client - Kodi on lobotomised panel, Tunarr channels, kid profiles |
 | [Themis Design Doc](themis-design-doc.md) | v1.0 | Themis | Android endpoint management - MDM policy groups, enrollment modes, fleet phasing |
 
@@ -39,7 +39,7 @@ See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all h
 
 | Document | Version | Purpose |
 |----------|---------|---------|
-| [Media Library Guide](media-library-guide-v1.0.md) | v1.0 | Directory structure, naming conventions, and migration procedures for TrueNAS media storage |
+| [Media Library Guide](media-library-guide.md) | v1.0 | Directory structure, naming conventions, and migration procedures for TrueNAS media storage |
 
 ## Evaluations and reports
 

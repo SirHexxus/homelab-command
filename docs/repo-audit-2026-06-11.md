@@ -88,7 +88,7 @@ index) have diverged systemically.
   - `.claude/agents/homelab-iac-specialist.md:81-82` — VLAN 30 "IoT", VLAN 40 "Trusted
     Wireless"; `:85` — VLAN 66 "Quarantine"; VLAN 80 absent from the table
   - Truth sources agree with each other: `CLAUDE.md:92-105`,
-    `docs/network-services-architecture-v1.6.md:108-118`, and the deployed IaC —
+    `docs/network-services-architecture.md:108-118`, and the deployed IaC —
     `infrastructure/network/pfsense/ansible/group_vars/pfsense.yml:28,35,56,70` (WORK, IOT,
     SANDBOX, MEDIA) and `infrastructure/network/switch/ansible/group_vars/switch.yml:18-30`
 - **Fix:** correct rows 30 (Work), 40 (IoT), 66 (Sandbox); add VLAN 80 Media 10.0.80.0/24.
@@ -105,7 +105,7 @@ index) have diverged systemically.
 ### AUD-005 — Hermes design doc v1.1 documents the superseded architecture
 
 - **Category:** docs · **Owner:** sprint-session (technical-writer pass)
-- **Evidence:** `docs/hermes-design-doc-v1.1.md` contains zero mentions of Hermes-Agent or
+- **Evidence:** `docs/hermes-design-doc.md` contains zero mentions of Hermes-Agent or
   Chiron; `:165-166` lists `bin/hermes` / `bin/hermes-api` (gunicorn :8765) as current;
   `:270` describes the :8765 service unit. The doc was last touched 2026-05-20 — seven days
   before the platform pivot.
@@ -170,13 +170,13 @@ index) have diverged systemically.
 
 - **Category:** dates / status · **Owner:** sprint-session
 - **Evidence:**
-  - `docs/project-roadmap-v2.2.md:160` — "[ ] Daily Digest LLM swap (`claude -p` → Hermes
+  - `docs/project-roadmap.md:160` — "[ ] Daily Digest LLM swap (`claude -p` → Hermes
     `/task`)" — PKM journal `2026-05-21 — Daily Digest Gemini Swap Sprint Complete` records it
     shipped (commit `49d60e5`), and the implementation went to direct `google-genai` SDK, not
     Hermes `/task`
   - `:103` — "Mistral 7B" as the Ollama model (see AUD-017)
   - `:43` — registry lists "Mnemosyne Design Doc v1.2 ✅" (file on disk is
-    `mnemosyne-design-doc-v1.1.md`; see AUD-015)
+    `mnemosyne-design-doc.md`; see AUD-015)
   - No Hermes-Agent/Chiron pivot reflected anywhere in Phase 2
   - Phase 2 revised target May 4, 2026 passed with phase still "in progress" (`:326`)
 - **Fix:** roadmap re-sync session → v2.3: check off shipped items, rewrite the Hermes Phase 2
@@ -186,7 +186,7 @@ index) have diverged systemically.
 
 - **Category:** dates · **Owner:** needs-james
 - **Evidence:** repo says queued — `CLAUDE.md:33` (roster), `infrastructure/mnemosyne/CLAUDE.md:5-7`,
-  `infrastructure/mnemosyne/ToDo.md:9`, `docs/project-roadmap-v2.2.md:159,181`. PKM June
+  `infrastructure/mnemosyne/ToDo.md:9`, `docs/project-roadmap.md:159,181`. PKM June
   journals show Chiron Week 3 + Vertex migration work proceeding, but no Decide-gate session
   entry exists, and `Project - Mnemosyne` `next_action` still points at the gate.
 - **Fix (decision):** either hold the gate retroactively and record the selection, or declare
@@ -197,7 +197,7 @@ index) have diverged systemically.
 
 - **Category:** docs / IaC naming · **Owner:** sprint-session
 - **Evidence:** Ariadne runs native nginx + certbot, not NGINX Proxy Manager. Stale "NPM"
-  references: `CLAUDE.md:28` (roster), `docs/network-services-architecture-v1.6.md:183,347,351`
+  references: `CLAUDE.md:28` (roster), `docs/network-services-architecture.md:183,347,351`
   (+ §6 prose), roadmap `:254`, role dir `infrastructure/ariadne/ansible/roles/npm/`. The PKM
   ADMIN page `Rename NPM References to Nginx Across Homelab Command Repo` (2026-05-24) already
   scopes the sweep, including the role-rename risk note.
@@ -221,7 +221,7 @@ index) have diverged systemically.
 
 - **Category:** status · **Owner:** hermes-functional-test (recurring); sprint-session (edit)
 - **Evidence:** live `pveversion` → `pve-manager/9.1.5`. `CLAUDE.md:113` — "PVE version 9.1.0";
-  `docs/network-services-architecture-v1.6.md:28,295` — "Proxmox 9.1.2".
+  `docs/network-services-architecture.md:28,295` — "Proxmox 9.1.2".
 - **Fix:** update both; consider documenting "9.1.x (rolling)" to stop this class of drift, and
   add a Chiron functionality test that compares `pveversion` against the docs.
 
@@ -229,22 +229,26 @@ index) have diverged systemically.
 
 - **Category:** docs-index · **Owner:** sprint-session + needs-james (policy)
 - **Evidence (filename → internal header):**
-  - `network-services-architecture-v1.6.md` → **1.9** (README index and root CLAUDE.md say v1.6)
-  - `iac-runbook-v1.2.md` → **1.5** (docs/README.md:16 says v1.3 — a third value)
-  - `mnemosyne-design-doc-v1.1.md` → **1.2** (roadmap registry says v1.2; README + root
+  - `network-services-architecture.md` → **1.9** (README index and root CLAUDE.md say v1.6)
+  - `iac-runbook.md` → **1.5** (docs/README.md:16 says v1.3 — a third value)
+  - `mnemosyne-design-doc.md` → **1.2** (roadmap registry says v1.2; README + root
     CLAUDE.md say v1.1)
-  - `orpheus-design-doc-v1.1.md` → **1.3**
+  - `orpheus-design-doc.md` → **1.3**
   - Stale companion footers: network arch `:433` cites "Project Roadmap v1.3 · IaC Runbook
     v1.3"; roadmap `:370` cites "Mnemosyne Design Doc v1.2"
 - **Fix (decision first):** pick a policy — either rename files on every version bump, or drop
   versions from filenames and keep them only in headers (lower-friction; links never break).
   Then one sweep to align filenames, headers, README index, roadmap registry, root CLAUDE.md,
   and companion footers.
+- **Resolved 2026-09-13 (D4 policy: version-free filenames):** all `-vX.Y` suffixes stripped
+  (`git mv`), 105 path references rewritten, README/roadmap version columns and every companion
+  footer synced to the current headers. The evidence bullets above were rewritten by the same
+  sweep and now show the new filenames.
 
 ### AUD-016 — Network architecture doc carries pre-deployment claims as current
 
 - **Category:** docs / status · **Owner:** sprint-session
-- **Evidence (`docs/network-services-architecture-v1.6.md`):**
+- **Evidence (`docs/network-services-architecture.md`):**
   - `:171,312` — Hermes "LXC (planned)" (live since 2026-04-14)
   - `:303,331,376` — ntfy "pending playbook run" (ran 2026-03-10; proxied at ntfy.sirhexx.com)
   - `:377` open queue + `:422` open item #16 — "GitHub repo not created" (this repo)
@@ -385,7 +389,7 @@ checks, ansible ping sweep, `wiki_embeddings` count vs. wiki page count.
 ## Methodology
 
 - **Repo pass:** read in full — root CLAUDE.md, `.claude/agents/homelab-iac-specialist.md`,
-  `docs/network-services-architecture-v1.6.md`, `docs/project-roadmap-v2.2.md`, docs/README.md,
+  `docs/network-services-architecture.md`, `docs/project-roadmap.md`, docs/README.md,
   service CLAUDE.md files; grepped all `provider.tf`, `ansible.cfg`, `inventory.ini`, and
   `vault_*` usage; targeted factual pass over design docs.
 - **Live pass (read-only):** SSH `pct list` / `qm list` / `pveversion`; `ansible -m ping` per
