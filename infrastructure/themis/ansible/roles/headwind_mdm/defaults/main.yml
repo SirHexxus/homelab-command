@@ -16,6 +16,7 @@ headwind_launcher_apk: "hmdm-{{ headwind_launcher_version }}-os.apk"
 headwind_launcher_url: "https://h-mdm.com/files/{{ headwind_launcher_apk }}"
 headwind_install_flag: "{{ headwind_base_dir }}/hmdm_install_flag"
 
-# Headwind hashes passwords as sha1(md5hex(password) + salt); the salt is a
-# constant in com.hmdm.util.PasswordUtil.
+# Headwind stores sha1(MD5HEX(password) + salt) with the MD5 hex in UPPER
+# case — the web panel sends md5(...).toUpperCase() and the server hashes what
+# it receives. The salt is a constant in com.hmdm.util.PasswordUtil.
 headwind_password_salt: 5YdSYHyg2U
