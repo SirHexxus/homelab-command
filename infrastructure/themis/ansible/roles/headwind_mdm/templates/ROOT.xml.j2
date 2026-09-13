@@ -38,7 +38,7 @@
     <!-- MQTT push: the launcher connects straight to this host:port (raw TCP,
          not via nginx). Proxied on the Incus host as device "mqtt". -->
     <Parameter name="mqtt.server.uri" value="{{ themis_domain }}:31000"/>
-    <Parameter name="mqtt.auth" value="1"/>
+    <Parameter name="mqtt.auth" value="{{ headwind_mqtt_auth }}"/>
 
     <Parameter name="device.fast.search.chars" value="5"/>
 
