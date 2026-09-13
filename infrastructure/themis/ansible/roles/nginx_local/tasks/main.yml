@@ -1,0 +1,5 @@
+# roles/nginx_local/tasks/main.yml - PoC-only nginx + Let's Encrypt DNS-01; retired once Ariadne fronts Themis
+#
+# TODO: not yet written. See docs/themis-design-doc.md §8 / §10.
+
+---

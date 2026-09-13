@@ -1,0 +1,5 @@
+# roles/postgres_local/tasks/main.yml - in-container Postgres for the PoC only (skipped when postgres_host is remote)
+#
+# TODO: not yet written. See docs/themis-design-doc.md §9 / §13.
+
+---

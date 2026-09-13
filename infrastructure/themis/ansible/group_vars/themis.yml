@@ -1,0 +1,25 @@
+# group_vars/themis.yml - Themis service variables
+#
+# The PoC/rack difference lives here, not in the roles (design doc §10):
+#
+#   variable           PoC (Incus)     Rack (LXC 111)
+#   postgres_host      localhost       10.0.50.14
+#   themis_proxy_mode  local           ariadne
+#   themis_domain      unchanged — the tablet must reconnect without re-enrollment
+
+---
+themis_domain: themis.sirhexx.com
+
+# localhost → postgres_local role runs; anything else → shared Postgres (LXC 105)
+postgres_host: localhost
+postgres_port: 5432
+postgres_db: hmdm
+postgres_user: hmdm
+postgres_password: "{{ vault_themis_postgres_password }}"
+
+# local   → nginx_local role terminates TLS in-container (Let's Encrypt DNS-01)
+# ariadne → Ariadne fronts it: rpadd themis.sirhexx.com 10.0.50.23:8080
+themis_proxy_mode: local
+
+headwind_admin_password: "{{ vault_themis_admin_password }}"
+headwind_api_key: "{{ vault_themis_api_key }}"

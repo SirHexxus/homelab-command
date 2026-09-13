@@ -1,0 +1,31 @@
+# provision.yml - Themis (Headwind MDM) provisioning
+#
+# Provisions Tomcat 9 + Headwind MDM against either the Incus PoC container or
+# LXC 111 — the target is chosen in inventory.ini, the PoC/rack differences in
+# group_vars/themis.yml. Roles are stubs until the Gate 1 spike passes
+# (docs/themis-design-doc.md §12): confirm the Headwind REST API reassigns
+# configurationId in one authenticated call before writing automation.
+#
+#   ansible-playbook -i inventory.ini provision.yml
+#   ansible-playbook -i inventory.ini provision.yml --tags headwind
+
+---
+- name: Provision Themis
+  hosts: themis
+  vars_files:
+    - group_vars/vault.yml
+
+  roles:
+    - role: java_tomcat
+      tags: [tomcat]
+
+    - role: postgres_local
+      tags: [postgres]
+      when: postgres_host == 'localhost'
+
+    - role: headwind_mdm
+      tags: [headwind]
+
+    - role: nginx_local
+      tags: [nginx]
+      when: themis_proxy_mode == 'local'
