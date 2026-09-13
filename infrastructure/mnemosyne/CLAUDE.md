@@ -58,12 +58,26 @@ dependency, and no MinIO dependency in the current design.
 
 ```
 infrastructure/mnemosyne/
-  ansible/     ← placeholder (.gitkeep) — not yet written
-  terraform/   ← placeholder (.gitkeep) — not yet written
+  ansible/
+    ansible.cfg              ← roles_path = roles:../../ansible/roles
+    inventory.ini            ← [mneme_workers] 10.0.50.19 (inbox-receiver LXC 103)
+    provision.yml            ← deploys the mneme-* script tree + systemd timers/services
+    roles/mneme_workers/     ← source of truth for the worker fleet (units templated
+                               from defaults/main.yml: mneme-worker.timer/.service,
+                               mneme-watch-inbox.service, mneme-alert@.service)
+  terraform/   ← placeholder (.gitkeep) — no dedicated Proxmox resource
 ```
 
-No IaC written. No dedicated Proxmox resource — the wiki is a git repo on the Hermes LXC.
-Mnemosyne IaC, when written, will consist of Ansible tasks for n8n pipeline deployment.
+The worker fleet runs on the inbox-receiver LXC (103); the inbox-receiver Flask app itself is
+provisioned separately from `inbox-receiver/ansible/provision.yml`. Terraform for LXC 103 also
+lives under `inbox-receiver/`. The wiki is a git repo on the Hermes LXC — no IaC of its own.
+
+```bash
+cd infrastructure/mnemosyne/ansible
+ansible-playbook -i inventory.ini provision.yml
+# Also remove mneme-* units the role no longer declares:
+ansible-playbook -i inventory.ini provision.yml -e mneme_purge_unmanaged=true
+```
 
 ## Vault Variables
 
