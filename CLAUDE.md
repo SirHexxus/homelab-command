@@ -31,6 +31,7 @@ cd infrastructure/platform/postgres && claude   # Postgres-focused
 | **Mnemosyne** | `infrastructure/mnemosyne/` | No dedicated host — wiki at `~/mneme/wiki/`, served by Hermes | 50 | Phase 2 — current path operational (cron + n8n); 2026-06-01 gate superseded by Chiron migration (D1/AUD-011), Phase 2T re-queued to 2026-09-01 gate |
 | **inbox-receiver** | `infrastructure/mnemosyne/inbox-receiver/` | LXC VMID 103, 10.0.50.19 | 50 | Deployed — Mnemosyne intake endpoint |
 | **Orpheus** | `infrastructure/orpheus/` | TrueNAS R710 eno4: 10.0.80.5 (13+ TrueNAS Scale apps) | 80 | Apps running; *Arr reconfiguration pending |
+| **Phemius** | `infrastructure/phemius/` | Bare metal: Intel N150 mini PC, VLAN 80 (DHCP reservation, IP TBD) | 80 | Planned — Phase 1 living room; no hardware purchased |
 | **Hephaestus** | `infrastructure/hephaestus/` | VM VMID 109, 10.0.50.30 — Docker Compose host | 50 | Deployed — Firecrawl (:3002) |
 | **Recon** | `infrastructure/recon/` | VM VMID 6601, 10.0.66.10 — quarantined WP detonation box | 66 | Deployed 2026-07-22 — VM created + provisioned; pfSense recon rules live |
 | **Themis** | `infrastructure/themis/` | LXC VMID 111, 10.0.50.23 (allocated, not built) | 50 | Planned — MVP runs off-rack in an Incus container on the ThinkPad until the server-closet move |
@@ -45,7 +46,7 @@ cd infrastructure/platform/postgres && claude   # Postgres-focused
 | **Proxmox** | `infrastructure/proxmox/` | Bare metal puppetmaster, 10.0.10.2 | 10 | Deployed |
 
 **Available VMIDs:** 112–119, 123–199, 201+ (111 = Themis; 6601 = Recon)
-**Available IPs:** VLAN 50 → 10.0.50.24+ except .30 (10.0.50.20–22 reserved for Argus; .23 = Themis; .30 = Hephaestus); VLAN 60 → 10.0.60.12+; VLAN 66 → 10.0.66.11+ (.10 = Recon)
+**Available IPs:** VLAN 50 → 10.0.50.24+ except .30 (10.0.50.20–22 reserved for Argus; .23 = Themis; .30 = Hephaestus); VLAN 60 → 10.0.60.12+; VLAN 66 → 10.0.66.11+ (.10 = Recon); VLAN 80 → client hosts via DHCP reservation (Phemius TBD)
 
 ---
 
@@ -96,6 +97,7 @@ These apply to every service in the repo. Service CLAUDE.md files do not repeat 
   - `vault_n8n_vertex_sa_json`
   - `vault_chiron_gemini_api_key`, `vault_chiron_telegram_bot_token`, `vault_chiron_vertex_sa_json`, `vault_chiron_webhook_secret`
   - `vault_themis_postgres_password`, `vault_themis_admin_password`, `vault_themis_api_key`
+  - `vault_phemius_jellyfin_kid_password`, `vault_phemius_jellyfin_adult_password`, `vault_phemius_youtube_api_key`
   - `vault_git_user_name`, `vault_git_user_email` *(convention exceptions — no service segment)*
 
 ---
@@ -145,4 +147,5 @@ These apply to every service in the repo. Service CLAUDE.md files do not repeat 
 | `docs/mnemosyne-design-doc.md` | Mnemosyne knowledge base design |
 | `docs/orpheus-design-doc.md` | Orpheus media platform |
 | `docs/themis-design-doc.md` | Themis endpoint management (MDM) — Android Enterprise, policy groups, verification gates |
+| `docs/phemius-design-doc.md` | Phemius living-room media client — Kodi HTPC, panel lockdown, Tunarr, kid profiles |
 | `.claude/agents/homelab-iac-specialist.md` | Authoritative VMID/IP allocation table |

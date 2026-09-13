@@ -490,4 +490,4 @@ environment you have rather than the one you are waiting for is the transferable
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Network & Services Architecture v1.9 · IaC Runbook v1.5 · Ariadne Design Doc v1.0 · Argus Design Doc v1.2 · Homelab Philosophy v1.0 · Project Roadmap v2.3*
+*Part of the Homelab Command Project. Companion documents: Network & Services Architecture v1.9 · IaC Runbook v1.5 · Ariadne Design Doc v1.0 · Argus Design Doc v1.2 · Homelab Philosophy v1.0 · Project Roadmap v2.4*

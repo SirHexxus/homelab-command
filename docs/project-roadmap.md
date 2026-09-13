@@ -1,6 +1,6 @@
 # Homelab Command Project — Project Roadmap
-**Version:** 2.3
-**Last Updated:** 2026-09-09
+**Version:** 2.4
+**Last Updated:** 2026-09-13
 **Philosophy:** See `docs/homelab-philosophy.md` for the values and goals behind this homelab.
 
 ---
@@ -39,7 +39,7 @@ They have been removed from this roadmap to keep scope clean.
 | Hardware Catalog | v1.3 | ✅ Complete |
 | Network & Services Architecture | v1.9 | ✅ Complete |
 | Homelab Philosophy | v1.0 | ✅ Complete |
-| Project Roadmap | v2.3 | ✅ This document |
+| Project Roadmap | v2.4 | ✅ This document |
 | Mnemosyne Design Doc | v1.2 | ✅ Complete |
 | IaC Runbook | v1.5 | ✅ Complete |
 | Argus Design Doc | v1.2 | ✅ Complete |
@@ -47,6 +47,7 @@ They have been removed from this roadmap to keep scope clean.
 | Hermes Design Doc | v1.1 | ✅ Complete |
 | Ariadne Design Doc | v1.0 | ✅ Complete |
 | Themis Design Doc | v1.0 | ✅ Complete |
+| Phemius Design Doc | v1.0 | ✅ Complete |
 
 ### Remaining
 | Document | Version | Status |
@@ -341,6 +342,37 @@ server-closet move. Full design: `docs/themis-design-doc.md`.
 
 ---
 
+## Phemius — Living-Room Media Client (Parallel Track)
+
+Phemius sits **off the Phase 1–5 critical path.** It replaces the living-room smart-TV OS with a
+Kodi HTPC the household owns, playing what Orpheus already holds — a family-services and privacy
+deliverable, not an application one. Phase 1 is wired to the existing switch and does not depend
+on the server-closet move. Full design: `docs/phemius-design-doc.md`.
+
+### Phase 1 — living room
+- [ ] Run two Cat6 drops behind the living-room TV → switch *(first — the only item with a lead
+      time under our control; unblocks VLAN placement)*
+- [ ] Purchase the BOM (§3): N150 mini PC, universal remote, Flirc USB, onn 4K Pro, BT keyboard
+- [ ] pfSense: deny-all MAC block for the Vizio panel; VLAN 80 client rules for Phemius (Gate 5 —
+      outbound apt + YouTube API); quarantine segment for the onn
+- [ ] Factory-reset the Vizio with the network step skipped; panel is a dumb display from here on
+- [ ] Install Debian 13 on the N150; Ansible → `kodi-gbm` standalone (Gate 1)
+- [ ] **Gate 2 spike:** Flirc + universal remote drive Kodi without raising the panel OSD — before
+      anything is mounted behind the panel
+- [ ] Add-ons and Jellyfin binding; Kids/Adults Kodi profiles on separate Jellyfin accounts
+      (Gate 6)
+- [ ] Curated kids' YouTube library via yt-dlp/metube → Jellyfin (§9)
+- [ ] Tunarr on Hephaestus; one channel from the coherent core; test direct/remux mode (Gate 3)
+- [ ] Expand channels per §8.1; audio-normalisation pass (§8.2) only if Gate 3 requires it
+- [ ] onn 4K Pro on HDMI 3, quarantined segment, DRM apps only
+- [ ] Ship Phemius logs to Iris/Argus
+
+### Phase 2 — office — *gated on the server-closet move*
+- [ ] `phemius-office` on the displaced TCL 65S450G; Batocera/emulation-first, media secondary
+- [ ] Second host added to the `phemius` inventory group; per-host differences in `host_vars/`
+
+---
+
 ## Deferred Projects (Post-Application)
 
 | Project | Notes |
@@ -380,6 +412,10 @@ Career Advancement pursuit in Mnemosyne.
 
 ## Version History
 
+- v2.4 (2026-09-13): Add Phemius (living-room Kodi HTPC) as a parallel track off the Phase 1–5
+  critical path — Phase 1 living room wired to the existing switch, Phase 2 office gated on the
+  server-closet move; register Phemius Design Doc v1.0; docs filename version suffixes stripped
+  (S5.1 / AUD-015)
 - v2.3 (2026-09-09): Add Themis (endpoint management / MDM) as a parallel track off the Phase 1–5
   critical path — MVP runs off-rack on the ThinkPad pending the ISP change and server-closet move;
   register Themis Design Doc v1.0; allocate VMID 111 / 10.0.50.23
@@ -406,4 +442,4 @@ Career Advancement pursuit in Mnemosyne.
 
 ---
 
-*Companion documents: Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.5 · Argus Design Doc v1.2 · Orpheus Design Doc v1.3 · Ariadne Design Doc v1.0 · Themis Design Doc v1.0 · Homelab Philosophy v1.0*
+*Companion documents: Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.5 · Argus Design Doc v1.2 · Orpheus Design Doc v1.3 · Ariadne Design Doc v1.0 · Themis Design Doc v1.0 · Phemius Design Doc v1.0 · Homelab Philosophy v1.0*
