@@ -9,7 +9,7 @@
 
 This document defines how Infrastructure as Code is used across the homelab. It is the canonical reference for tooling, conventions, workflow, secrets management, and recovery procedures. It is project-agnostic - individual Design Documents describe *what* a project deploys and how to invoke IaC for that project; this document describes *how* IaC works and *why* it is done this way.
 
-See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all homelab decisions, including the IaC-first principle this document implements.
+See `docs/homelab-philosophy.md` for the values and principles behind all homelab decisions, including the IaC-first principle this document implements.
 
 **Core principles:**
 
@@ -661,4 +661,4 @@ See `infrastructure/ariadne/ansible/provision.yml` Play 0 as the reference imple
 
 ---
 
-*Part of the Homelab Command Project. See `docs/README.md` for the full document index. Companion documents: Homelab Philosophy v1.0 · Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.7 · Mnemosyne Design Doc v1.1 · Argus Design Doc v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. See `docs/README.md` for the full document index. Companion documents: Homelab Philosophy v1.0 · Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Project Roadmap v2.3 · Mnemosyne Design Doc v1.2 · Argus Design Doc v1.2 · Orpheus Design Doc v1.3 · Ariadne Design Doc v1.0*

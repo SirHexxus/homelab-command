@@ -7,7 +7,7 @@ and verified. For the application code, see `apps/hermes/CLAUDE.md`.
 Read `apps/hermes/ToDo.md` for the current task backlog. Do not run provisioning steps
 not in the backlog without checking first.
 
-See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all homelab decisions.
+See `docs/homelab-philosophy.md` for the values and principles behind all homelab decisions.
 
 ## Definition of Done
 
@@ -72,5 +72,5 @@ credentials, Postgres connection string for Mnemosyne, API keys (Gemini, Claude)
 ## Notes
 
 - `scripts/` and `test-results/` are untracked — review before committing or gitignoring
-- Design doc: `docs/hermes-design-doc-v1.1.md`
+- Design doc: `docs/hermes-design-doc.md`
 - IaC conventions: see root `CLAUDE.md`

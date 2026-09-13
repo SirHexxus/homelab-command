@@ -43,7 +43,7 @@ See `[[Decide First Mnemosyne and Hermes Build Sprint]]` for the original candid
 ## Phase 0 — Architecture & Design
 **Status:** Mostly complete; 0.4–0.6 open
 
-- [x] **0.1** Update `docs/mnemosyne-design-doc-v1.1.md` to reflect the wiki model  
+- [x] **0.1** Update `docs/mnemosyne-design-doc.md` to reflect the wiki model  
   *Replace all Postgres/pgvector references. Document the new architecture: git wiki repo,
   Obsidian UI, Hermes as wiki agent, 7 buckets as directories, index.md + log.md, YAML
   frontmatter for structured fields. Retire the Notion database IDs section.*  
@@ -354,5 +354,5 @@ multiple of these branches; sprints are picked one at a time.
 ---
 
 *For Hermes requirements and status: see `apps/hermes/ToDo.md`*  
-*For full system design: see `docs/mnemosyne-design-doc-v1.1.md`*  
+*For full system design: see `docs/mnemosyne-design-doc.md`*  
 *For the orientation rationale: see `[[2026-05-20 — Hermes Off Hold and Orient Inventory]]`*

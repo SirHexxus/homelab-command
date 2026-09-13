@@ -4,7 +4,7 @@ Monorepo for the full homelab infrastructure: Terraform + Ansible for all servic
 IaC (pfSense + switch), application code (Hermes), and design docs. Single Proxmox node
 (puppetmaster) hosts everything via LXC containers and VMs.
 
-**Philosophy:** `docs/homelab-philosophy-v1.0.md` - the values and principles behind every decision in this repo.
+**Philosophy:** `docs/homelab-philosophy.md` - the values and principles behind every decision in this repo.
 
 ## Focused Sessions
 
@@ -134,15 +134,15 @@ These apply to every service in the repo. Service CLAUDE.md files do not repeat 
 
 | Doc | Purpose |
 |-----|---------|
-| `docs/homelab-philosophy-v1.0.md` | Values and principles behind all homelab decisions — read this first |
+| `docs/homelab-philosophy.md` | Values and principles behind all homelab decisions — read this first |
 | `docs/README.md` | Full document index |
-| `docs/network-services-architecture-v1.6.md` | VLAN topology, firewall rules, full IP schema |
-| `docs/iac-runbook-v1.2.md` | Deployment procedures, secrets management, Ansible patterns |
-| `docs/project-roadmap-v2.2.md` | Phased delivery schedule and current pursuits |
-| `docs/argus-design-doc-v1.2.md` | Argus SIEM architecture |
-| `docs/ariadne-design-doc-v1.0.md` | DMZ and perimeter design |
-| `docs/hermes-design-doc-v1.1.md` | Hermes AI agent architecture |
-| `docs/mnemosyne-design-doc-v1.1.md` | Mnemosyne knowledge base design |
-| `docs/orpheus-design-doc-v1.1.md` | Orpheus media platform |
+| `docs/network-services-architecture.md` | VLAN topology, firewall rules, full IP schema |
+| `docs/iac-runbook.md` | Deployment procedures, secrets management, Ansible patterns |
+| `docs/project-roadmap.md` | Phased delivery schedule and current pursuits |
+| `docs/argus-design-doc.md` | Argus SIEM architecture |
+| `docs/ariadne-design-doc.md` | DMZ and perimeter design |
+| `docs/hermes-design-doc.md` | Hermes AI agent architecture |
+| `docs/mnemosyne-design-doc.md` | Mnemosyne knowledge base design |
+| `docs/orpheus-design-doc.md` | Orpheus media platform |
 | `docs/themis-design-doc.md` | Themis endpoint management (MDM) — Android Enterprise, policy groups, verification gates |
 | `.claude/agents/homelab-iac-specialist.md` | Authoritative VMID/IP allocation table |

@@ -33,7 +33,7 @@ order, who in Homer convenes and dissolves the assembly of the gods. Themis is n
 agrees to operate under. That distinction is the charter: Themis distributes policy to a fleet,
 it does not watch people.
 
-See `docs/homelab-philosophy-v1.0.md` for the broader goals this service supports. Themis serves
+See `docs/homelab-philosophy.md` for the broader goals this service supports. Themis serves
 the family services and skill-building goals: a child's tablet that stays on task during school
 hours without a parent physically holding it, and a managed-mobility competency that transfers
 directly to enterprise work.
@@ -391,7 +391,7 @@ and are all answerable on the laptop PoC.
 
 ## 13. IaC Integration
 
-Themis follows the repo's standard service layout. See `docs/iac-runbook-v1.2.md` for tooling,
+Themis follows the repo's standard service layout. See `docs/iac-runbook.md` for tooling,
 secrets management, and workflow standards.
 
 ```
@@ -490,4 +490,4 @@ environment you have rather than the one you are waiting for is the transferable
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Network & Services Architecture v1.9 · IaC Runbook v1.2 · Ariadne Design Doc v1.0 · Argus Design Doc v1.2 · Homelab Philosophy v1.0 · Project Roadmap v2.3*
+*Part of the Homelab Command Project. Companion documents: Network & Services Architecture v1.9 · IaC Runbook v1.5 · Ariadne Design Doc v1.0 · Argus Design Doc v1.2 · Homelab Philosophy v1.0 · Project Roadmap v2.3*

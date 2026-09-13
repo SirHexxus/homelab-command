@@ -14,7 +14,7 @@ the Phase 3 direction is single-shot dispatch for simple tasks with ReAct reserv
 genuine multi-step judgment. For the LXC provisioning IaC, see
 `infrastructure/hermes/CLAUDE.md`.
 
-See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all homelab decisions.
+See `docs/homelab-philosophy.md` for the values and principles behind all homelab decisions.
 
 ## Components
 
@@ -93,7 +93,7 @@ under `model_routing:`. See `THOUGHTS.md` for the full routing table design.
 
 ## Design Doc
 
-`docs/hermes-design-doc-v1.1.md` — full architecture: Five-Layer Stack positioning,
+`docs/hermes-design-doc.md` — full architecture: Five-Layer Stack positioning,
 ReAct loop + Phase 3 single-shot direction, context system, skills framework, task_type
 LLM routing, Phase 1–5 build plan.
 

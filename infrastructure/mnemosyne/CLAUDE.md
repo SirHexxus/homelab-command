@@ -12,7 +12,7 @@ retrieval, and the remaining scheduled reports. For the wiki skills themselves, 
 Read `infrastructure/mnemosyne/ToDo.md` for the current task backlog. Do not build pipeline
 components not in the backlog without checking first.
 
-See `docs/homelab-philosophy-v1.0.md` for the values and principles behind all homelab decisions.
+See `docs/homelab-philosophy.md` for the values and principles behind all homelab decisions.
 
 ## Architecture (Current)
 
@@ -95,5 +95,5 @@ ansible-playbook -i inventory.ini provision.yml -e mneme_purge_unmanaged=true
 - **Maintenance scripts** at `scripts/maintenance/` already implement most Phase 7.1
   checks (ghost links, orphan files, stub pages, overdue tasks, stale projects, etc.).
   See `ToDo.md` Phase 7 for the inventory and remaining wiring work.
-- Design doc: `docs/mnemosyne-design-doc-v1.1.md`
+- Design doc: `docs/mnemosyne-design-doc.md`
 - IaC conventions: see root `CLAUDE.md`

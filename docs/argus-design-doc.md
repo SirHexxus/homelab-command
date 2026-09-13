@@ -19,7 +19,7 @@ Argus is an AI-augmented security operations platform for the homelab. Named aft
 
 Argus serves the homelab's security and skill-building goals: providing real visibility into network activity, practicing detection engineering, and building the habit of treating security as observable infrastructure rather than an afterthought. It also generates portfolio documentation that demonstrates these competencies - but functional security comes first.
 
-See `docs/homelab-philosophy-v1.0.md` for the broader goals this service supports.
+See `docs/homelab-philosophy.md` for the broader goals this service supports.
 
 ---
 
@@ -711,4 +711,4 @@ Argus-specific post-recovery steps:
 
 ---
 
-*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.2 · Network & Services Architecture v1.6 · Project Roadmap v1.3 · Mnemosyne Design Doc v1.1 · IaC Runbook v1.2 · Orpheus Design Doc v1.1 · Ariadne Design Doc v1.0*
+*Part of the Homelab Command Project. Companion documents: Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Project Roadmap v2.3 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.5 · Orpheus Design Doc v1.3 · Ariadne Design Doc v1.0*

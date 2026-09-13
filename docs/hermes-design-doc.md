@@ -49,7 +49,7 @@ See `apps/hermes/ToDo.md` Post-Hold-Lift Candidates and the wiki journal entry
 
 ## Purpose
 
-See `docs/homelab-philosophy-v1.0.md` for the broader goals this service supports. Hermes
+See `docs/homelab-philosophy.md` for the broader goals this service supports. Hermes
 serves the skill-building and automation goals: making the homelab more capable of managing
 itself while building practical experience with agentic AI systems.
 
@@ -344,7 +344,7 @@ homelab-command/
 │   └── ansible/          ← OS + app configuration
 │       └── roles/hermes/ ← install, venv, config, systemd
 │
-└── docs/hermes-design-doc-v1.1.md   ← this file
+└── docs/hermes-design-doc.md   ← this file
 ```
 
 This separation keeps deployment machinery (`infrastructure/`) distinct from application
