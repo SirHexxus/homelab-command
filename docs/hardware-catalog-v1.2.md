@@ -1,6 +1,6 @@
 # Homelab Command — Hardware Catalog
-**Version:** 1.2
-**Last Updated:** 2026-02-24
+**Version:** 1.3
+**Last Updated:** 2026-09-09
 **Status:** Active document — update as hardware is added, removed, or changed.
 
 ---
@@ -34,8 +34,9 @@
 | James's Phone | Samsung Galaxy S24 FE | Android | **Active** at 10.0.20.104 | |
 | Wife's Laptop | HP Pavilion x360 Convertible 15-cr0091ms | Windows 11 (Linux migration planned) | **Active** at 10.0.20.101 (hostname: DESKTOP-PRSIJDR) | Convertible touchscreen. OS migration to Debian or Ubuntu under consideration. |
 | Wife's Phone | Samsung Galaxy S23 FE | Android | **Active** at 10.0.20.105 | |
-| Nintendo Switch | Nintendo Switch | — | **Active** (seen at 10.0.10.58) | Currently on LAN. Should migrate to Trusted or IoT VLAN. |
-| Living Room TV | TCL 75S450G *(unconfirmed)* | Android TV OS 11 | **Active** at 10.0.20.102 | Model assumed from firmware string V8-R51MT08-LF1V058.021060. Physical label inaccessible due to wall mount. Security patch May 2023 — outdated. IoT VLAN migration recommended. |
+| Nintendo Switch | Nintendo Switch | — | **Active** — WiFi | Connects over WiFi (eero SSID 1 → VLAN 20). Prior entry showing 10.0.10.58 on the management LAN was incorrect. Wired to HDMI 2 on the living-room TV. |
+| Living Room TV | VIZIO VQD65R-1010 | SmartCast (slated for removal) | **Active** | 65" Quantum QLED, 2024. Serial LMVU19AC0802012, Material 10258020055. 120V/2.8A (~336W). Dolby Vision, Dolby Audio, DTS:X, DTS Virtual:X. I/O: 3× HDMI (HDMI 1 = eARC), optical audio out, ATSC antenna, USB 2.0 (1A). Assume 60Hz. Target panel for the HTPC project — to be network-isolated and driven as a dumb display. |
+| Spare TV | TCL 65S450G | Google TV / Android TV OS 11 | **Idle — Spare** | Confirmed 65" from physical label (was catalogued as 75S450G, inferred from firmware string V8-R51MT08-LF1V058.021060 — size was a guess and was wrong). 120V/145W. Dolby Vision, Dolby Atmos, DTS-HD. Replaced as living-room TV; retired for parental-control bypass (child reached YouTube past configured locks), not a hardware fault. Earmarked for the Phase 2 office deployment (gaming-focused). |
 | Work Device | Unknown make/model | Unknown | **Active** on VLAN 30 | Isolated on 10.0.30.0/24. Managed for network isolation only. |
 | Jared's Laptop | ASUS ROG Flow X13 | Unknown | **Trusted guest** | Close friend, trusted network access. |
 
@@ -78,11 +79,12 @@
 ## Open Items & Deferred Tasks
 
 - [ ] Confirm smart switch brand (check label on device)
-- [ ] Confirm TV model when label becomes accessible
+- [x] Confirm TV model — living room is VIZIO VQD65R-1010; spare is TCL **65S450G** (2026-09-09, from physical labels)
 - [ ] Research specs for Acer ES1-511-C0DV, HP TPN-C125, Dell P57G001, Dell P125G002
 - [ ] Source charger for Microsoft Surface Pro
-- [ ] Migrate Nintendo Switch to appropriate VLAN (Trusted or IoT)
-- [ ] Plan Living Room TV migration to IoT VLAN
+- [ ] Migrate Nintendo Switch to appropriate VLAN (Trusted or IoT) — currently WiFi/VLAN 20; constrained by the eero 2-SSID limit
+- [ ] Living Room TV (Vizio): network-isolate entirely rather than migrating to IoT — deny-all MAC block at pfSense, panel driven as a dumb display. Supersedes the IoT migration plan
+- [ ] Run Cat6 drop (x2) behind the living-room TV → switch; HTPC lands on VLAN 80
 - [x] Reconnect R710 to 10.0.0.0/8 network — live at 10.0.10.30 (VLAN 10)
 - [ ] Identify and source GPU for Proxmox server (RTX 3060 12GB or Intel Arc B580)
 - [x] Flash Helm HPS20 with Armbian (Armbian_22.11.2-build-48_Helm-v2b, 2026-02-24)
