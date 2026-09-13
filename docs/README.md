@@ -33,7 +33,7 @@ See `docs/homelab-philosophy.md` for the values and principles behind all homela
 | [Mnemosyne Worker Migration](mnemosyne-worker-migration.md) | v1.0 | Mnemosyne | Migration plan moving pipeline cron off the laptop onto the LXC 103 worker (n8n/LXC split, LLM engine decision, cutover slices) |
 | [Orpheus Design Doc](orpheus-design-doc.md) | v1.3 | Orpheus | Family media platform - video, photos, music, audiobooks, ebooks |
 | [Phemius Design Doc](phemius-design-doc.md) | v1.0 | Phemius | Living-room media client - Kodi on lobotomised panel, Tunarr channels, kid profiles |
-| [Themis Design Doc](themis-design-doc.md) | v1.0 | Themis | Android endpoint management - MDM policy groups, enrollment modes, fleet phasing |
+| [Themis Design Doc](themis-design-doc.md) | v1.1 | Themis | Android endpoint management - MDM policy groups, enrollment modes, fleet phasing |
 
 ## Operational guides
 
