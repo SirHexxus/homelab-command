@@ -3,10 +3,14 @@
 
 Every tablet has its own pair of Headwind configurations, named after the
 device number so nothing in this repo says whose tablet it is or which school
-app it runs:
+app it runs, plus one shared parent-lock configuration:
 
-    <number>: School        e.g. "sophy-01: School"
-    <number>: Free Time     e.g. "sophy-01: Free Time"
+    <number>: School        e.g. "sophy-01: School"   (mode: school)
+    <number>: Free Time     e.g. "sophy-01: Free Time" (mode: free)
+    Sophy: Locked           nothing usable            (mode: lock)
+
+"unlock" is an alias for "school": a lock always releases to the fail-closed
+state; Free Time is a deliberate parent action, never automatic.
 
 Talks to the Headwind MDM private REST API: log in for a JWT, resolve the
 device and the target configuration to their ids, then reassign the device's
@@ -26,6 +30,7 @@ For cron, put those in ~/.config/themis/env (mode 0600) and source it.
 Examples:
     sophy-switch sophy-01 school
     sophy-switch sophy-01 free --dry-run
+    sophy-switch --all lock
     sophy-switch --list
 """
 
@@ -39,10 +44,23 @@ import urllib.error
 import urllib.request
 
 # ── Constants ─────────────────────────────────────────────────────────────────
+# Per-device modes: the configuration is "<number>: <label>".
 MODES = {
     'school': 'School',
     'free': 'Free Time',
 }
+
+# Shared modes: one configuration for every tablet.
+SHARED_MODES = {
+    'lock': 'Sophy: Locked',
+}
+
+MODE_ALIASES = {
+    'unlock': 'school',
+}
+
+# Device numbers --all expands to. Neutral by design (CLAUDE.md rule 6).
+ALL_DEVICES = ('sophy-01', 'sophy-02')
 
 REQUIRED_ENV = ('THEMIS_URL', 'THEMIS_USER', 'THEMIS_PASSWORD')
 
@@ -133,6 +151,9 @@ def assign_configuration(base_url: str, token: str, device_id: int,
 
 def configuration_name(number: str, mode: str) -> str:
     """Return the configuration name for a device number and mode."""
+    mode = MODE_ALIASES.get(mode, mode)
+    if mode in SHARED_MODES:
+        return SHARED_MODES[mode]
     return f'{number}: {MODES[mode]}'
 
 
@@ -141,14 +162,16 @@ def print_configurations(configurations: dict[str, int]) -> None:
     by_id = {cfg_id: name for name, cfg_id in configurations.items()}
     suffixes = tuple(f': {label}' for label in MODES.values())
     for cfg_id in sorted(by_id):
-        marker = '*' if by_id[cfg_id].endswith(suffixes) else ' '
+        name = by_id[cfg_id]
+        marker = '*' if name.endswith(suffixes) or name in SHARED_MODES.values() else ' '
         print(f'{marker} {cfg_id:>4}  {by_id[cfg_id]}')
 
 
-def switch(config: dict[str, str], number: str, mode: str, dry_run: bool) -> None:
+def switch(config: dict[str, str], number: str, mode: str, dry_run: bool,
+           token: str | None = None) -> None:
     """Resolve ids, then move the device (or report what would happen)."""
     base_url = config['THEMIS_URL']
-    token = login(config)
+    token = token or login(config)
 
     configurations = list_configurations(base_url, token)
     target_name = configuration_name(number, mode)
@@ -185,10 +208,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description='Move a Themis-managed tablet between the Sophy configurations.',
     )
-    parser.add_argument('number', nargs='?', help='Device number as shown in the panel')
-    parser.add_argument('mode', nargs='?', choices=sorted(MODES),
-                        help='Target configuration: ' + ', '.join(
-                            f'{key} = "<number>: {label}"' for key, label in MODES.items()))
+    parser.add_argument('number', nargs='?',
+                        help='Device number as shown in the panel (or --all)')
+    parser.add_argument('mode', nargs='?',
+                        choices=sorted(MODES) + sorted(SHARED_MODES) + sorted(MODE_ALIASES),
+                        help='school / free = "<number>: ..."; lock = "Sophy: Locked"; '
+                             'unlock = school')
+    parser.add_argument('--all', action='store_true',
+                        help=f'Apply the mode to every tablet: {", ".join(ALL_DEVICES)}')
     parser.add_argument('--dry-run', action='store_true',
                         help='Resolve everything but do not reassign the device')
     parser.add_argument('--list', action='store_true',
@@ -201,8 +228,18 @@ def main() -> None:
         print_configurations(list_configurations(config['THEMIS_URL'], login(config)))
         return
 
+    if args.all:
+        # "--all lock" parses the mode into the number slot.
+        mode = args.mode or args.number
+        if not mode or args.number and args.mode:
+            parser.error('--all takes exactly one mode')
+        token = login(config)
+        for number in ALL_DEVICES:
+            switch(config, number, mode, dry_run=args.dry_run, token=token)
+        return
+
     if not args.number or not args.mode:
-        parser.error('number and mode are required unless --list is given')
+        parser.error('number and mode are required unless --list or --all is given')
 
     switch(config, args.number, args.mode, dry_run=args.dry_run)
 
