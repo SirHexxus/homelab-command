@@ -1,0 +1,8 @@
+---
+# roles/headwind_mdm/handlers/main.yml
+
+- name: restart tomcat9
+  systemd:
+    name: tomcat9
+    state: restarted
+  ignore_errors: "{{ ansible_check_mode }}"

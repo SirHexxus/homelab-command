@@ -1,0 +1,21 @@
+---
+# roles/headwind_mdm/defaults/main.yml
+
+# Connection block reused by every postgresql_* task (args: "{{ headwind_db_conn }}").
+headwind_db_conn:
+  login_host: "{{ postgres_host }}"
+  login_port: "{{ postgres_port }}"
+  login_user: "{{ postgres_user }}"
+  login_password: "{{ postgres_password }}"
+  login_db: "{{ postgres_db }}"
+
+headwind_src_dir: "{{ headwind_base_dir }}/src"
+headwind_installer_zip: "hmdm-{{ headwind_version }}-install-ubuntu.zip"
+headwind_installer_url: "https://h-mdm.com/files/{{ headwind_installer_zip }}"
+headwind_launcher_apk: "hmdm-{{ headwind_launcher_version }}-os.apk"
+headwind_launcher_url: "https://h-mdm.com/files/{{ headwind_launcher_apk }}"
+headwind_install_flag: "{{ headwind_base_dir }}/hmdm_install_flag"
+
+# Headwind hashes passwords as sha1(md5hex(password) + salt); the salt is a
+# constant in com.hmdm.util.PasswordUtil.
+headwind_password_salt: 5YdSYHyg2U

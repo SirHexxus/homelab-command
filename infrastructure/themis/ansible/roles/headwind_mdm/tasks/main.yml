@@ -1,5 +1,224 @@
-# roles/headwind_mdm/tasks/main.yml - Headwind MDM WAR, config, initial admin + API key
-#
-# TODO: not yet written. See docs/themis-design-doc.md §8 / §13.
-
 ---
+# roles/headwind_mdm/tasks/main.yml - Headwind MDM web panel on Tomcat 9
+#
+# Replicates what the upstream (interactive) hmdm_install.sh does, in
+# idempotent steps: base directories, the Tomcat context (ROOT.xml), the WAR,
+# the one-time seed SQL, the launcher APK mirror, and the admin password.
+# Everything in the seed data is generic; devices, configurations and the
+# enrollment payload are created in the panel and live only in the database
+# (see infrastructure/themis/CLAUDE.md rule 6).
+
+# =========================================================================
+# 1. PACKAGES + DIRECTORIES
+# =========================================================================
+- name: Install Headwind runtime dependencies
+  apt:
+    name:
+      - aapt
+      - unzip
+      - postgresql-client
+      - python3-psycopg2
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create Headwind base directories
+  file:
+    path: "{{ headwind_base_dir }}/{{ item }}"
+    state: directory
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_user }}"
+    mode: '0755'
+  loop:
+    - ''
+    - files
+    - plugins
+    - logs
+    - src
+
+# =========================================================================
+# 2. INSTALLER PACKAGE (WAR + templates + seed SQL)
+# =========================================================================
+- name: Download Headwind {{ headwind_version }} installer package
+  get_url:
+    url: "{{ headwind_installer_url }}"
+    dest: "{{ headwind_src_dir }}/{{ headwind_installer_zip }}"
+    mode: '0644'
+
+- name: Unpack installer package
+  unarchive:
+    src: "{{ headwind_src_dir }}/{{ headwind_installer_zip }}"
+    dest: "{{ headwind_src_dir }}"
+    remote_src: true
+    creates: "{{ headwind_src_dir }}/hmdm-install/hmdm_install.sh"
+
+- name: Locate the WAR inside the package
+  find:
+    paths: "{{ headwind_src_dir }}/hmdm-install"
+    patterns: 'hmdm-*.war'
+  register: headwind_war
+
+- name: Assert exactly one WAR was found
+  assert:
+    that: headwind_war.files | length == 1
+    fail_msg: "Expected one hmdm-*.war in {{ headwind_src_dir }}/hmdm-install"
+
+- name: Copy email templates into the base directory
+  copy:
+    src: "{{ headwind_src_dir }}/hmdm-install/install/emails/"
+    dest: "{{ headwind_base_dir }}/emails/"
+    remote_src: true
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_user }}"
+
+- name: Render log4j config from the package template
+  shell: >
+    sed "s|_BASE_DIRECTORY_|{{ headwind_base_dir }}|g"
+    {{ headwind_src_dir }}/hmdm-install/install/log4j_template.xml
+    > {{ headwind_base_dir }}/log4j-hmdm.xml
+  args:
+    creates: "{{ headwind_base_dir }}/log4j-hmdm.xml"
+
+- name: Own log4j config as tomcat
+  file:
+    path: "{{ headwind_base_dir }}/log4j-hmdm.xml"
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_user }}"
+    mode: '0644'
+
+# =========================================================================
+# 3. TOMCAT CONTEXT + WAR
+# =========================================================================
+# Headwind binds its embedded MQTT broker to whatever mqtt.server.uri resolves
+# to *on this host*. Publicly the name points at the WAN, so pin it to
+# loopback here; the tablets reach the broker through the host override and
+# the Incus proxy device (or Ariadne-side routing after the rack move).
+- name: Resolve the service name to loopback inside the container
+  lineinfile:
+    path: /etc/hosts
+    regexp: '\s{{ themis_domain | regex_escape }}$'
+    line: "127.0.0.1 {{ themis_domain }}"
+  notify: restart tomcat9
+
+- name: Create Tomcat context directory
+  file:
+    path: "{{ tomcat_home }}/conf/Catalina/localhost"
+    state: directory
+    owner: root
+    group: "{{ tomcat_user }}"
+    mode: '0755'
+
+- name: Deploy Headwind context (ROOT.xml)
+  template:
+    src: ROOT.xml.j2
+    dest: "{{ tomcat_home }}/conf/Catalina/localhost/ROOT.xml"
+    owner: root
+    group: "{{ tomcat_user }}"
+    mode: '0640'
+  no_log: true
+  notify: restart tomcat9
+
+- name: Deploy Headwind WAR as ROOT
+  copy:
+    src: "{{ headwind_war.files[0].path }}"
+    dest: "{{ tomcat_home }}/webapps/ROOT.war"
+    remote_src: true
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_user }}"
+    mode: '0644'
+  register: headwind_war_deploy
+
+- name: Clear the previous deployment and init flag on a new WAR
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ tomcat_home }}/webapps/ROOT"
+    - "{{ headwind_install_flag }}"
+  when: headwind_war_deploy.changed
+  notify: restart tomcat9
+
+- name: Restart Tomcat now if the context or WAR changed
+  meta: flush_handlers
+
+- name: Wait for Headwind to finish initialising the schema
+  wait_for:
+    path: "{{ headwind_install_flag }}"
+    timeout: 600
+  when: headwind_war_deploy.changed
+
+- name: Read the initialisation result
+  slurp:
+    src: "{{ headwind_install_flag }}"
+  register: headwind_init_flag
+  when: headwind_war_deploy.changed
+
+- name: Assert Headwind initialised cleanly
+  assert:
+    that: (headwind_init_flag.content | b64decode | trim) == 'OK'
+    fail_msg: "Headwind init failed — see {{ tomcat_home }}/logs/catalina.out"
+  when: headwind_war_deploy.changed
+
+# =========================================================================
+# 4. SEED DATA (once)
+# =========================================================================
+# Liquibase seeds one placeholder configuration itself but no applications;
+# the installer's SQL replaces the former and populates the latter.
+- name: Check whether the seed data is already loaded
+  community.postgresql.postgresql_query:
+    query: SELECT count(*) AS n FROM applications
+  args: "{{ headwind_db_conn }}"
+  register: headwind_seed_state
+  no_log: true
+
+- name: Render the seed SQL with this deployment's values
+  shell: >
+    sed "s|_HMDM_BASE_|{{ headwind_base_dir }}|g;
+    s|_HMDM_VERSION_|{{ headwind_launcher_version }}|g;
+    s|_HMDM_APK_|{{ headwind_launcher_apk }}|g;
+    s|_ADMIN_EMAIL_|{{ headwind_admin_email }}|g;"
+    {{ headwind_src_dir }}/hmdm-install/install/sql/hmdm_init.en.sql
+    > {{ headwind_src_dir }}/hmdm_init.rendered.sql
+  when: headwind_seed_state.query_result[0].n | int == 0
+
+- name: Load the seed SQL
+  community.postgresql.postgresql_script:
+    path: "{{ headwind_src_dir }}/hmdm_init.rendered.sql"
+  args: "{{ headwind_db_conn }}"
+  when: headwind_seed_state.query_result[0].n | int == 0
+  no_log: true
+
+# =========================================================================
+# 5. LAUNCHER APK MIRROR
+# =========================================================================
+- name: Mirror the launcher APK locally
+  get_url:
+    url: "{{ headwind_launcher_url }}"
+    dest: "{{ headwind_base_dir }}/files/{{ headwind_launcher_apk }}"
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_user }}"
+    mode: '0644'
+
+- name: Point application URLs at this server instead of h-mdm.com
+  community.postgresql.postgresql_query:
+    query: >
+      UPDATE applicationversions
+      SET url = REPLACE(url, 'https://h-mdm.com', 'https://{{ themis_domain }}')
+      WHERE url LIKE 'https://h-mdm.com/%'
+  args: "{{ headwind_db_conn }}"
+  no_log: true
+
+# =========================================================================
+# 6. ADMIN PASSWORD
+# =========================================================================
+- name: Set the admin password
+  community.postgresql.postgresql_query:
+    query: >
+      UPDATE users
+      SET password = %(hash)s, passwordreset = false
+      WHERE login = 'admin'
+        AND (password IS DISTINCT FROM %(hash)s OR passwordreset)
+    named_args:
+      hash: "{{ ((headwind_admin_password | md5) ~ headwind_password_salt) | sha1 }}"
+  args: "{{ headwind_db_conn }}"
+  no_log: true
