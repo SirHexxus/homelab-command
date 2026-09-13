@@ -1,0 +1,29 @@
+# provision.yml - Phemius (Kodi HTPC) provisioning
+#
+# Provisions a Debian 13 mini PC to boot straight into kodi-gbm (no X, no
+# desktop), then layers add-ons, Kodi profiles and the Flirc IR keymap. Hosts
+# and addresses live in inventory.ini; service-wide settings in
+# group_vars/phemius.yml. Roles are stubs until Gates 1 and 2 pass
+# (docs/phemius-design-doc.md §13).
+#
+#   ansible-playbook -i inventory.ini provision.yml
+#   ansible-playbook -i inventory.ini provision.yml --tags addons,profiles
+
+---
+- name: Provision Phemius
+  hosts: phemius
+  vars_files:
+    - group_vars/vault.yml
+
+  roles:
+    - role: kodi_gbm
+      tags: [kodi]
+
+    - role: kodi_addons
+      tags: [addons]
+
+    - role: kodi_profiles
+      tags: [profiles]
+
+    - role: flirc
+      tags: [flirc]

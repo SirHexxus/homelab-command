@@ -1,0 +1,33 @@
+# group_vars/phemius.yml - Phemius service variables
+#
+# Shared by every Phemius host; per-host differences (Phase 2 emulation
+# stack, panel quirks) go in host_vars/ when they exist.
+
+---
+# Orpheus (TrueNAS R710, VLAN 80) — the library Phemius plays
+jellyfin_url: http://10.0.80.5:8096
+navidrome_url: http://10.0.80.5:4533
+
+# Tunarr host is decided by Gate 3 (design doc §7): Hephaestus if direct/remux
+# holds, otherwise Phemius itself.
+tunarr_url: http://10.0.50.30:8000
+
+# Kodi profiles map onto existing Jellyfin accounts; the gate is enforced by
+# the server, not the client (design doc §9).
+kodi_profiles:
+  - name: Kids
+    jellyfin_user: kid
+    jellyfin_password: "{{ vault_phemius_jellyfin_kid_password }}"
+  - name: Adults
+    jellyfin_user: adult
+    jellyfin_password: "{{ vault_phemius_jellyfin_adult_password }}"
+
+# Add-on set (design doc §6). YouTube is installed for the Adults profile only.
+kodi_addons:
+  - plugin.video.jellyfin
+  - pvr.iptvsimple
+  - plugin.audio.subsonic
+  - plugin.video.youtube
+  - script.service.sponsorblock
+
+youtube_api_key: "{{ vault_phemius_youtube_api_key }}"

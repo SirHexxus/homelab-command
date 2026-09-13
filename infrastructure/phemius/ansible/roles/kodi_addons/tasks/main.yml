@@ -1,0 +1,5 @@
+# roles/kodi_addons/tasks/main.yml - Jellyfin for Kodi, IPTV Simple, Subsonic, YouTube, SponsorBlock
+#
+# TODO: not yet written. See docs/phemius-design-doc.md §6.
+
+---
