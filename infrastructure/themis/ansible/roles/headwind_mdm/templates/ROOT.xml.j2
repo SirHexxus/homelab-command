@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- {{ ansible_managed }}
+     Headwind MDM Tomcat context. Derived from the installer's
+     install/context_template.xml; values come from group_vars/themis.yml. -->
+<Context>
+    <!-- database -->
+    <Parameter name="JDBC.driver"   value="org.postgresql.Driver"/>
+    <Parameter name="JDBC.url"      value="jdbc:postgresql://{{ postgres_host }}:{{ postgres_port }}/{{ postgres_db }}"/>
+    <Parameter name="JDBC.username" value="{{ postgres_user }}"/>
+    <Parameter name="JDBC.password" value="{{ postgres_password }}"/>
+
+    <!-- storage -->
+    <Parameter name="base.directory" value="{{ headwind_base_dir }}"/>
+    <Parameter name="files.directory" value="{{ headwind_base_dir }}/files"/>
+    <Parameter name="plugins.files.directory" value="{{ headwind_base_dir }}/plugins"/>
+
+    <!-- URL the launcher and the panel are enrolled against: always the DNS
+         name, never an IP (infrastructure/themis/CLAUDE.md rule 1) -->
+    <Parameter name="base.url" value="https://{{ themis_domain }}"/>
+
+    <Parameter name="usage.scenario" value="private"/>
+    <Parameter name="secure.enrollment" value="0"/>
+    <Parameter name="hash.secret" value="changeme-C3z9vi54"/>
+
+    <!-- one enrollment per device number; re-enrollment means delete + add -->
+    <Parameter name="prevent.duplicate.enrollment" value="1"/>
+
+    <Parameter name="plugin.devicelog.persistence.config.class" value="com.hmdm.plugins.devicelog.persistence.postgres.DeviceLogPostgresPersistenceConfiguration"/>
+    <Parameter name="role.orgadmin.id" value="2"/>
+
+    <Parameter name="swagger.host" value="{{ themis_domain }}"/>
+    <Parameter name="swagger.base.path" value="/rest"/>
+
+    <Parameter name="initialization.completion.signal.file" value="{{ headwind_install_flag }}"/>
+    <Parameter name="log4j.config" value="file://{{ headwind_base_dir }}/log4j-hmdm.xml"/>
+    <Parameter name="aapt.command" value="aapt"/>
+
+    <!-- MQTT push: the launcher connects straight to this host:port (raw TCP,
+         not via nginx). Proxied on the Incus host as device "mqtt". -->
+    <Parameter name="mqtt.server.uri" value="{{ themis_domain }}:31000"/>
+    <Parameter name="mqtt.auth" value="1"/>
+
+    <Parameter name="device.fast.search.chars" value="5"/>
+
+    <!-- nginx_local (PoC) / Ariadne (rack) terminate TLS in front of Tomcat -->
+    <Parameter name="proxy.addresses" value="{{ headwind_proxy_addresses }}"/>
+    <Parameter name="proxy.ip.header" value="X-Real-IP"/>
+
+    <!-- SMTP is unused in the PoC; password recovery is via the database -->
+    <Parameter name="smtp.host" value=""/>
+    <Parameter name="smtp.port" value=""/>
+    <Parameter name="smtp.ssl" value="0"/>
+    <Parameter name="smtp.starttls" value="0"/>
+    <Parameter name="smtp.username" value=""/>
+    <Parameter name="smtp.password" value=""/>
+    <Parameter name="smtp.from" value=""/>
+
+    <Parameter name="email.recovery.subj" value="{{ headwind_base_dir }}/emails/_LANGUAGE_/recovery_subj.txt"/>
+    <Parameter name="email.recovery.body" value="{{ headwind_base_dir }}/emails/_LANGUAGE_/recovery_body.txt"/>
+
+    <Parameter name="apk.trusted.url" value="https://h-mdm.com"/>
+</Context>
