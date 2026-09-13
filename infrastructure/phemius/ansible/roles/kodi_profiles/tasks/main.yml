@@ -1,0 +1,5 @@
+# roles/kodi_profiles/tasks/main.yml - Kids/Adults Kodi profiles with per-profile Jellyfin credentials
+#
+# TODO: not yet written. See docs/phemius-design-doc.md §9 (Gate 6).
+
+---

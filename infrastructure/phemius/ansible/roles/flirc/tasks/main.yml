@@ -1,0 +1,5 @@
+# roles/flirc/tasks/main.yml - Flirc USB IR receiver keymap for the universal remote
+#
+# TODO: not yet written. See docs/phemius-design-doc.md §11 (Gate 2).
+
+---

@@ -1,0 +1,5 @@
+# roles/kodi_gbm/tasks/main.yml - kodi-gbm package + standalone systemd unit; boots to Kodi with no X or compositor
+#
+# TODO: not yet written. See docs/phemius-design-doc.md §5 (Gate 1).
+
+---
