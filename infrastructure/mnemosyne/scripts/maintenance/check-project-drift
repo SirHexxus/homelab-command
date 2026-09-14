@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+################################################################################
+# Script Name: check-project-drift
+# Description: Finds PROJECT pages whose bound code repo has moved ahead of them
+# Author: James Stacy
+# Version: 1.0.0
+#
+# Usage: check-project-drift [--days N] [--report] [--projects-dir DIR]
+#
+# Options:
+#   -h, --help            Show this help message
+#   --days N              Drift threshold in days (default: 14)
+#   --report              Write a wiki report instead of printing to stdout
+#   --projects-dir DIR    Where code lives (default: ~/projects)
+#
+# Exit Codes:
+#   0 - Success (no drift found, or report written)
+#   1 - Configuration error
+#   2 - Invalid arguments
+#   3 - Drift found (stdout mode only)
+################################################################################
+
+set -u
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/wiki-common.sh" || exit 1
+
+drift_days=14
+write_out=false
+projects_dir="$HOME/projects"
+
+show_help() {
+	cat << EOF
+Usage: $(basename "$0") [options]
+
+Compares each PROJECT page's repo_path binding against the code it names.
+Reports pages whose repo has commits newer than the page's updated: field,
+bindings that point nowhere, missing reverse links, and code directories
+that have no page at all.
+
+Options:
+    -h, --help            Show this help message
+    --days N              Drift threshold in days (default: 14)
+    --report              Write a wiki report instead of printing to stdout
+    --projects-dir DIR    Where code lives (default: ~/projects)
+
+EOF
+}
+
+days_since() {
+	local d=$1
+	local epoch ref_epoch
+	epoch=$(date -d "$d" +%s 2>/dev/null) || { echo 0; return; }
+	ref_epoch=$(date +%s)
+	echo $(( (ref_epoch - epoch) / 86400 ))
+}
+
+# Last commit date (ISO) touching a path, or empty if untracked/not a repo.
+last_commit_date() {
+	local path=$1
+	local top
+	top=$(git -C "$path" rev-parse --show-toplevel 2>/dev/null) || return 0
+	git -C "$top" log -1 --format=%cs -- "$path" 2>/dev/null
+}
+
+# Count of modified/untracked entries under a path.
+dirty_count() {
+	local path=$1
+	git -C "$path" rev-parse --show-toplevel > /dev/null 2>&1 || { echo 0; return; }
+	git -C "$path" status --porcelain -- "$path" 2>/dev/null | grep -c . || true
+}
+
+main() {
+	while [[ $# -gt 0 ]]; do
+		case $1 in
+			-h|--help) show_help; exit 0 ;;
+			--days) drift_days=${2:-14}; shift 2 ;;
+			--report) write_out=true; shift ;;
+			--projects-dir) projects_dir=${2:-}; shift 2 ;;
+			*) printf 'Unknown option: %s\n' "$1" >&2; show_help; exit 2 ;;
+		esac
+	done
+
+	[[ -d $projects_dir ]] || { log_error "no such directory: $projects_dir"; exit 1; }
+
+	local today
+	today=$(date '+%Y-%m-%d')
+
+	local -a drifted=() broken=() noreverse=() unbound=()
+	local -a bound_paths=()
+
+	local page
+	while IFS= read -r page; do
+		local repo status updated
+		repo=$(get_frontmatter_field "$page" repo_path)
+		status=$(get_frontmatter_field "$page" status)
+		updated=$(get_frontmatter_field "$page" updated)
+		local title
+		title=$(basename "$page" .md)
+
+		[[ -z $repo || $repo == 'null' ]] && continue
+		repo="${repo/#\~/$HOME}"
+		bound_paths+=("$repo")
+
+		if [[ ! -d $repo ]]; then
+			broken+=("- \`[[${title}]]\` → \`${repo}\` does not exist")
+			continue
+		fi
+
+		# Reverse link: the code side should name the page back.
+		if [[ -f "$repo/CLAUDE.md" ]]; then
+			if ! grep -qiE "wiki[ _]page:.*\[\[${title}\]\]" "$repo/CLAUDE.md" 2>/dev/null; then
+				noreverse+=("- \`[[${title}]]\` — \`${repo}/CLAUDE.md\` has no matching \`wiki_page:\` line")
+			fi
+		fi
+
+		local commit_date
+		commit_date=$(last_commit_date "$repo")
+		[[ -z $commit_date ]] && continue
+
+		local lag
+		lag=$(( $(days_since "$updated") - $(days_since "$commit_date") ))
+		local dirty
+		dirty=$(dirty_count "$repo")
+
+		if [[ $lag -gt $drift_days ]]; then
+			drifted+=("- \`[[${title}]]\` (${status}) — page updated ${updated}, code committed ${commit_date} (${lag}d behind)")
+		fi
+		if [[ ${dirty:-0} -gt 0 ]]; then
+			drifted+=("- \`[[${title}]]\` — ${dirty} uncommitted/untracked file(s) under \`${repo}\`")
+		fi
+	done < <(find "$WIKI_DIR/projects" -name '*.md' -type f | sort)
+
+	# Code directories with no page pointing at them.
+	local d
+	for d in "$projects_dir"/*/; do
+		d="${d%/}"
+		local found=false
+		local b
+		for b in ${bound_paths[@]+"${bound_paths[@]}"}; do
+			[[ $b == "$d" || $b == "$d"/* ]] && { found=true; break; }
+		done
+		$found || unbound+=("- \`${d/#$HOME/\~}\`")
+	done
+
+	local body=""
+	local issues=0
+	local -a sections=(
+		"Drifted — code is ahead of the page:drifted"
+		"Broken bindings — repo_path points nowhere:broken"
+		"Missing reverse link — code side does not name the page:noreverse"
+		"Unbound — code directories with no project page:unbound"
+	)
+	local entry
+	for entry in "${sections[@]}"; do
+		local heading=${entry%%:*}
+		local arr=${entry##*:}
+		local -n ref=$arr
+		[[ ${#ref[@]} -eq 0 ]] && continue
+		issues=$(( issues + ${#ref[@]} ))
+		body+="## ${heading}"$'\n\n'
+		body+=$(printf '%s\n' "${ref[@]}")
+		body+=$'\n\n'
+	done
+
+	if [[ $issues -eq 0 ]]; then
+		body="No project drift found. Every bound page matches its code."
+	fi
+
+	if $write_out; then
+		write_report 'project-drift' "$today" "$body"
+		log_info "project-drift: $issues issue(s)"
+		return 0
+	fi
+
+	printf '# Project Drift — %s\n\n%s\n' "$today" "$body"
+	[[ $issues -gt 0 ]] && return 3
+	return 0
+}
+
+main "$@"

@@ -110,7 +110,14 @@ def _commit_inbox_item(rel: str, message: str) -> None:
     deadline = time.monotonic() + LOCK_TIMEOUT
 
     try:
-        lock_fd = os.open(lock_path, os.O_CREAT | os.O_WRONLY, 0o644)
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_WRONLY, 0o664)
+        # Group-writable regardless of umask: root workers and the
+        # inbox-receiver user share this file (.git is setgid to the
+        # inbox-receiver group). Best-effort: only the owner can chmod.
+        try:
+            os.fchmod(lock_fd, 0o664)
+        except PermissionError:
+            pass
     except OSError as exc:
         raise RuntimeError(f"cannot open commit lock: {exc}") from exc
 
