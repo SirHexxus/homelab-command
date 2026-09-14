@@ -1,27 +1,16 @@
 #!/usr/bin/env python3
 """Move a Themis-managed tablet between its Sophy policy configurations.
 
-Every tablet has its own pair of Headwind configurations, named after the
-device number so nothing in this repo says whose tablet it is or which school
-app it runs, plus one shared parent-lock configuration:
+Modes (see lib/sophy_headwind.py for the naming scheme and the rules):
 
-    <number>: School        e.g. "sophy-01: School"   (mode: school)
-    <number>: Free Time     e.g. "sophy-01: Free Time" (mode: free)
-    Sophy: Locked           nothing usable            (mode: lock)
+    school   "<number>: School"      the fail-closed default; kills ADB
+    free     "<number>: Free Time"   parent action only, never scheduled
+    lock     "Sophy: Locked"         nothing usable
+    admin    "Sophy: Admin"          everything open, for setting a tablet up
+    unlock   alias for school
 
-"unlock" is an alias for "school": a lock always releases to the fail-closed
-state; Free Time is a deliberate parent action, never automatic.
-
-Leaving Locked for School is a kiosk-to-kiosk change, which the launcher does
-not act on while it is pinned as its own content app (observed 2026-09-13). So
-that transition is bounced through Free Time — a few seconds of the launcher
-desktop — before School is applied.
-
-Talks to the Headwind MDM private REST API: log in for a JWT, resolve the
-device and the target configuration to their ids, then reassign the device's
-configurationId in one PUT — the server pushes the change to the tablet over
-MQTT (design doc §7, Gate 1). This is the backend for the cron lock and the
-NFC/Tasker macro.
+This is the backend for the cron lock and the NFC/Tasker macro; the parent
+control page (bin/sophy-web) shares the same client module.
 
 Credentials come from the environment only (never arguments, never a file
 in this repo):
@@ -35,195 +24,54 @@ For cron, put those in ~/.config/themis/env (mode 0600) and source it.
 Examples:
     sophy-switch sophy-01 school
     sophy-switch sophy-01 free --dry-run
+    sophy-switch sophy-02 admin
     sophy-switch --all lock
     sophy-switch --list
+    sophy-switch --status
 """
 
 # ── Standard library imports ──────────────────────────────────────────────────
 import argparse
-import hashlib
-import json
-import os
 import sys
-import time
-import urllib.error
-import urllib.request
+from pathlib import Path
 
-# ── Constants ─────────────────────────────────────────────────────────────────
-# Per-device modes: the configuration is "<number>: <label>".
-MODES = {
-    'school': 'School',
-    'free': 'Free Time',
-}
+# Allow importing from lib/ when running from the project root or bin/
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# Shared modes: one configuration for every tablet.
-SHARED_MODES = {
-    'lock': 'Sophy: Locked',
-}
-
-MODE_ALIASES = {
-    'unlock': 'school',
-}
-
-# Device numbers --all expands to. Neutral by design (CLAUDE.md rule 6).
-ALL_DEVICES = ('sophy-01', 'sophy-02')
-
-REQUIRED_ENV = ('THEMIS_URL', 'THEMIS_USER', 'THEMIS_PASSWORD')
-
-HTTP_TIMEOUT_SECONDS = 15
-
-# How long to leave a tablet in Free Time when bouncing out of Locked.
-BOUNCE_SECONDS = 6
+# ── Local imports ─────────────────────────────────────────────────────────────
+from lib.sophy_headwind import (  # noqa: E402
+    ALL_DEVICES,
+    MODE_ALIASES,
+    MODE_ORDER,
+    MODES,
+    SHARED_MODES,
+    ConfigError,
+    HeadwindError,
+    device_states,
+    env_config,
+    list_configurations,
+    login,
+    switch,
+)
 
 
 # ── Functions ─────────────────────────────────────────────────────────────────
 
-def env_config() -> dict[str, str]:
-    """Read the server URL and credentials from the environment."""
-    missing = [name for name in REQUIRED_ENV if not os.environ.get(name)]
-    if missing:
-        print(f"Error: missing environment variable(s): {', '.join(missing)}",
-              file=sys.stderr)
-        sys.exit(2)
-    return {name: os.environ[name].strip() for name in REQUIRED_ENV}
-
-
-def request(base_url: str, method: str, path: str, body: dict | list | None = None,
-            token: str | None = None) -> dict:
-    """Send one JSON request to the Headwind REST API and return the parsed body."""
-    data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(f'{base_url.rstrip("/")}/rest{path}', data=data,
-                                 method=method)
-    req.add_header('Content-Type', 'application/json')
-    req.add_header('Accept', 'application/json')
-    if token:
-        req.add_header('Authorization', f'Bearer {token}')
-
-    try:
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as resp:
-            payload = json.loads(resp.read().decode())
-    except urllib.error.HTTPError as exc:
-        print(f'Error: {method} {path} -> HTTP {exc.code} {exc.reason}', file=sys.stderr)
-        sys.exit(1)
-    except urllib.error.URLError as exc:
-        print(f'Error: cannot reach {base_url}: {exc.reason}', file=sys.stderr)
-        sys.exit(1)
-    except json.JSONDecodeError:
-        print(f'Error: {method} {path} returned a non-JSON body', file=sys.stderr)
-        sys.exit(1)
-
-    if isinstance(payload, dict) and payload.get('status') not in (None, 'OK'):
-        message = payload.get('message') or payload.get('status')
-        print(f'Error: {method} {path} -> {message}', file=sys.stderr)
-        sys.exit(1)
-    return payload
-
-
-def login(config: dict[str, str]) -> str:
-    """Exchange credentials for a JWT.
-
-    Headwind expects the MD5 hex of the password, upper-cased — the case is
-    baked into the stored hash, and the web panel sends it upper-cased.
-    """
-    password_md5 = hashlib.md5(config['THEMIS_PASSWORD'].encode()).hexdigest().upper()
-    payload = request(config['THEMIS_URL'], 'POST', '/public/jwt/login',
-                      {'login': config['THEMIS_USER'], 'password': password_md5})
-    token = payload.get('id_token')
-    if not token:
-        print('Error: login succeeded but no id_token in the response', file=sys.stderr)
-        sys.exit(1)
-    return token
-
-
-def list_configurations(base_url: str, token: str) -> dict[str, int]:
-    """Return {configuration name: id} for every configuration on the server."""
-    payload = request(base_url, 'GET', '/private/configurations/list', token=token)
-    return {item['name']: item['id'] for item in payload['data']}
-
-
-def get_device(base_url: str, token: str, number: str) -> dict:
-    """Return the device record for a device number (the ID shown in the panel)."""
-    payload = request(base_url, 'GET', f'/private/devices/number/{number}', token=token)
-    device = payload.get('data')
-    if not device:
-        print(f'Error: no device with number {number!r}', file=sys.stderr)
-        sys.exit(1)
-    return device
-
-
-def assign_configuration(base_url: str, token: str, device_id: int,
-                         configuration_id: int) -> None:
-    """Reassign one device to a configuration; the server pushes it to the tablet."""
-    request(base_url, 'PUT', '/private/devices',
-            {'ids': [device_id], 'configurationId': configuration_id}, token=token)
-
-
-def configuration_name(number: str, mode: str) -> str:
-    """Return the configuration name for a device number and mode."""
-    mode = MODE_ALIASES.get(mode, mode)
-    if mode in SHARED_MODES:
-        return SHARED_MODES[mode]
-    return f'{number}: {MODES[mode]}'
-
-
 def print_configurations(configurations: dict[str, int]) -> None:
-    """List the server's configurations, marking the per-device Sophy pairs."""
+    """List the server's configurations, marking the Sophy ones."""
     by_id = {cfg_id: name for name, cfg_id in configurations.items()}
     suffixes = tuple(f': {label}' for label in MODES.values())
     for cfg_id in sorted(by_id):
         name = by_id[cfg_id]
         marker = '*' if name.endswith(suffixes) or name in SHARED_MODES.values() else ' '
-        print(f'{marker} {cfg_id:>4}  {by_id[cfg_id]}')
+        print(f'{marker} {cfg_id:>4}  {name}')
 
 
-def switch(config: dict[str, str], number: str, mode: str, dry_run: bool,
-           token: str | None = None) -> None:
-    """Resolve ids, then move the device (or report what would happen)."""
-    base_url = config['THEMIS_URL']
-    token = token or login(config)
-
-    configurations = list_configurations(base_url, token)
-    target_name = configuration_name(number, mode)
-    if target_name not in configurations:
-        print(f'Error: configuration {target_name!r} does not exist on the server; '
-              f'create it in the panel first', file=sys.stderr)
-        sys.exit(1)
-    target_id = configurations[target_name]
-
-    device = get_device(base_url, token, number)
-    current_id = device.get('configurationId')
-    current_name = next((name for name, cfg_id in configurations.items()
-                         if cfg_id == current_id), f'#{current_id}')
-
-    if current_id == target_id:
-        print(f'{number}: already in {target_name!r}')
-        return
-
-    bounce_name = configuration_name(number, 'free')
-    needs_bounce = (current_name == SHARED_MODES['lock']
-                    and target_name == configuration_name(number, 'school'))
-    if needs_bounce and bounce_name not in configurations:
-        print(f'Error: configuration {bounce_name!r} does not exist on the server; '
-              f'it is needed to leave {current_name!r}', file=sys.stderr)
-        sys.exit(1)
-
-    if dry_run:
-        via = f' via {bounce_name!r}' if needs_bounce else ''
-        print(f'{number}: would move {current_name!r} -> {target_name!r}{via} '
-              f'(device id {device["id"]}, configuration id {target_id})')
-        return
-
-    if needs_bounce:
-        assign_configuration(base_url, token, device['id'], configurations[bounce_name])
-        time.sleep(BOUNCE_SECONDS)
-
-    assign_configuration(base_url, token, device['id'], target_id)
-    after = get_device(base_url, token, number)
-    if after.get('configurationId') != target_id:
-        print(f'Error: {number} still reports configuration {after.get("configurationId")}',
-              file=sys.stderr)
-        sys.exit(1)
-    print(f'{number}: {current_name!r} -> {target_name!r}')
+def print_status(states: list[dict]) -> None:
+    """Show which configuration each tablet is in right now."""
+    for state in states:
+        mode = state['mode'] or '?'
+        print(f'{state["number"]}  {mode:<7} {state["configuration"]}')
 
 
 def main() -> None:
@@ -233,37 +81,51 @@ def main() -> None:
     parser.add_argument('number', nargs='?',
                         help='Device number as shown in the panel (or --all)')
     parser.add_argument('mode', nargs='?',
-                        choices=sorted(MODES) + sorted(SHARED_MODES) + sorted(MODE_ALIASES),
+                        choices=list(MODE_ORDER) + sorted(MODE_ALIASES),
                         help='school / free = "<number>: ..."; lock = "Sophy: Locked"; '
-                             'unlock = school')
+                             'admin = "Sophy: Admin"; unlock = school')
     parser.add_argument('--all', action='store_true',
                         help=f'Apply the mode to every tablet: {", ".join(ALL_DEVICES)}')
     parser.add_argument('--dry-run', action='store_true',
                         help='Resolve everything but do not reassign the device')
     parser.add_argument('--list', action='store_true',
                         help='List configurations on the server and exit')
+    parser.add_argument('--status', action='store_true',
+                        help='Show the current mode of every tablet and exit')
     args = parser.parse_args()
 
-    config = env_config()
+    try:
+        config = env_config()
 
-    if args.list:
-        print_configurations(list_configurations(config['THEMIS_URL'], login(config)))
-        return
+        if args.list:
+            print_configurations(list_configurations(config['THEMIS_URL'], login(config)))
+            return
 
-    if args.all:
-        # "--all lock" parses the mode into the number slot.
-        mode = args.mode or args.number
-        if not mode or args.number and args.mode:
-            parser.error('--all takes exactly one mode')
-        token = login(config)
-        for number in ALL_DEVICES:
-            switch(config, number, mode, dry_run=args.dry_run, token=token)
-        return
+        if args.status:
+            print_status(device_states(config['THEMIS_URL'], login(config)))
+            return
 
-    if not args.number or not args.mode:
-        parser.error('number and mode are required unless --list or --all is given')
+        if args.all:
+            # "--all lock" parses the mode into the number slot.
+            mode = args.mode or args.number
+            if not mode or args.number and args.mode:
+                parser.error('--all takes exactly one mode')
+            token = login(config)
+            for number in ALL_DEVICES:
+                switch(config, number, mode, dry_run=args.dry_run, token=token)
+            return
 
-    switch(config, args.number, args.mode, dry_run=args.dry_run)
+        if not args.number or not args.mode:
+            parser.error('number and mode are required unless --list, --status or --all '
+                         'is given')
+
+        switch(config, args.number, args.mode, dry_run=args.dry_run)
+    except ConfigError as exc:
+        print(f'Error: {exc}', file=sys.stderr)
+        sys.exit(2)
+    except HeadwindError as exc:
+        print(f'Error: {exc}', file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == '__main__':
