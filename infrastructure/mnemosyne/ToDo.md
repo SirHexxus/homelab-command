@@ -129,6 +129,17 @@ See `[[Decide First Mnemosyne and Hermes Build Sprint]]` for the original candid
 
 - [x] **2.5** End-to-end test: Telegram note → wiki page → Obsidian *(interim path, 2026-04-29)*
 
+- [ ] **2.6** Run the mneme-* worker fleet as `inbox-receiver`, not root  
+  *The `mneme_workers` units carry no `User=` and hardcode `HOME=/root`, so every sync/
+  commit leaves root-owned files in `/opt/inbox-receiver/wiki`. On 2026-09-14 that locked
+  the receiver (`User=inbox-receiver`) out of `.git/mneme-commit.lock` and `.git/index`;
+  every Telegram capture since the 2026-09-01 lock deploy had 500'd. Interim fix applied
+  by hand: `chown -R` + `core.sharedRepository=group` + lock mode `0o664`. Proper fix:
+  `User=inbox-receiver` in both `.service.j2` templates; give the user a real home (e.g.
+  `/var/lib/mneme`); move `/root/.config/mnemosyne/*` creds and `mneme_telegram_env`
+  there; audit `Path.home()` state paths in `daily-digest`, `lib/embeddings.py`,
+  `lib/mneme_pg.py`, `lib/raw_source.py`, `lib/task_status.py`.*
+
 ---
 
 ## Phase 2T — Ingest Pipeline (Target, Hermes-routed)
