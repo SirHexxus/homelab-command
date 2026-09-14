@@ -1,7 +1,7 @@
 # Themis Project: Mobile Device Management Design Doc
-**Version:** 1.2
+**Version:** 1.3
 **Last Updated:** 2026-09-13
-**Status:** **MVP live** on the off-rack PoC — both tablets enrolled as Device Owner, per-device School/Free Time profiles, shared parent lock, 20:00/06:00 schedule. Rack migration pending the server-closet move.
+**Status:** **MVP live** on the off-rack PoC — both tablets enrolled as Device Owner, per-device School/Free Time profiles, shared parent lock and Admin mode, 20:00/06:00 schedule, parent control page at `/sophy/`. Rack migration pending the server-closet move.
 
 ---
 
@@ -175,6 +175,22 @@ deliberate parent action and is never scheduled. Locked → School is a kiosk-to
 launcher ignores while pinned as its own content app, so `sophy-switch` bounces that transition
 through Free Time for a few seconds (observed and fixed 2026-09-13).
 
+**`Sophy: Admin`** — shared parent administration
+
+One configuration for every tablet, for setting a tablet up rather than for using it: kiosk off,
+status bar free, `lockSafeSettings` off, USB storage allowed, **no user restrictions**, and every
+registered app visible — the school apps, the Free Time set, Khan Academy Kids, **Settings**,
+**Aurora Store**, and **Chrome** (Play Services whitelisted but hidden). A distinct dark-red
+background makes the state obvious at arm's length. It exists because the launcher has no
+un-managed state: without it, signing into a school app that hands off to a browser, or fixing a
+permission, needed ADB. On the way out, School re-applies its restrictions.
+
+**USB debugging stays a manual toggle.** Headwind cannot switch it on: the launcher's only
+`DevicePolicyManager.setGlobalSetting` call is `AUTO_TIME_ZONE`, and its remote-command hook
+runs unrooted as the app UID (`hmdm-android`, `Utils.java` / `SystemUtils.java`, checked
+2026-09-13). Admin clears `no_debugging_features` so the Developer-options switch works again;
+a human still taps it. Recorded as accepted risk in §11.
+
 **Schedule (laptop cron during the PoC):** 20:00 → `Sophy: Locked`, 06:00 → `<number>: School`,
 both tablets, every day. The 06:00 job also releases a consequence lock; a lock that must
 survive the morning is a follow-up.
@@ -288,9 +304,9 @@ does not exercise the QR flow, which must still be validated before final deploy
 
 ### 7.1 Manual switching
 
-A parent taps an NFC tag or a home-screen shortcut on their own phone. Tasker or MacroDroid
-fires an authenticated HTTP POST at `themis.sirhexx.com`, and Headwind's REST API reassigns the
-tablet's `configurationId`.
+A parent opens **the Sophy page** on their phone (§7.3) — or, for the NFC/Tasker path still
+planned, fires an authenticated HTTP POST at `themis.sirhexx.com` — and Headwind's REST API
+reassigns the tablet's `configurationId`.
 
 **Credential handling:** Headwind has no API tokens — the private REST API authenticates panel
 users with a JWT (`POST /rest/public/jwt/login`, MD5 of the password). The macro therefore uses a
@@ -303,7 +319,8 @@ that still carries `edit_devices` (verify whether the built-in *User* role quali
 `PUT /rest/private/devices` with `{"ids": [<deviceId>], "configurationId": <cfgId>}` updates the
 assignment and calls `pushService.notifyDeviceOnSettingUpdate` for each device — one
 authenticated request, push included. `infrastructure/themis/bin/sophy-switch` wraps login →
-lookup → PUT and is the single backend for both the macro and the cron lock.
+lookup → PUT; the logic lives in `infrastructure/themis/lib/sophy_headwind.py`, which is the
+single backend for the CLI, the cron lock, and the parent page's API.
 
 ### 7.2 Scheduled automation
 
@@ -320,6 +337,25 @@ open.
 | No timezone/DST handling | Pin cron to local time and document DST behaviour |
 | Tablet offline at 20:00 | Policy applies at next check-in — acceptable, document it |
 | Cron host asleep at lock time | Lock does not fire. Not dependable until Themis is on the rack (§9) |
+
+### 7.3 Parent control page
+
+`https://themis.sirhexx.com/sophy/` — one screen, one card per tablet showing the child's
+name, the **current mode**, and four buttons (School / Free Time / Locked / Admin), plus an
+"All tablets" row. Admin is a two-tap action. The page auto-refreshes so it doubles as a status
+board. Added to a phone's home screen it behaves like an app (web manifest, standalone display).
+
+| Layer | Where | Notes |
+|-------|-------|-------|
+| Static page | `infrastructure/themis/web/` → `/opt/sophy/web/` | Vanilla HTML/CSS/JS; names come from the device `description` at runtime, never from the repo |
+| API | `bin/sophy-web` → `sophy-web.service` on loopback `:8081` | stdlib `http.server`; `GET /state`, `POST /switch {number\|all, mode}`; imports `lib/sophy_headwind.py`, so the Locked → School bounce is shared |
+| Auth | nginx `auth_basic` on `/sophy/` and `/sophy/api/`, over the existing TLS | One shared parent account (`parent`, `vault_themis_parent_password`); the API credential (`themis-api`) stays on the server in `/etc/sophy/env` |
+| Deploy | `roles/sophy_web` + two locations in `nginx_local` | Runs on the Themis host on purpose: it must work through the rack outage and moves to LXC 111 with the rest |
+
+Why not n8n or a separate LXC: both live on the rack, which goes dark for weeks around the
+server-closet move — the same reason Themis itself is off-rack. Reach is LAN-only (VLAN 20 →
+the host override in §8); remote access is a later Ariadne question. After the rack move the
+two `/sophy/` locations and the htpasswd move into Ariadne's vhost for `themis.sirhexx.com`.
 
 ---
 
@@ -443,8 +479,15 @@ forwarding to Iris/Argus, and Postgres backup coverage.
   proxy device. Revisit if Headwind documents the `master` build's signing secret.
 - **Launcher admin password = panel admin password**, on the tablets. Chosen for a 7" screen;
   a compromised tablet would expose the panel credential. Split them before the fleet phase.
-- **Aurora Store remains installed** on both tablets for app updates; it is not in any Sophy
-  profile and `no_install_unknown_sources` blocks it from installing while a profile is active.
+- **Aurora Store remains installed** on both tablets for app updates; it is only reachable
+  from `Sophy: Admin`, and `no_install_unknown_sources` blocks it while any other profile is
+  active.
+- **`Sophy: Admin` is a fully open tablet** — Settings, a browser, the store, no restrictions.
+  It is a parent action behind the page password, and the 20:00 lock ends it; the risk is a
+  tablet left in Admin during the day. USB debugging cannot be enabled remotely (§4.1), so
+  Admin does not by itself expose ADB.
+- **One shared parent password** on the control page (nginx basic auth over TLS, LAN-only).
+  It can only move tablets between the five Sophy configurations; it cannot reach the panel.
 
 The MVP's worst case is an annoyed child. The fleet phase's worst case is materially different:
 an attacker holding the Themis admin credential would have app-install, remote-wipe, and
@@ -476,7 +519,7 @@ and are all answerable on the laptop PoC.
 |---|------|----------------|--------|
 | 1 | **Does the Headwind REST API reassign `configurationId` in a single authenticated call?** | **Passed 2026-09-13** — from source (`DeviceResource.updateDevice`, bulk branch; §7.1) and on hardware: `sophy-switch` flipped `sophy-01` and the tablet acted on it | MVP |
 | 2 | **Does Headwind support Work Profile adequately?** | If not, the fleet phase moves to a self-hosted Android Management API controller | Fleet |
-| 3 | **School-app package names and network behaviour** | **Passed for Acellus 2026-09-13** — `com.acellus.acellus` confirmed; two lessons completed inside the kiosk with the single-app whitelist. ABC Mouse (`com.aofl.abcmouse`) on the second tablet: package confirmed, lesson run pending | MVP |
+| 3 | **School-app package names and network behaviour** | **Passed for Acellus 2026-09-13** — `com.acellus.acellus` confirmed; two lessons completed inside the kiosk with the single-app whitelist. ABC Mouse (`com.aofl.abcmouse`) on the second tablet: package confirmed, signed in 2026-09-13, lesson run pending | MVP |
 | 4 | **Actual check-in / push latency** | **Measured 2026-09-13: 1.2 s** from API call to the tablet's check-in, over MQTT push on the LAN (Onn 7" Core, Android 16, launcher 6.39). "Instant" is a fair expectation on-network; Doze behaviour off-charger still to observe | MVP |
 | 5 | **Which user restrictions Headwind exposes** | **Passed 2026-09-13** — the configuration's `restrictions` field is a comma-separated list applied verbatim via `addUserRestriction`, so `no_factory_reset`, `no_safe_boot`, `no_debugging_features` (plus `no_install_unknown_sources`, `no_modify_accounts`) are all set; kiosk additionally blocks the status bar, screenshots, USB storage, and Settings | MVP |
 | 6 | **Does the Onn model support QR provisioning?** | Budget MediaTek and Android Go tablets are inconsistent here | MVP |
@@ -494,7 +537,11 @@ infrastructure/themis/
 ├── CLAUDE.md
 ├── bin/
 │   ├── incus-poc-up          # ThinkPad host prep (idempotent, --dry-run)
-│   └── sophy-switch          # login → lookup → PUT configurationId (--dry-run)
+│   ├── sophy-switch          # CLI: school / free / lock / admin, --all, --status, --dry-run
+│   └── sophy-web             # JSON API behind the parent page (loopback, --dry-run)
+├── lib/
+│   └── sophy_headwind.py     # Headwind client shared by both scripts (login → lookup → PUT)
+├── web/                      # the parent control page (static; served under /sophy/)
 ├── terraform/
 │   └── .gitkeep              # no Proxmox target until the rack move completes
 └── ansible/
@@ -509,7 +556,8 @@ infrastructure/themis/
         ├── java_tomcat/      # OpenJDK 21 + upstream Tomcat 9 tarball, loopback-only
         ├── postgres_local/   # PoC only; skipped when postgres_host is remote
         ├── headwind_mdm/     # replicates hmdm_install.sh idempotently
-        └── nginx_local/      # PoC only; Ariadne takes over after migration
+        ├── nginx_local/      # PoC only; Ariadne takes over after migration
+        └── sophy_web/        # sophy-web service, static page, parent htpasswd
 ```
 
 **Vault variables** (convention: `vault_<service>_<credential>`):
@@ -517,6 +565,7 @@ infrastructure/themis/
 - `vault_themis_postgres_password`
 - `vault_themis_admin_password`
 - `vault_themis_api_password` — the `themis-api` panel user (§7.1)
+- `vault_themis_parent_password` — the shared login for the control page (§7.3)
 
 **Not IaC-managed:** the QR provisioning payload, device enrollment itself, policy group contents
 authored in the Headwind console, and the Tasker/MacroDroid macros on the parent phone. Device
