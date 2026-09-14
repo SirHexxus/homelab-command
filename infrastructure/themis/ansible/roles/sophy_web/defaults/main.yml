@@ -9,4 +9,6 @@ sophy_web_listen: 127.0.0.1
 sophy_web_port: 8081
 # nginx basic-auth account the parents share; the password is vaulted
 sophy_web_user: parent
-sophy_web_htpasswd: /etc/nginx/sophy.htpasswd
+# Under /etc/sophy, not /etc/nginx: the workers (www-data) must read it and
+# /etc/nginx is root-only on Debian 13
+sophy_web_htpasswd: /etc/sophy/htpasswd
