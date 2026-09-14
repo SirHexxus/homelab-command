@@ -1,0 +1,50 @@
+/* base.css - reset and element defaults for the Sophy control page */
+
+/* ============================================
+   Reset
+   ============================================ */
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+}
+
+button {
+	font: inherit;
+	color: inherit;
+	background: none;
+	border: 0;
+	cursor: pointer;
+}
+
+[hidden] {
+	display: none !important;
+}
+
+
+/* ============================================
+   Document
+   ============================================ */
+
+html {
+	font-size: var(--font-size-base);
+	-webkit-text-size-adjust: 100%;
+}
+
+body {
+	min-height: 100vh;
+	padding: var(--spacing-md);
+	padding-bottom: var(--spacing-xl);
+	font-family: var(--font-family-sans);
+	line-height: var(--line-height-base);
+	color: var(--color-text);
+	background-color: var(--color-background);
+}
+
+h1,
+h2 {
+	line-height: var(--line-height-tight);
+}

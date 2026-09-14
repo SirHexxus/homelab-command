@@ -1,0 +1,224 @@
+/* components.css - header, tablet cards, mode buttons, messages */
+
+/* ============================================
+   Header
+   ============================================ */
+
+.header {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	max-width: var(--container-max-width);
+	margin: 0 auto var(--spacing-lg);
+}
+
+.header__title {
+	font-size: var(--font-size-xl);
+	font-weight: var(--font-weight-bold);
+	color: var(--color-primary);
+}
+
+.header__status {
+	font-size: var(--font-size-sm);
+	color: var(--color-text-muted);
+}
+
+
+/* ============================================
+   Layout
+   ============================================ */
+
+.main {
+	max-width: var(--container-max-width);
+	margin: 0 auto;
+}
+
+.tablets {
+	display: grid;
+	gap: var(--spacing-md);
+}
+
+.tablets__all {
+	margin-top: var(--spacing-lg);
+	padding: var(--spacing-md);
+	border: 1px dashed var(--color-border);
+	border-radius: var(--radius-lg);
+}
+
+@media (min-width: 768px) {
+	.tablets {
+		grid-template-columns: repeat(2, 1fr);
+	}
+}
+
+
+/* ============================================
+   Card
+   ============================================ */
+
+.card {
+	padding: var(--spacing-md);
+	background-color: var(--color-surface);
+	border-left: 0.5rem solid var(--color-border);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow-md);
+	transition: border-color var(--transition-fast);
+}
+
+.card--school {
+	border-left-color: var(--color-mode-school);
+}
+
+.card--free {
+	border-left-color: var(--color-mode-free);
+}
+
+.card--lock {
+	border-left-color: var(--color-mode-lock);
+}
+
+.card--admin {
+	border-left-color: var(--color-mode-admin);
+}
+
+.card__header {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: var(--spacing-sm);
+}
+
+.card__title {
+	font-size: var(--font-size-lg);
+	font-weight: var(--font-weight-bold);
+}
+
+.card__number {
+	font-size: var(--font-size-sm);
+	color: var(--color-text-muted);
+}
+
+/* The headline of each card: what the tablet is doing right now */
+.card__current {
+	display: flex;
+	align-items: center;
+	gap: var(--spacing-sm);
+	margin: var(--spacing-sm) 0 var(--spacing-md);
+}
+
+.card__current-label {
+	font-size: var(--font-size-sm);
+	color: var(--color-text-muted);
+}
+
+.card__current-mode {
+	padding: var(--spacing-xs) var(--spacing-md);
+	font-weight: var(--font-weight-bold);
+	color: var(--color-text-inverse);
+	background-color: var(--color-mode-lock);
+	border-radius: var(--radius-full);
+}
+
+.card__current-mode--school {
+	background-color: var(--color-mode-school);
+}
+
+.card__current-mode--free {
+	background-color: var(--color-mode-free);
+}
+
+.card__current-mode--lock {
+	background-color: var(--color-mode-lock);
+}
+
+.card__current-mode--admin {
+	background-color: var(--color-mode-admin);
+}
+
+
+/* ============================================
+   Mode buttons
+   ============================================ */
+
+.modes {
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+	gap: var(--spacing-sm);
+}
+
+.modes__button {
+	min-height: var(--touch-target);
+	padding: var(--spacing-sm) var(--spacing-md);
+	font-weight: var(--font-weight-medium);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--color-text);
+	background-color: var(--color-surface);
+	border: 2px solid var(--color-border);
+	border-radius: var(--radius-md);
+	transition: background-color var(--transition-fast), color var(--transition-fast),
+		border-color var(--transition-fast);
+}
+
+.modes__button:disabled {
+	opacity: 0.6;
+	cursor: wait;
+}
+
+.modes__button--school {
+	border-color: var(--color-mode-school);
+}
+
+.modes__button--free {
+	border-color: var(--color-mode-free);
+}
+
+.modes__button--lock {
+	border-color: var(--color-mode-lock);
+}
+
+.modes__button--admin {
+	border-color: var(--color-mode-admin);
+}
+
+/* The active mode is filled in; toggled by JS as .is-active */
+.modes__button--school.is-active {
+	color: var(--color-text-inverse);
+	background-color: var(--color-mode-school);
+}
+
+.modes__button--free.is-active {
+	color: var(--color-text-inverse);
+	background-color: var(--color-mode-free);
+}
+
+.modes__button--lock.is-active {
+	color: var(--color-text-inverse);
+	background-color: var(--color-mode-lock);
+}
+
+.modes__button--admin.is-active {
+	color: var(--color-text-inverse);
+	background-color: var(--color-mode-admin);
+}
+
+/* Admin is a two-tap action: first tap arms the button, second confirms */
+.modes__button.is-armed {
+	color: var(--color-text-inverse);
+	background-color: var(--color-danger);
+	border-color: var(--color-danger);
+}
+
+
+/* ============================================
+   Messages
+   ============================================ */
+
+.message {
+	margin-top: var(--spacing-md);
+	padding: var(--spacing-sm) var(--spacing-md);
+	font-size: var(--font-size-sm);
+	color: var(--color-text-inverse);
+	background-color: var(--color-danger);
+	border-radius: var(--radius-md);
+}
