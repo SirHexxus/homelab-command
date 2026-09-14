@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="description" content="Switch the family tablets between School, Free Time, Locked and Admin.">
+	<meta name="theme-color" content="#2b4a6f">
+	<meta name="robots" content="noindex">
+
+	<title>Sophy - Tablet control</title>
+
+	<link rel="manifest" href="manifest.webmanifest">
+	<link rel="icon" type="image/png" href="assets/images/icons/sophy-192.png">
+	<link rel="apple-touch-icon" href="assets/images/icons/sophy-192.png">
+
+	<!-- CSS - Load in order of specificity -->
+	<link rel="stylesheet" href="assets/css/variables.css">
+	<link rel="stylesheet" href="assets/css/base.css">
+	<link rel="stylesheet" href="assets/css/components.css">
+</head>
+<body>
+	<!-- ============================================
+	     Header
+	     ============================================ -->
+	<header class="header">
+		<h1 class="header__title">Sophy</h1>
+		<p class="header__status" data-status aria-live="polite">Loading…</p>
+	</header>
+
+	<!-- ============================================
+	     Tablets
+	     ============================================ -->
+	<main id="main-content" class="main">
+		<!-- One card per tablet is rendered here from the /state response;
+		     names come from the server, never from this file. -->
+		<section class="tablets" data-tablets aria-label="Tablets"></section>
+
+		<section class="tablets__all" aria-label="All tablets">
+			<h2 class="card__title">All tablets</h2>
+			<div class="modes" data-modes-all role="group" aria-label="Set every tablet to"></div>
+		</section>
+
+		<p class="message" data-message hidden></p>
+	</main>
+
+	<!-- ============================================
+	     Templates
+	     ============================================ -->
+	<template data-template="card">
+		<article class="card">
+			<header class="card__header">
+				<h2 class="card__title" data-card-name></h2>
+				<p class="card__number" data-card-number></p>
+			</header>
+			<p class="card__current">
+				<span class="card__current-label">Currently</span>
+				<span class="card__current-mode" data-card-mode></span>
+			</p>
+			<div class="modes" data-card-modes role="group" aria-label="Set this tablet to"></div>
+		</article>
+	</template>
+
+	<!-- JavaScript - Load at end of body -->
+	<script type="module" src="assets/js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+	"name": "Sophy tablet control",
+	"short_name": "Sophy",
+	"description": "Switch the family tablets between School, Free Time, Locked and Admin.",
+	"start_url": "./",
+	"scope": "./",
+	"display": "standalone",
+	"background_color": "#f3f5f8",
+	"theme_color": "#2b4a6f",
+	"icons": [
+		{ "src": "assets/images/icons/sophy-192.png", "sizes": "192x192", "type": "image/png" },
+		{ "src": "assets/images/icons/sophy-512.png", "sizes": "512x512", "type": "image/png" }
+	]
+}

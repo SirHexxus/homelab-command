@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+"""HTTP API behind the Sophy parent control page.
+
+Two JSON endpoints, nothing else — the static page is served by nginx, which
+also fronts this service with basic auth (roles/sophy_web, roles/nginx_local).
+Bind to loopback only; nothing here authenticates.
+
+    GET  /state    {"devices": [{number, description, configuration, mode}], "modes": [...]}
+    POST /switch   {"number": "sophy-01" | "all", "mode": "school|free|lock|admin"}
+                   -> the same body as /state after the move (bounce included)
+
+Credentials come from the environment only (systemd EnvironmentFile on the
+Themis host):
+
+    THEMIS_URL       https://themis.sirhexx.com
+    THEMIS_USER      panel user with the edit_devices permission
+    THEMIS_PASSWORD  its password
+
+Examples:
+    sophy-web --listen 127.0.0.1 --port 8081
+    sophy-web --dry-run          # answer /switch without touching the tablets
+"""
+
+# ── Standard library imports ──────────────────────────────────────────────────
+import argparse
+import json
+import sys
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+# Allow importing from lib/ when running from the project root or bin/
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# ── Local imports ─────────────────────────────────────────────────────────────
+from lib.sophy_headwind import (  # noqa: E402
+    ALL_DEVICES,
+    MODE_ORDER,
+    ConfigError,
+    HeadwindError,
+    device_states,
+    env_config,
+    login,
+    switch,
+)
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+MAX_BODY_BYTES = 4096
+
+
+# ── Classes ───────────────────────────────────────────────────────────────────
+
+class SophyHandler(BaseHTTPRequestHandler):
+    """Route the two endpoints; everything else is 404."""
+
+    server_version = 'sophy-web/1.0'
+    config: dict[str, str] = {}
+    dry_run = False
+
+    # -- responses ---------------------------------------------------------
+
+    def send_json(self, status: HTTPStatus, body: dict) -> None:
+        data = json.dumps(body).encode()
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(data)))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(data)
+
+    def send_error_json(self, status: HTTPStatus, message: str) -> None:
+        self.send_json(status, {'error': message})
+
+    def state_body(self, token: str) -> dict:
+        return {
+            'devices': device_states(self.config['THEMIS_URL'], token),
+            'modes': list(MODE_ORDER),
+            'dryRun': self.dry_run,
+        }
+
+    # -- routes ------------------------------------------------------------
+
+    def do_GET(self) -> None:  # noqa: N802 - http.server API
+        if self.path.rstrip('/') != '/state':
+            self.send_error_json(HTTPStatus.NOT_FOUND, 'not found')
+            return
+        try:
+            self.send_json(HTTPStatus.OK, self.state_body(login(self.config)))
+        except HeadwindError as exc:
+            self.send_error_json(HTTPStatus.BAD_GATEWAY, str(exc))
+
+    def do_POST(self) -> None:  # noqa: N802 - http.server API
+        if self.path.rstrip('/') != '/switch':
+            self.send_error_json(HTTPStatus.NOT_FOUND, 'not found')
+            return
+
+        body = self.read_json_body()
+        if body is None:
+            return
+        number = body.get('number')
+        mode = body.get('mode')
+        if mode not in MODE_ORDER:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, f'unknown mode {mode!r}')
+            return
+        if number != 'all' and number not in ALL_DEVICES:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, f'unknown device {number!r}')
+            return
+        numbers = ALL_DEVICES if number == 'all' else (number,)
+
+        try:
+            token = login(self.config)
+            for item in numbers:
+                switch(self.config, item, mode, dry_run=self.dry_run, token=token,
+                       log=self.log_switch)
+            self.send_json(HTTPStatus.OK, self.state_body(token))
+        except ConfigError as exc:
+            self.send_error_json(HTTPStatus.CONFLICT, str(exc))
+        except HeadwindError as exc:
+            self.send_error_json(HTTPStatus.BAD_GATEWAY, str(exc))
+
+    # -- helpers -----------------------------------------------------------
+
+    def read_json_body(self) -> dict | None:
+        """Parse the request body as a JSON object, or answer 400 and return None."""
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+        except ValueError:
+            length = -1
+        if length < 0 or length > MAX_BODY_BYTES:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, 'bad Content-Length')
+            return None
+        try:
+            body = json.loads(self.rfile.read(length).decode() or '{}')
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self.send_error_json(HTTPStatus.BAD_REQUEST, 'body is not JSON')
+            return None
+        if not isinstance(body, dict):
+            self.send_error_json(HTTPStatus.BAD_REQUEST, 'body is not a JSON object')
+            return None
+        return body
+
+    def log_switch(self, message: str) -> None:
+        prefix = '[dry-run] ' if self.dry_run else ''
+        print(f'{prefix}{self.client_address[0]} {message}', flush=True)
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        # One line per request on stdout; systemd's journal keeps it.
+        print(f'{self.client_address[0]} {format % args}', flush=True)
+
+
+# ── Functions ─────────────────────────────────────────────────────────────────
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description='JSON API for the Sophy parent control page.',
+    )
+    parser.add_argument('--listen', default='127.0.0.1',
+                        help='Address to bind (default: 127.0.0.1 — keep it behind nginx)')
+    parser.add_argument('--port', type=int, default=8081, help='Port to bind (default: 8081)')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Answer /switch without reassigning any tablet')
+    args = parser.parse_args()
+
+    try:
+        SophyHandler.config = env_config()
+    except ConfigError as exc:
+        print(f'Error: {exc}', file=sys.stderr)
+        sys.exit(2)
+    SophyHandler.dry_run = args.dry_run
+
+    server = ThreadingHTTPServer((args.listen, args.port), SophyHandler)
+    print(f'sophy-web listening on {args.listen}:{args.port}'
+          f'{" (dry-run)" if args.dry_run else ""}', flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+if __name__ == '__main__':
+    main()

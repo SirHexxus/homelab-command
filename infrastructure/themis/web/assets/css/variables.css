@@ -1,0 +1,69 @@
+/* variables.css - design tokens for the Sophy control page */
+
+:root {
+	/* ── Colors ─────────────────────────────────── */
+	--color-primary: #2b4a6f;
+	--color-primary-dark: #1d3450;
+
+	--color-text: #212529;
+	--color-text-muted: #6c757d;
+	--color-text-inverse: #ffffff;
+	--color-background: #f3f5f8;
+	--color-surface: #ffffff;
+	--color-border: #dee2e6;
+	--color-danger: #b02a37;
+
+	/* One colour per mode: buttons, the "Currently" badge and the card edge */
+	--color-mode-school: #2f6f4e;
+	--color-mode-free: #c47a1a;
+	--color-mode-lock: #5a5f66;
+	--color-mode-admin: #7a1f1f;
+
+	/* ── Typography ──────────────────────────────── */
+	--font-family-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+		'Helvetica Neue', Arial, sans-serif;
+
+	--font-size-base: 16px;
+	--font-size-sm: 0.875rem;
+	--font-size-lg: 1.25rem;
+	--font-size-xl: 1.5rem;
+
+	--font-weight-normal: 400;
+	--font-weight-medium: 500;
+	--font-weight-bold: 700;
+
+	--line-height-base: 1.5;
+	--line-height-tight: 1.25;
+
+	/* ── Spacing ─────────────────────────────────── */
+	--spacing-xs: 0.25rem;
+	--spacing-sm: 0.5rem;
+	--spacing-md: 1rem;
+	--spacing-lg: 1.5rem;
+	--spacing-xl: 2rem;
+
+	/* ── Layout ──────────────────────────────────── */
+	--container-max-width: 40rem;
+	--touch-target: 3.25rem;
+
+	/* ── Border Radius ───────────────────────────── */
+	--radius-md: 0.5rem;
+	--radius-lg: 1rem;
+	--radius-full: 9999px;
+
+	/* ── Shadows ─────────────────────────────────── */
+	--shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+
+	/* ── Transitions ─────────────────────────────── */
+	--transition-fast: 150ms ease-in-out;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--color-text: #f8f9fa;
+		--color-text-muted: #adb5bd;
+		--color-background: #16191d;
+		--color-surface: #22262b;
+		--color-border: #3a4048;
+	}
+}
