@@ -29,14 +29,20 @@ Bring-up order (details in design doc §14):
 
 ```bash
 sudo bin/incus-poc-up                      # incus, adb, swap, container, SSH, ports
-cd ansible && ansible-vault create group_vars/vault.yml   # 3 vault_themis_* values
+cd ansible && ansible-vault create group_vars/vault.yml   # 4 vault_themis_* values
 ssh root@10.0.60.10 rpadd themis.sirhexx.com 127.0.0.1:9   # Ariadne issues the cert
 ansible-playbook -i inventory.ini cert-sync.yml            # copy it into the container
 ansible-playbook -i inventory.ini provision.yml --ask-vault-pass
 ```
 
-`bin/sophy-switch <device> school|free` is the control plane (cron + NFC macro);
-it reads `THEMIS_URL`/`THEMIS_USER`/`THEMIS_PASSWORD` from the environment.
+`bin/sophy-switch <device> school|free|lock|admin` is the control plane (cron +
+NFC macro); it reads `THEMIS_URL`/`THEMIS_USER`/`THEMIS_PASSWORD` from the
+environment. Parents use the same thing from a phone at
+`https://themis.sirhexx.com/sophy/` — a static page plus `bin/sophy-web`
+(loopback JSON API) behind nginx basic auth, deployed by `roles/sophy_web`.
+Both scripts import `lib/sophy_headwind.py`; change the switching logic there.
+Admin mode opens everything but **cannot turn USB debugging on** (Headwind has
+no call for it) — a human toggles it in Developer options.
 
 Migration to the rack is an inventory swap and a re-run. Keep every environment
 difference in `group_vars/themis.yml`:
