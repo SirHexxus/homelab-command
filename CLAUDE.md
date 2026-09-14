@@ -98,7 +98,7 @@ These apply to every service in the repo. Service CLAUDE.md files do not repeat 
   - `vault_inbox_token`
   - `vault_n8n_vertex_sa_json`
   - `vault_chiron_gemini_api_key`, `vault_chiron_telegram_bot_token`, `vault_chiron_vertex_sa_json`, `vault_chiron_webhook_secret`
-  - `vault_themis_postgres_password`, `vault_themis_admin_password`, `vault_themis_api_password`
+  - `vault_themis_postgres_password`, `vault_themis_admin_password`, `vault_themis_api_password`, `vault_themis_parent_password`
   - `vault_phemius_jellyfin_kid_password`, `vault_phemius_jellyfin_adult_password`, `vault_phemius_youtube_api_key`
   - `vault_git_user_name`, `vault_git_user_email` *(convention exceptions — no service segment)*
 
