@@ -46,7 +46,7 @@ They have been removed from this roadmap to keep scope clean.
 | Orpheus Design Doc | v1.3 | ✅ Complete |
 | Hermes Design Doc | v1.1 | ✅ Complete |
 | Ariadne Design Doc | v1.0 | ✅ Complete |
-| Themis Design Doc | v1.1 | ✅ Complete |
+| Themis Design Doc | v1.3 | ✅ Complete |
 | Phemius Design Doc | v1.0 | ✅ Complete |
 
 ### Remaining
@@ -329,6 +329,9 @@ server-closet move. Full design: `docs/themis-design-doc.md`.
 - [x] Verify user restrictions (Gate 5), school-app behaviour (Gate 3 — Acellus; ABC Mouse
       lesson run pending), check-in latency (Gate 4: 1.2 s over MQTT) *(2026-09-13)*
 - [x] Cron: 20:00 → Locked, 06:00 → School on both tablets *(2026-09-13)*
+- [x] Shared `Sophy: Admin` configuration (everything open, for setting a tablet up) and the
+      parent control page at `themis.sirhexx.com/sophy/` — per-tablet School / Free Time /
+      Locked / Admin from a phone, current mode shown *(2026-09-13)*
 - [ ] NFC/Tasker macro on the parent phone (same API call as `sophy-switch`)
 - [ ] QR provisioning payload validated including signature checksum (Gate 6)
 
@@ -449,4 +452,4 @@ Career Advancement pursuit in Mnemosyne.
 
 ---
 
-*Companion documents: Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.5 · Argus Design Doc v1.2 · Orpheus Design Doc v1.3 · Ariadne Design Doc v1.0 · Themis Design Doc v1.2 · Phemius Design Doc v1.0 · Homelab Philosophy v1.0*
+*Companion documents: Hardware Catalog v1.3 · Network & Services Architecture v1.9 · Mnemosyne Design Doc v1.2 · IaC Runbook v1.5 · Argus Design Doc v1.2 · Orpheus Design Doc v1.3 · Ariadne Design Doc v1.0 · Themis Design Doc v1.3 · Phemius Design Doc v1.0 · Homelab Philosophy v1.0*
