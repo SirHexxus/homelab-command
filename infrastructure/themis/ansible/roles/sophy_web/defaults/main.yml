@@ -1,0 +1,12 @@
+---
+# roles/sophy_web/defaults/main.yml
+
+sophy_web_enabled: true
+sophy_web_root: /opt/sophy
+sophy_web_env_file: /etc/sophy/env
+sophy_web_service_user: sophy
+sophy_web_listen: 127.0.0.1
+sophy_web_port: 8081
+# nginx basic-auth account the parents share; the password is vaulted
+sophy_web_user: parent
+sophy_web_htpasswd: /etc/nginx/sophy.htpasswd

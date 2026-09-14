@@ -5,7 +5,7 @@
 # group_vars/themis.yml. Order of first bring-up:
 #
 #   1. bin/incus-poc-up (host prep) and set ansible_host in inventory.ini
-#   2. ansible-vault create group_vars/vault.yml   (vault_themis_* — 3 values)
+#   2. ansible-vault create group_vars/vault.yml   (vault_themis_* — 4 values)
 #   3. rpadd themis.sirhexx.com 127.0.0.1:9 on Ariadne, then cert-sync.yml
 #   4. ansible-playbook -i inventory.ini provision.yml --ask-vault-pass
 #
@@ -32,3 +32,7 @@
     - role: nginx_local
       tags: [nginx]
       when: themis_proxy_mode == 'local'
+
+    - role: sophy_web
+      tags: [sophy]
+      when: sophy_web_enabled

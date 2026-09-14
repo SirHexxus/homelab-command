@@ -53,3 +53,11 @@ headwind_admin_password: "{{ vault_themis_admin_password }}"
 # the web panel, never automated — see infrastructure/themis/CLAUDE.md.
 headwind_api_user: themis-api
 headwind_api_password: "{{ vault_themis_api_password }}"
+
+# --- Parent control page (sophy_web) ----------------------------------------
+# https://{{ themis_domain }}/sophy/ — served by the same nginx, one shared
+# parent password. Lives here (not on the rack) so it survives the outage.
+sophy_web_enabled: true
+sophy_web_port: 8081
+sophy_web_user: parent
+sophy_web_password: "{{ vault_themis_parent_password }}"

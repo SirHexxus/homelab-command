@@ -1,0 +1,15 @@
+---
+# roles/sophy_web/handlers/main.yml
+
+- name: restart sophy-web
+  systemd:
+    name: sophy-web
+    state: restarted
+    daemon_reload: true
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: reload nginx
+  systemd:
+    name: nginx
+    state: reloaded
+  ignore_errors: "{{ ansible_check_mode }}"

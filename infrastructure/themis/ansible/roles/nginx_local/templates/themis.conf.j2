@@ -22,6 +22,32 @@ server {
     # APK uploads through the panel
     client_max_body_size 200m;
 
+{% if sophy_web_enabled %}
+    # Sophy parent control page (roles/sophy_web): static files plus a
+    # loopback API, both behind one shared parent password.
+    location = /sophy {
+        return 301 /sophy/;
+    }
+
+    location /sophy/api/ {
+        auth_basic           "Sophy";
+        auth_basic_user_file {{ sophy_web_htpasswd }};
+        proxy_pass http://{{ sophy_web_listen }}:{{ sophy_web_port }}/;
+        proxy_http_version 1.1;
+        proxy_set_header X-Real-IP $remote_addr;
+        # a Locked -> School switch bounces through Free Time for a few seconds
+        proxy_read_timeout 60s;
+    }
+
+    location /sophy/ {
+        auth_basic           "Sophy";
+        auth_basic_user_file {{ sophy_web_htpasswd }};
+        alias {{ sophy_web_root }}/web/;
+        index index.html;
+        add_header Cache-Control "no-cache";
+    }
+
+{% endif %}
     location / {
         proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;

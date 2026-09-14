@@ -1,0 +1,117 @@
+---
+# roles/sophy_web/tasks/main.yml - the Sophy parent control page
+#
+# Installs the API service (bin/sophy-web + lib/sophy_headwind.py) and the
+# static page (web/) from this repo onto the Themis host. nginx serves the page
+# and fronts the API under /sophy/ with basic auth (roles/nginx_local template);
+# the service itself listens on loopback and authenticates nobody.
+#
+# Lives on the Themis host on purpose: the page has to keep working through
+# the rack outage, and it moves to LXC 111 with the rest of Themis.
+
+# =========================================================================
+# 1. PACKAGES AND USER
+# =========================================================================
+- name: Install htpasswd support
+  apt:
+    name: python3-passlib
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create the service user
+  user:
+    name: "{{ sophy_web_service_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ sophy_web_root }}"
+    create_home: false
+
+# =========================================================================
+# 2. FILES
+# =========================================================================
+- name: Create the install tree
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - "{{ sophy_web_root }}"
+    - "{{ sophy_web_root }}/bin"
+    - "{{ sophy_web_root }}/lib"
+    - "{{ sophy_web_env_file | dirname }}"
+
+- name: Install the scripts
+  copy:
+    src: "{{ role_path }}/../../../bin/{{ item }}"
+    dest: "{{ sophy_web_root }}/bin/{{ item }}"
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - sophy-web
+    - sophy-switch
+  notify: restart sophy-web
+
+- name: Install the Headwind client module
+  copy:
+    src: "{{ role_path }}/../../../lib/sophy_headwind.py"
+    dest: "{{ sophy_web_root }}/lib/sophy_headwind.py"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart sophy-web
+
+- name: Install the static page
+  copy:
+    src: "{{ role_path }}/../../../web/"
+    dest: "{{ sophy_web_root }}/web/"
+    owner: root
+    group: root
+    mode: u=rwX,g=rX,o=rX
+
+# =========================================================================
+# 3. CREDENTIALS
+# =========================================================================
+- name: Write the API credentials
+  template:
+    src: env.j2
+    dest: "{{ sophy_web_env_file }}"
+    owner: root
+    group: "{{ sophy_web_service_user }}"
+    mode: '0640'
+  no_log: true
+  notify: restart sophy-web
+
+- name: Write the parents' basic-auth account
+  community.general.htpasswd:
+    path: "{{ sophy_web_htpasswd }}"
+    name: "{{ sophy_web_user }}"
+    password: "{{ sophy_web_password }}"
+    hash_scheme: bcrypt
+    owner: root
+    group: www-data
+    mode: '0640'
+  no_log: true
+  notify: reload nginx
+
+# =========================================================================
+# 4. SERVICE
+# =========================================================================
+- name: Install the systemd unit
+  template:
+    src: sophy-web.service.j2
+    dest: /etc/systemd/system/sophy-web.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart sophy-web
+
+- name: Enable and start sophy-web
+  systemd:
+    name: sophy-web
+    enabled: true
+    state: started
+    daemon_reload: true
