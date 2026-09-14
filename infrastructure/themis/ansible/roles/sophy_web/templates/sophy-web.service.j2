@@ -1,0 +1,23 @@
+# {{ ansible_managed }}
+# Sophy parent control page — JSON API behind nginx (auth_basic on /sophy/)
+[Unit]
+Description=Sophy tablet control API
+After=network.target
+
+[Service]
+Type=simple
+User={{ sophy_web_service_user }}
+Group={{ sophy_web_service_user }}
+EnvironmentFile={{ sophy_web_env_file }}
+ExecStart=/usr/bin/python3 {{ sophy_web_root }}/bin/sophy-web --listen {{ sophy_web_listen }} --port {{ sophy_web_port }}
+Restart=on-failure
+RestartSec=5
+
+# Hardening: talks to Headwind over HTTPS, writes nothing.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
