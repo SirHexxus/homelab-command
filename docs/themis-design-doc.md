@@ -195,10 +195,12 @@ a human still taps it. Recorded as accepted risk in §11.
 both tablets, every day. The 06:00 job also releases a consequence lock; a lock that must
 survive the morning is a follow-up.
 
-Jellyfin reaches Orpheus at 10.0.80.5:8096 across VLAN 20 → 80, which the existing
-"Allow Personal to Media" pfSense rule already permits. Each child signs into the Jellyfin app
-once, in Free Time, with their own restricted Jellyfin user (the same accounts Phemius plans
-for its Kids profile); the credentials live in Jellyfin and on the tablet, not here.
+The tablets reach Jellyfin through `watch.sirhexx.com` (Ariadne), not by IP; the direct path
+is 10.0.80.5:30013 — TrueNAS publishes the app on 30013, 8096 is only its container port —
+across VLAN 20 → 80, which the existing "Allow Personal to Media" pfSense rule permits. Each
+child signs into the Jellyfin app once, in Free Time, with their own restricted Jellyfin user
+(the same accounts Phemius plans for its Kids profile); the credentials live in Jellyfin and on
+the tablet, not here.
 
 **Required user restrictions.** The kiosk profile is not self-protecting. Device Owner is a
 privileged app, **not root**, and it is removed by a factory reset from recovery — which is the
