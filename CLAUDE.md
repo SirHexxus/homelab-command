@@ -34,6 +34,7 @@ cd infrastructure/platform/postgres && claude   # Postgres-focused
 | **inbox-receiver** | `infrastructure/mnemosyne/inbox-receiver/` | LXC VMID 103, 10.0.50.19 | 50 | Deployed — Mnemosyne intake endpoint |
 | **Orpheus** | `infrastructure/orpheus/` | TrueNAS R710 eno4: 10.0.80.5 (13+ TrueNAS Scale apps) | 80 | Apps running; *Arr reconfiguration pending |
 | **Phemius** | `infrastructure/phemius/` | Bare metal: Intel N150 mini PC, VLAN 80 (DHCP reservation, IP TBD) | 80 | Planned — Phase 1 living room; no hardware purchased |
+| **Medon** | `infrastructure/medon/` (not yet created) | Docker on Hephaestus (VMID 109, 10.0.50.30) — Matrix/Synapse | 50 | Queued — closed family chat for the tablets; design doc pending (roadmap) |
 | **Hephaestus** | `infrastructure/hephaestus/` | VM VMID 109, 10.0.50.30 — Docker Compose host | 50 | Deployed — Firecrawl (:3002) |
 | **Recon** | `infrastructure/recon/` | VM VMID 6601, 10.0.66.10 — quarantined WP detonation box | 66 | Deployed 2026-07-22 — VM created + provisioned; pfSense recon rules live |
 | **Themis** | `infrastructure/themis/` | LXC VMID 111, 10.0.50.23 (allocated, not built) | 50 | Planned — MVP runs off-rack in an Incus container on the ThinkPad until the server-closet move |

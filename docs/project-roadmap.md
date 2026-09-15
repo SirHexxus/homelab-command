@@ -1,5 +1,5 @@
 # Homelab Command Project — Project Roadmap
-**Version:** 2.4
+**Version:** 2.5
 **Last Updated:** 2026-09-13
 **Philosophy:** See `docs/homelab-philosophy.md` for the values and goals behind this homelab.
 
@@ -39,7 +39,7 @@ They have been removed from this roadmap to keep scope clean.
 | Hardware Catalog | v1.3 | ✅ Complete |
 | Network & Services Architecture | v1.9 | ✅ Complete |
 | Homelab Philosophy | v1.0 | ✅ Complete |
-| Project Roadmap | v2.4 | ✅ This document |
+| Project Roadmap | v2.5 | ✅ This document |
 | Mnemosyne Design Doc | v1.2 | ✅ Complete |
 | IaC Runbook | v1.5 | ✅ Complete |
 | Argus Design Doc | v1.2 | ✅ Complete |
@@ -385,6 +385,36 @@ on the server-closet move. Full design: `docs/phemius-design-doc.md`.
 
 ---
 
+## Medon — Family Messaging (Queued)
+
+Medon sits **off the Phase 1–5 critical path.** A closed chat server so the children's tablets
+can message the parents — voice and video messages, photos, private and group rooms — without
+any path to arbitrary accounts. Telegram cannot enforce that (phone-number accounts, client-side
+privacy settings a child can undo, public search); a self-hosted server with **federation off and
+registration off** enforces it structurally: the only accounts that exist are the four family
+members. Named for the loyal herald of Odysseus's house. Design doc pending.
+
+Decided 2026-09-14:
+- Stack: Matrix — Synapse (or Conduit) in Docker Compose on Hephaestus, media repo on
+  `general-store`; accounts created by admin only
+- Clients: FluffyChat on the tablets (FOSS, kid-friendly, voice/video messages, calls); Element
+  for the parents
+- Reach: on the LAN directly; off-home via the Themis WireGuard tunnel (Themis design doc §7.4)
+  or the client-server API published through Ariadne (`chat.sirhexx.com`) — federation off means
+  login is the only exposed surface
+
+### Build order — *after sophy-02 is caught up and the Themis VPN question is settled*
+- [ ] `docs/medon-design-doc.md` v1.0 — threat model is "who can the kids talk to", not uptime
+- [ ] `infrastructure/medon/` — `compose.yaml` + Ansible on Hephaestus; vault convention
+      `vault_medon_*`
+- [ ] Ariadne vhost `chat.sirhexx.com` (client-server API only; no federation port)
+- [ ] Four accounts; family room + per-child DM rooms; media retention limits set
+- [ ] FluffyChat whitelisted in both Sophy School and Free Time profiles (not Locked); camera and
+      microphone granted via Headwind push; verify notifications reach a kiosked tablet
+- [ ] Element on both parent phones; verify voice message, video message, photo, and call each way
+
+---
+
 ## Deferred Projects (Post-Application)
 
 | Project | Notes |
@@ -424,6 +454,9 @@ Career Advancement pursuit in Mnemosyne.
 
 ## Version History
 
+- v2.5 (2026-09-14): Add Medon (closed family messaging — Matrix on Hephaestus, FluffyChat on the
+  tablets) as a queued parallel track; queue the Themis off-home WireGuard tunnel (design doc
+  §7.4); register Themis Design Doc v1.4
 - v2.4 (2026-09-13): Add Phemius (living-room Kodi HTPC) as a parallel track off the Phase 1–5
   critical path — Phase 1 living room wired to the existing switch, Phase 2 office gated on the
   server-closet move; register Phemius Design Doc v1.0; docs filename version suffixes stripped
