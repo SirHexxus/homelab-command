@@ -202,6 +202,10 @@ child signs into the Jellyfin app once, in Free Time, with their own restricted 
 (the same accounts Phemius plans for its Kids profile); the credentials live in Jellyfin and on
 the tablet, not here.
 
+A family messaging client is queued as its own service, **Medon** (closed Matrix server on
+Hephaestus, FluffyChat on the tablets — see the roadmap). When it lands it is whitelisted in
+**both School and Free Time**, not Locked, so the children can always reach a parent.
+
 **Required user restrictions.** The kiosk profile is not self-protecting. Device Owner is a
 privileged app, **not root**, and it is removed by a factory reset from recovery — which is the
 first workaround a motivated child finds. The Sophy: School profile must therefore also set:
