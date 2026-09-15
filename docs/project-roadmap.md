@@ -46,7 +46,7 @@ They have been removed from this roadmap to keep scope clean.
 | Orpheus Design Doc | v1.3 | ✅ Complete |
 | Hermes Design Doc | v1.1 | ✅ Complete |
 | Ariadne Design Doc | v1.0 | ✅ Complete |
-| Themis Design Doc | v1.3 | ✅ Complete |
+| Themis Design Doc | v1.4 | ✅ Complete |
 | Phemius Design Doc | v1.0 | ✅ Complete |
 
 ### Remaining
@@ -334,6 +334,8 @@ server-closet move. Full design: `docs/themis-design-doc.md`.
       Locked / Admin from a phone, current mode shown *(2026-09-13)*
 - [ ] NFC/Tasker macro on the parent phone (same API call as `sophy-switch`)
 - [ ] QR provisioning payload validated including signature checksum (Gate 6)
+- [ ] Off-home WireGuard tunnel to pfSense — WG Tunnel on each tablet, auto-on for every network
+      but the home SSID, always-on VPN lockdown; firewall rules mirror VLAN 20 (design doc §7.4)
 
 ### Rack migration — *gated on the server-closet move*
 - [ ] LXC 111 provisioned at 10.0.50.23 via Terraform

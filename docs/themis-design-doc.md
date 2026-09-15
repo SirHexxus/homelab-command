@@ -1,6 +1,6 @@
 # Themis Project: Mobile Device Management Design Doc
-**Version:** 1.3
-**Last Updated:** 2026-09-13
+**Version:** 1.4
+**Last Updated:** 2026-09-14
 **Status:** **MVP live** on the off-rack PoC — both tablets enrolled as Device Owner, per-device School/Free Time profiles, shared parent lock and Admin mode, 20:00/06:00 schedule, parent control page at `/sophy/`. Rack migration pending the server-closet move.
 
 ---
@@ -358,6 +358,36 @@ Why not n8n or a separate LXC: both live on the rack, which goes dark for weeks 
 server-closet move — the same reason Themis itself is off-rack. Reach is LAN-only (VLAN 20 →
 the host override in §8); remote access is a later Ariadne question. After the rack move the
 two `/sophy/` locations and the htpasswd move into Ariadne's vhost for `themis.sirhexx.com`.
+
+### 7.4 Off-home traffic: WireGuard back to home (queued)
+
+**Status: queued, not built.** Away from the house — grandparents, a hotel, a friend's Wi-Fi —
+the tablets should behave exactly as they do at home: same DNS, same firewall policy, same reach
+to Jellyfin and to Themis itself. The design is a full tunnel to pfSense that engages on every
+network except the home SSID.
+
+| Layer | Component | Notes |
+|-------|-----------|-------|
+| Server | pfSense native WireGuard package, one tunnel, UDP 51820 forwarded on WAN, endpoint = the DDNS name | Tunnel subnet `10.0.90.0/24`; one peer per tablet. Lives in `infrastructure/network/pfsense/config.xml` like every other rule |
+| Policy | Firewall rules on the WG interface **mirror VLAN 20 (Personal)** | Away tablets get precisely the at-home reach: Orpheus, Themis (including MQTT `:31000`, so lock/unlock keeps working remotely), pfSense DNS, internet via the home WAN. The `themis.sirhexx.com` host override applies because DNS is pfSense's |
+| Client | **WG Tunnel** (FOSS; F-Droid / Play), not the stock WireGuard app | The official app has no network-awareness on Android. WG Tunnel adds auto-tunnel on any Wi-Fi except a trusted-SSID list, a kill switch, and start-on-boot. Home SSID → trusted; everything else → `AllowedIPs = 0.0.0.0/0` |
+| Lockdown | Android always-on VPN with "block connections without VPN" | Set over ADB (`settings put secure always_on_vpn_app` / `always_on_vpn_lockdown 1`) or by Device Owner. The child cannot disable it; tunnel down off-home means no traffic at all |
+| Headwind | WG Tunnel whitelisted in every Sophy configuration, icon hidden; location permission granted via a `grantPermissions` push (Android needs it to read the SSID) | Same permission mechanism as any Aurora-installed app |
+
+Accepted trade-offs, recorded so they are not rediscovered:
+
+- "Home" is an SSID match. Adequate for a child; not a defence against a deliberately spoofed
+  SSID. Anyone able to do that has bigger levers.
+- The peer private key lives on the tablet. Kiosk protects it in practice; rotate the peer on
+  any lost or reset tablet.
+- Off-home throughput is bounded by the home upload; the children's Jellyfin users get a
+  transcode ceiling.
+- Setup needs one more ADB session per tablet (Admin + the manual USB-debugging toggle), so it
+  rides along with the next Admin trip rather than earning its own.
+
+Tailscale with an exit node was considered and passed over: simpler key management, but it
+cannot express "off only at home", and WireGuard on pfSense keeps the perimeter self-hosted and
+in IaC, which is the standing principle.
 
 ---
 
