@@ -129,16 +129,17 @@ See `[[Decide First Mnemosyne and Hermes Build Sprint]]` for the original candid
 
 - [x] **2.5** End-to-end test: Telegram note → wiki page → Obsidian *(interim path, 2026-04-29)*
 
-- [ ] **2.6** Run the mneme-* worker fleet as `inbox-receiver`, not root  
-  *The `mneme_workers` units carry no `User=` and hardcode `HOME=/root`, so every sync/
-  commit leaves root-owned files in `/opt/inbox-receiver/wiki`. On 2026-09-14 that locked
-  the receiver (`User=inbox-receiver`) out of `.git/mneme-commit.lock` and `.git/index`;
-  every Telegram capture since the 2026-09-01 lock deploy had 500'd. Interim fix applied
-  by hand: `chown -R` + `core.sharedRepository=group` + lock mode `0o664`. Proper fix:
-  `User=inbox-receiver` in both `.service.j2` templates; give the user a real home (e.g.
-  `/var/lib/mneme`); move `/root/.config/mnemosyne/*` creds and `mneme_telegram_env`
-  there; audit `Path.home()` state paths in `daily-digest`, `lib/embeddings.py`,
-  `lib/mneme_pg.py`, `lib/raw_source.py`, `lib/task_status.py`.*
+- [x] **2.6** Run the mneme-* worker fleet as `inbox-receiver`, not root *(2026-09-20)*  
+  *All 19 units now carry `User=inbox-receiver` and `HOME=/opt/inbox-receiver` — the app
+  user's home is real (was `/nonexistent`), and the creds that lived in
+  `/root/.config/mnemosyne/` are vault-managed under it, deployed by the `inbox_receiver`
+  role. No `Path.home()` rewrites were needed: every cred and state path resolves through
+  `$HOME`, so the unit env carries them. Only two hardcoded `/root` strings changed
+  (`lib/mneme-alert`, `daily-digest`). The 2026-09-14 hand fix (`core.sharedRepository`,
+  setgid `.git`) is IaC now, and `/health` proves it can write the inbox and open the
+  commit lock instead of always returning ok. `mneme-alert@` was included: without
+  `User=`/`HOME=` its Telegram alerts would have gone silent exactly when the fleet
+  started failing.*
 
 ---
 
