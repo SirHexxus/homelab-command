@@ -704,8 +704,9 @@ def send_telegram_api(digest_text: str) -> bool:
     Fallback for hosts without telegram-send (the worker). Credentials come
     from the same env file lib/mneme-alert reads.
     """
-    conf = Path(os.environ.get("MNEME_TELEGRAM_ENV",
-                               "/root/.config/mnemosyne/telegram.env"))
+    raw_conf = os.environ.get("MNEME_TELEGRAM_ENV", "").strip()
+    conf = (Path(raw_conf) if raw_conf
+            else Path.home() / ".config" / "mnemosyne" / "telegram.env")
     creds = dict(os.environ)
     if conf.is_file():
         for line in conf.read_text(encoding="utf-8").splitlines():

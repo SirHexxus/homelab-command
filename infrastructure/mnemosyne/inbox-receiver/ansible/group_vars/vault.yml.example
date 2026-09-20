@@ -13,3 +13,32 @@ vault_wiki_deploy_key: "base64-encoded-private-key-here"
 # Git identity for commits from the LXC
 vault_git_user_name: "Mnemosyne Inbox"
 vault_git_user_email: "inbox@homelab.internal"
+
+# ── mneme-* worker fleet credentials ─────────────────────────────────────────
+# These moved out of /root/.config/mnemosyne on the host (ToDo 2.6) and are now
+# rendered into {{ mneme_config_dir }}, owned by the app user, because the
+# fleet runs as inbox-receiver and reads them through Path.home().
+#
+# Capture the live files with:
+#   base64 -w0 /path/to/<file>.json
+
+# Vertex AI (daily-digest, triage-inbox, lib/llm-call). Mint a dedicated SA —
+# do not reuse the n8n or Chiron one (per-consumer revocation).
+vault_mnemosyne_vertex_sa_json: "base64-encoded-service-account-json"
+vault_mnemosyne_vertex_project: "gen-lang-client-xxxxxxxxxx"
+vault_mnemosyne_vertex_location: "us-central1"
+vault_mnemosyne_vertex_model: "gemini-2.5-flash"
+
+# Postgres embeddings sidecar (lib/embeddings.py, lib/mneme_pg.py)
+vault_mnemosyne_pg_password: "postgres-password-here"
+
+# Google credentials used by extract-image-data
+vault_mnemosyne_gemini_creds_json: "base64-encoded-gemini-creds-json"
+vault_mnemosyne_gcal_creds_json: "base64-encoded-gcal-creds-json"
+vault_mnemosyne_gcal_client_json: "base64-encoded-gcal-client-json"
+vault_mnemosyne_calendar_aliases_json: "base64-encoded-calendar-aliases-json"
+
+# Telegram — worker failure alerts (lib/mneme-alert) and the daily-digest
+# delivery fallback on hosts without telegram-send.
+vault_mnemosyne_telegram_bot_token: "bot-token-here"
+vault_mnemosyne_telegram_chat_id: "chat-id-here"

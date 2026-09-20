@@ -10,12 +10,45 @@
     system: yes
     state: present
 
+# usermod refuses to touch a user that owns a running process, so a home
+# change cannot apply while the receiver is up. Stop it first -- but only
+# when the home is actually wrong, so ordinary re-runs never bounce the
+# service. On a fresh build the user does not exist and neither branch fires.
+- name: Read the current app user entry
+  getent:
+    database: passwd
+    key: "{{ app_user }}"
+    fail_key: false
+
+- name: Note whether the app user's home needs to change
+  set_fact:
+    app_home_needs_change: "{{ (getent_passwd[app_user] is defined)
+      and (getent_passwd[app_user] is not none)
+      and (getent_passwd[app_user][4] != app_home) }}"
+
+- name: Check whether the service unit is already installed
+  stat:
+    path: /etc/systemd/system/{{ service_name }}.service
+  register: receiver_unit
+
+- name: Stop the receiver so the home change can apply
+  systemd:
+    name: "{{ service_name }}"
+    state: stopped
+  when:
+    - app_home_needs_change | bool
+    - receiver_unit.stat.exists
+
+# The home is real (and equal to app_dir, created below) because the mneme-*
+# worker fleet runs as this user and resolves its credentials and state
+# through Path.home(). move_home is deliberately unset: nothing lives at the
+# old /nonexistent, so this only rewrites the passwd entry.
 - name: Create app system user
   user:
     name: "{{ app_user }}"
     group: "{{ app_group }}"
     system: yes
-    home: /nonexistent
+    home: "{{ app_home }}"
     create_home: no
     shell: /usr/sbin/nologin
     state: present
@@ -31,6 +64,105 @@
     owner: "{{ app_user }}"
     group: "{{ app_group }}"
     mode: '0755'
+
+# =============================================================================
+# 2b. WORKER CREDENTIALS AND STATE (HOME=app_home)
+# =============================================================================
+#
+# The mneme-* fleet reads all of these through Path.home(); its units set
+# HOME={{ app_home }}. They lived in /root/.config/mnemosyne until ToDo 2.6 --
+# unreadable by this user, which is half of why the fleet ran as root.
+
+- name: Create the mnemosyne config directory
+  file:
+    path: "{{ mneme_config_dir }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0700'
+
+- name: Deploy the Vertex service account key
+  copy:
+    content: "{{ vault_mnemosyne_vertex_sa_json | b64decode }}"
+    dest: "{{ mneme_config_dir }}/vertex-sa.json"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0600'
+  no_log: true
+
+# Templated rather than copied so sa_path follows app_home instead of
+# pinning the old /root location.
+- name: Deploy the Vertex creds pointer
+  copy:
+    content: |
+      {
+        "project": "{{ vault_mnemosyne_vertex_project }}",
+        "location": "{{ vault_mnemosyne_vertex_location }}",
+        "sa_path": "{{ mneme_config_dir }}/vertex-sa.json",
+        "model": "{{ vault_mnemosyne_vertex_model }}"
+      }
+    dest: "{{ mneme_config_dir }}/vertex-creds.json"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0600'
+  no_log: true
+
+- name: Deploy the Postgres creds
+  copy:
+    content: "{{ {'password': vault_mnemosyne_pg_password} | to_nice_json }}\n"
+    dest: "{{ mneme_config_dir }}/pg-creds.json"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0600'
+  no_log: true
+
+- name: Deploy the opaque JSON credential files
+  copy:
+    content: "{{ item.value | b64decode }}"
+    dest: "{{ mneme_config_dir }}/{{ item.name }}"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0600'
+  loop:
+    - name: gemini-creds.json
+      value: "{{ vault_mnemosyne_gemini_creds_json }}"
+    - name: gcal-creds.json
+      value: "{{ vault_mnemosyne_gcal_creds_json }}"
+    - name: gcal-client.json
+      value: "{{ vault_mnemosyne_gcal_client_json }}"
+    - name: calendar-aliases.json
+      value: "{{ vault_mnemosyne_calendar_aliases_json }}"
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+
+# Read by lib/mneme-alert (OnFailure handler) and daily-digest's Telegram
+# fallback. Worker units load it with EnvironmentFile=-.
+- name: Deploy the Telegram env file
+  copy:
+    content: |
+      TELEGRAM_BOT_TOKEN={{ vault_mnemosyne_telegram_bot_token }}
+      TELEGRAM_CHAT_ID={{ vault_mnemosyne_telegram_chat_id }}
+    dest: "{{ mneme_config_dir }}/telegram.env"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0600'
+  no_log: true
+
+# Path.home()-relative state the workers write: daily-digest's token log and
+# the build-catalog / enrich-stubs caches.
+- name: Create worker state directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0755'
+  loop:
+    - "{{ app_home }}/mneme"
+    - "{{ app_home }}/mneme/logs"
+    - "{{ app_home }}/.cache"
+    - "{{ app_home }}/.cache/mnemosyne"
 
 - name: Deploy inbox_receiver.py
   copy:
@@ -131,6 +263,23 @@
       ssh -i {{ ssh_dir }}/wiki_deploy
       -o UserKnownHostsFile={{ ssh_dir }}/known_hosts
       -o StrictHostKeyChecking=yes
+
+# Belt and braces for the 2026-09-14 lockout: with one uid on the checkout
+# these are redundant, but they cost nothing and keep a stray root-run git
+# from leaving unreadable objects behind. Applied by hand on the host then;
+# IaC now, so a rebuild reproduces it.
+- name: Share the wiki repo with the owning group
+  ini_file:
+    path: "{{ wiki_dir }}/.git/config"
+    section: core
+    option: sharedRepository
+    value: group
+
+- name: Set the setgid bit on the wiki git directory
+  file:
+    path: "{{ wiki_dir }}/.git"
+    state: directory
+    mode: '2755'
 
 - name: Configure git user name for commits
   ini_file:

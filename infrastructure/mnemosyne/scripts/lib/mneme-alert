@@ -12,7 +12,7 @@
 ################################################################################
 set -u
 
-CONF="${MNEME_TELEGRAM_ENV:-/root/.config/mnemosyne/telegram.env}"
+CONF="${MNEME_TELEGRAM_ENV:-${HOME:-/opt/inbox-receiver}/.config/mnemosyne/telegram.env}"
 # shellcheck disable=SC1090
 [[ -f $CONF ]] && source "$CONF"
 
