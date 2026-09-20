@@ -147,6 +147,46 @@ def _commit_inbox_item(rel: str, message: str) -> None:
             os.close(lock_fd)
 
 
+# ── Health ────────────────────────────────────────────────────────────────────
+
+def _check_inbox_write() -> str:
+    """Create and remove a probe file in INBOX_DIR. Returns '' when writable.
+
+    The probe deliberately has no .json suffix: both watch-inbox (inotify)
+    and triage-inbox (glob) filter on *.json, so a health check can never
+    trigger a triage run.
+    """
+    probe = INBOX_DIR / f".health-{uuid.uuid4().hex}"
+    try:
+        INBOX_DIR.mkdir(parents=True, exist_ok=True)
+        probe.write_text("")
+    except OSError as exc:
+        return str(exc)
+    finally:
+        try:
+            probe.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return ""
+
+
+def _check_lock_write() -> str:
+    """Open the shared commit lock for writing. Returns '' when openable.
+
+    No flock is taken: this must never block on, or race with, a commit that
+    is legitimately in progress. Opening is the part that failed on
+    2026-09-14, when root-owned workers left the lock unwritable by this user
+    and every capture 500'd while /health kept reporting ok.
+    """
+    lock_path = WIKI_ROOT / ".git" / LOCK_NAME
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_WRONLY, 0o664)
+    except OSError as exc:
+        return str(exc)
+    os.close(fd)
+    return ""
+
+
 # ── App factory ───────────────────────────────────────────────────────────────
 
 def create_app() -> Flask:
@@ -155,7 +195,18 @@ def create_app() -> Flask:
 
     @app.get("/health")
     def health():
-        return jsonify({"status": "ok"})
+        checks = {
+            "inbox_write": _check_inbox_write(),
+            "lock_write": _check_lock_write(),
+        }
+        failed = {name: err for name, err in checks.items() if err}
+        if failed:
+            for name, err in failed.items():
+                log.error("Health check %s failed: %s", name, err)
+            body = {"status": "degraded"}
+            body.update({name: err or "ok" for name, err in checks.items()})
+            return jsonify(body), 503
+        return jsonify({"status": "ok", "inbox_write": "ok", "lock_write": "ok"})
 
     @app.post("/inbox")
     @_require_bearer
