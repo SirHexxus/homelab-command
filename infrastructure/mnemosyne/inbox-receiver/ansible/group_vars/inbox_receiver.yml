@@ -4,6 +4,11 @@
 app_user: inbox-receiver
 app_group: inbox-receiver
 app_dir: /opt/inbox-receiver
+# The app user's real $HOME. The mneme-* worker fleet runs as this user and
+# resolves every credential and state path through Path.home(), so this is
+# also where .config/mnemosyne/ and the worker state dirs live (ToDo 2.6).
+app_home: /opt/inbox-receiver
+mneme_config_dir: "{{ app_home }}/.config/mnemosyne"
 wiki_dir: /opt/inbox-receiver/wiki
 venv_dir: /opt/inbox-receiver/venv
 service_name: inbox-receiver
