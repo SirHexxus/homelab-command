@@ -7,8 +7,10 @@ OnFailure=mneme-alert@%n.service
 
 [Service]
 Type=oneshot
+User={{ mneme_user }}
+Group={{ mneme_group }}
 WorkingDirectory={{ mneme_scripts_dir }}
-Environment=HOME=/root
+Environment=HOME={{ mneme_home }}
 Environment=MNEME_WIKI_PATH={{ mneme_wiki_root }}
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=-{{ mneme_telegram_env }}

@@ -9,9 +9,11 @@ After=network-online.target
 OnFailure=mneme-alert@%n.service
 
 [Service]
+User={{ mneme_user }}
+Group={{ mneme_group }}
 ExecStart={{ mneme_scripts_dir }}/watch-inbox --wiki-root {{ mneme_wiki_root }}
 WorkingDirectory={{ mneme_scripts_dir }}
-Environment=HOME=/root
+Environment=HOME={{ mneme_home }}
 Environment=MNEME_WIKI_PATH={{ mneme_wiki_root }}
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Restart=on-failure
