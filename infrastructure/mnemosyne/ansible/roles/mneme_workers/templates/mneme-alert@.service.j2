@@ -5,4 +5,11 @@ Description=Telegram alert for failed mnemosyne unit %i
 
 [Service]
 Type=oneshot
+User={{ mneme_user }}
+Group={{ mneme_group }}
+# Without HOME and the env file, the alert falls back to a telegram.env it
+# cannot read and every failure notification goes silent -- exactly when the
+# fleet is failing.
+Environment=HOME={{ mneme_home }}
+EnvironmentFile=-{{ mneme_telegram_env }}
 ExecStart={{ mneme_scripts_dir }}/lib/mneme-alert %i

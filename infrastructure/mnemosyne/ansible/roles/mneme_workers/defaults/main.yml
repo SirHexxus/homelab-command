@@ -11,8 +11,18 @@ mneme_root: /opt/mnemosyne/homelab-command
 mneme_scripts_dir: "{{ mneme_root }}/infrastructure/mnemosyne/scripts"
 mneme_wiki_root: /opt/inbox-receiver/wiki
 
+# Every unit runs as the inbox-receiver user -- the same uid the receiver
+# itself runs as. Two uids on one wiki checkout is what locked the receiver
+# out of the shared commit lock on 2026-09-14 (ToDo 2.6). The home is real
+# and holds .config/mnemosyne/, which the inbox_receiver role provisions:
+# every credential and state path in the script tree is Path.home()-relative,
+# so HOME= below is what points them at it.
+mneme_user: inbox-receiver
+mneme_group: inbox-receiver
+mneme_home: /opt/inbox-receiver
+
 # Optional; units load it with `-` so a missing file is not an error.
-mneme_telegram_env: /root/.config/mnemosyne/telegram.env
+mneme_telegram_env: "{{ mneme_home }}/.config/mnemosyne/telegram.env"
 
 # Remove mneme-* units on the host that this role does not declare. Off by
 # default: an incomplete list would silently tear down live workers.
