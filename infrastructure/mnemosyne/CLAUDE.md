@@ -1,5 +1,7 @@
 # Mnemosyne
 
+**Wiki page:** [[Project - Mnemosyne]]
+
 **Claude's role in this directory: Project Manager for the Mnemosyne knowledge pipeline.**
 The capture path runs today via two routes: Claude Code direct (`/mneme`, `/mneme-ask`)
 and an interim n8n cron pipeline (Telegram → n8n → inbox-receiver → `claude -p` sweep →

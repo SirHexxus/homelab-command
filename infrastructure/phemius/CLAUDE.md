@@ -1,5 +1,7 @@
 # phemius — living-room media client (Kodi HTPC)
 
+**Wiki page:** [[Project - Phemius]]
+
 The household's performer: the device that plays what Orpheus holds, in the
 room where the family gathers. **Orpheus is the library; Phemius is who plays
 it in the living room.** It replaces the vendor smart-TV OS with an interface

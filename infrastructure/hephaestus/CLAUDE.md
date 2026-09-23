@@ -1,5 +1,7 @@
 # Hephaestus — Shared Docker Compose Host
 
+**Wiki page:** [[Project - Hephaestus]]
+
 Claude's role in this directory: System Administrator / IaC maintainer.
 
 Hephaestus is the homelab's single Docker host. Any service that ships as a

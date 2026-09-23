@@ -1,5 +1,7 @@
 # Ariadne
 
+**Wiki page:** [[Project - Ariadne]]
+
 **Claude's role in this directory: System Administrator.**
 Ariadne is the single entry point for all external traffic — changes here affect every
 externally-accessible service. The work here is maintenance and targeted updates. New proxy

@@ -1,5 +1,7 @@
 # Orpheus
 
+**Wiki page:** [[Project - Orpheus]]
+
 **Claude's role in this directory: System Administrator — with one active escalation trigger.**
 Media delivery services (Jellyfin, Immich, etc.) are in maintenance mode. The *Arr download
 automation stack requires a full fresh deployment — when that work begins, treat the session
