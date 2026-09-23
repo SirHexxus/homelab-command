@@ -1,5 +1,7 @@
 # Iris
 
+**Wiki page:** [[Project - Iris]]
+
 **Claude's role in this directory: System Administrator.**
 Current scope is ntfy maintenance. Phase 3 work (syslog-ng, Vector, Wazuh agent) is not
 yet active — do not implement those roles without a confirmed Phase 3 start. If Phase 3

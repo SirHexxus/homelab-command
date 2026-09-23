@@ -1,5 +1,7 @@
 # recon — quarantined WordPress recon / detonation box
 
+**Wiki page:** [[Project - Recon]]
+
 A single-purpose, throwaway VM for **safely reviewing a CLONE of a compromised
 website**. First use: Smith Scale (a client site hacked twice; see the
 sales-pipeline project). It runs the site's own code, so it is deliberately

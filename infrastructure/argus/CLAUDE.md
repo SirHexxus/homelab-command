@@ -1,5 +1,7 @@
 # Argus
 
+**Wiki page:** [[Project - Argus]]
+
 **Claude's role in this directory: Project Manager for the Argus SIEM deployment.**
 This service has not been implemented — both IaC directories are empty placeholders. Phase 3
 has not begun. Do not write IaC here until Phase 3 is active.

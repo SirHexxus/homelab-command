@@ -1,5 +1,7 @@
 # Hermes (IaC)
 
+**Wiki page:** [[Project - Hermes]]
+
 **Claude's role in this directory: Project Manager for the Hermes LXC deployment.**
 The deliverable is a running LXC (VMID 110, 10.0.50.17) with the Hermes application live
 and verified. For the application code, see `apps/hermes/CLAUDE.md`.
