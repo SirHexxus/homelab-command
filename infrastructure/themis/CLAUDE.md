@@ -44,6 +44,15 @@ Both scripts import `lib/sophy_headwind.py`; change the switching logic there.
 Admin mode opens everything but **cannot turn USB debugging on** (Headwind has
 no call for it) — a human toggles it in Developer options.
 
+`bin/sophy-harden` reapplies the device-side settings Headwind *cannot* express
+— per-package appops and runtime permissions, set over ADB. Each entry is there
+because something broke in production (Jellyfin's PiP zombie task, ABC Mouse's
+leaked background audio), and a factory reset or re-enrollment loses all of them
+silently, with nothing in the panel to say so. It is declarative and idempotent:
+`--check` reports drift and exits non-zero, `--dry-run` shows the changes, no
+flag applies them. Run it after any reset, re-enrollment, or new app install,
+with the tablet in Admin and USB debugging on.
+
 Migration to the rack is an inventory swap and a re-run. Keep every environment
 difference in `group_vars/themis.yml`:
 
@@ -85,6 +94,13 @@ difference in `group_vars/themis.yml`:
    (pfSense host override, mirrored in `infrastructure/network/pfsense/config.xml`).
    MQTT push on `:31000` is raw TCP the Ariadne proxy cannot carry, and the
    tablets must keep working when the rack is down.
+8. **Not all device state is Headwind's.** Appops and runtime permissions live
+   below the MDM layer; the panel neither shows nor restores them, so a factory
+   reset loses them with no visible signal. They belong in `bin/sophy-harden`,
+   never in a one-off ADB command. Note that permission-backed appops cannot be
+   driven through `appops set` — `POST_NOTIFICATION` is slaved to the
+   `POST_NOTIFICATIONS` runtime permission and silently ignores the write; use
+   `pm grant`/`pm revoke` for those (verified 2026-09-23).
 
 ## Spike before you build
 
