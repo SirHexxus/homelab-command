@@ -25,6 +25,8 @@ Examples:
 import argparse
 import json
 import sys
+import threading
+from collections.abc import Callable
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -57,6 +59,43 @@ class SophyHandler(BaseHTTPRequestHandler):
     config: dict[str, str] = {}
     dry_run = False
 
+    # One JWT is shared by every request and renewed only when Headwind
+    # rejects it. The parent page polls /state every 30 s, so logging in per
+    # request cost a full auth round-trip each time and buried the Headwind
+    # audit log under ~2,900 `jwt.login` rows a day — 99.3% of it — which made
+    # the log useless both as a security record and as a feed for Iris
+    # (measured 2026-09-23).
+    _token: str | None = None
+    _token_lock = threading.Lock()
+
+    # -- authentication ----------------------------------------------------
+
+    @classmethod
+    def token(cls, stale: str | None = None) -> str:
+        """Return the shared JWT, logging in only when one is needed.
+
+        Pass the token that just failed as ``stale``: if another thread has
+        already replaced it, this reuses theirs instead of logging in again.
+        """
+        with cls._token_lock:
+            if cls._token is None or (stale is not None and cls._token == stale):
+                cls._token = login(cls.config)
+            return cls._token
+
+    def authenticated(self, work: Callable[[str], dict]) -> dict:
+        """Run ``work`` with the shared token, renewing it once if it expired.
+
+        Retrying is safe: ``switch`` no-ops when a device already holds the
+        target configuration, so a partially applied call is not reapplied.
+        """
+        token = self.token()
+        try:
+            return work(token)
+        except HeadwindError as exc:
+            if '401' not in str(exc):
+                raise
+            return work(self.token(stale=token))
+
     # -- responses ---------------------------------------------------------
 
     def send_json(self, status: HTTPStatus, body: dict) -> None:
@@ -85,7 +124,7 @@ class SophyHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.NOT_FOUND, 'not found')
             return
         try:
-            self.send_json(HTTPStatus.OK, self.state_body(login(self.config)))
+            self.send_json(HTTPStatus.OK, self.authenticated(self.state_body))
         except HeadwindError as exc:
             self.send_error_json(HTTPStatus.BAD_GATEWAY, str(exc))
 
@@ -107,12 +146,14 @@ class SophyHandler(BaseHTTPRequestHandler):
             return
         numbers = ALL_DEVICES if number == 'all' else (number,)
 
-        try:
-            token = login(self.config)
+        def apply_switch(token: str) -> dict:
             for item in numbers:
                 switch(self.config, item, mode, dry_run=self.dry_run, token=token,
                        log=self.log_switch)
-            self.send_json(HTTPStatus.OK, self.state_body(token))
+            return self.state_body(token)
+
+        try:
+            self.send_json(HTTPStatus.OK, self.authenticated(apply_switch))
         except ConfigError as exc:
             self.send_error_json(HTTPStatus.CONFLICT, str(exc))
         except HeadwindError as exc:
