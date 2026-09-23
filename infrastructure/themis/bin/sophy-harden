@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+"""Reapply the device-side hardening that Headwind cannot express.
+
+Headwind distributes policy (which apps exist, which restrictions apply), but a
+few things that keep the Sophy tablets usable live below the MDM layer, in
+Android's per-package appops. Headwind has no call for them, so they are set
+over ADB — and a factory reset, a re-enrollment, or a "clear data" silently
+loses every one of them with no warning anywhere in the panel.
+
+Each entry below exists because something broke in production:
+
+    org.jellyfin.mobile / PICTURE_IN_PICTURE
+        2026-09-14. A video was in picture-in-picture when the 20:00 lock
+        landed. The floating window died but the task survived, invisible and
+        un-raisable, so every later tap "brought to front" a window that was
+        not there and Jellyfin simply would not open. Denying PiP stops the
+        app from ever entering that state.
+
+    com.aofl.abcmouse / RUN_ANY_IN_BACKGROUND
+        2026-09-23. ABC Mouse was backgrounded but left ~20 AAudio streams in
+        state:started after it had already abandoned audio focus, so the tablet
+        played noise that no volume control or app switcher could reach.
+        Background-restricting it means a leaked stream cannot outlive the
+        foreground app.
+
+    com.bible.kids / POST_NOTIFICATIONS
+        2026-09-14. Granted deliberately so that no runtime permission dialog
+        is ever raised at a child inside the kiosk. This one grants rather than
+        denies; it is here so the intent is recorded and reapplied, not lost.
+        Note it is a *permission*, not an appop: the POST_NOTIFICATION appop is
+        slaved to the runtime permission, so `appops set` on it is silently a
+        no-op (verified 2026-09-23). Runtime permissions go through pm.
+
+Run this after any factory reset or re-enrollment, and after installing a new
+app that needs an entry. The tablet must be in Admin with USB debugging on
+(School sets no_debugging_features and kills ADB).
+
+Examples:
+    sophy-harden --check
+    sophy-harden --dry-run
+    sophy-harden
+    sophy-harden --serial 096226091073588
+"""
+
+# ── Standard library imports ──────────────────────────────────────────────────
+import argparse
+import subprocess
+import sys
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+# Every device-side setting the Sophy tablets depend on, with the reason it is
+# here. Keep the reason short enough to print; the full story is in the module
+# docstring. `kind` picks the mechanism:
+#   appop       cmd appops get/set     mode: allow | ignore | deny | default
+#   permission  pm grant/revoke        mode: granted | revoked
+HARDENING = (
+    {
+        'kind': 'appop',
+        'package': 'org.jellyfin.mobile',
+        'name': 'PICTURE_IN_PICTURE',
+        'mode': 'ignore',
+        'reason': 'PiP zombie task made Jellyfin un-openable (2026-09-14)',
+    },
+    {
+        'kind': 'appop',
+        'package': 'com.aofl.abcmouse',
+        'name': 'RUN_ANY_IN_BACKGROUND',
+        'mode': 'ignore',
+        'reason': 'leaked background audio streams played unreachable noise (2026-09-23)',
+    },
+    {
+        'kind': 'permission',
+        'package': 'com.bible.kids',
+        'name': 'android.permission.POST_NOTIFICATIONS',
+        'mode': 'granted',
+        'reason': 'pre-granted so no permission dialog reaches a child in kiosk',
+    },
+)
+
+ADB_TIMEOUT_SECONDS = 20
+
+# `cmd appops get` speaks three dialects; see parse_op_mode().
+NO_OPERATIONS = 'No operations.'
+DEFAULT_PREFIX = 'Default mode:'
+NO_UID_PREFIX = 'Error: No UID'
+
+# `dumpsys package` when the package is not installed.
+NO_PACKAGE_PREFIX = 'Unable to find package'
+
+
+# ── Errors ────────────────────────────────────────────────────────────────────
+
+class AdbError(RuntimeError):
+    """Raised when ADB is missing, unreachable, or the device is not ready."""
+
+
+# ── Functions ─────────────────────────────────────────────────────────────────
+
+def adb(args: list[str], serial: str | None = None) -> tuple[int, str]:
+    """Run one adb command and return its exit code and combined output."""
+    command = ['adb']
+    if serial:
+        command += ['-s', serial]
+    command += args
+
+    try:
+        result = subprocess.run(command, capture_output=True, text=True,
+                                timeout=ADB_TIMEOUT_SECONDS, check=False)
+    except FileNotFoundError as exc:
+        raise AdbError('adb is not installed or not on PATH') from exc
+    except subprocess.TimeoutExpired as exc:
+        raise AdbError(f'adb timed out after {ADB_TIMEOUT_SECONDS}s: {" ".join(args)}') from exc
+
+    return result.returncode, (result.stdout + result.stderr).strip()
+
+
+def require_device(serial: str | None) -> str:
+    """Confirm exactly one usable device is attached and return its serial."""
+    code, output = adb(['devices'])
+    if code != 0:
+        raise AdbError(f'adb devices failed: {output}')
+
+    attached = []
+    for line in output.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == 'device':
+            attached.append(parts[0])
+
+    if not attached:
+        raise AdbError('no device in "device" state — check the cable, and that the tablet '
+                       'is in Admin with USB debugging on (School kills ADB)')
+    if serial:
+        if serial not in attached:
+            raise AdbError(f'{serial} is not attached; attached: {", ".join(attached)}')
+        return serial
+    if len(attached) > 1:
+        raise AdbError(f'{len(attached)} devices attached — pass --serial: {", ".join(attached)}')
+    return attached[0]
+
+
+def parse_op_mode(output: str) -> str | None:
+    """Turn `cmd appops get` output into the effective mode, or None if absent.
+
+    Three shapes come back:
+        "PICTURE_IN_PICTURE: ignore"          explicitly set
+        "No operations.\\nDefault mode: allow"  unset, running on the default
+        "Error: No UID for ... in user 0"      package not installed
+    """
+    if output.startswith(NO_UID_PREFIX):
+        return None
+
+    for line in output.splitlines():
+        line = line.strip()
+        if not line or line == NO_OPERATIONS:
+            continue
+        if line.startswith(DEFAULT_PREFIX):
+            return line[len(DEFAULT_PREFIX):].strip()
+        if ':' in line:
+            # "OP: mode" — trailing detail (timestamps) can follow the mode.
+            return line.split(':', 1)[1].strip().split(';')[0].strip()
+    return None
+
+
+def get_op(package: str, op: str, serial: str) -> str | None:
+    """Return the effective mode of one appop, or None if the package is absent."""
+    _, output = adb(['shell', 'cmd', 'appops', 'get', package, op], serial)
+    return parse_op_mode(output)
+
+
+def set_op(package: str, op: str, mode: str, serial: str) -> None:
+    """Set one appop, raising if the device rejects it."""
+    code, output = adb(['shell', 'cmd', 'appops', 'set', package, op, mode], serial)
+    if code != 0 or output:
+        raise AdbError(f'setting {package} {op}={mode} failed: {output or f"exit {code}"}')
+
+
+def get_permission(package: str, permission: str, serial: str) -> str | None:
+    """Return 'granted'/'revoked' for a runtime permission, or None if absent.
+
+    None covers both "package not installed" and "package does not declare it";
+    either way there is nothing for this script to reapply.
+    """
+    _, output = adb(['shell', 'dumpsys', 'package', package], serial)
+    if output.startswith(NO_PACKAGE_PREFIX):
+        return None
+
+    for line in output.splitlines():
+        line = line.strip()
+        if line.startswith(f'{permission}: granted='):
+            return 'granted' if line.split('granted=', 1)[1].startswith('true') else 'revoked'
+    return None
+
+
+def set_permission(package: str, permission: str, mode: str, serial: str) -> None:
+    """Grant or revoke a runtime permission, raising if the device rejects it."""
+    verb = 'grant' if mode == 'granted' else 'revoke'
+    code, output = adb(['shell', 'pm', verb, package, permission], serial)
+    if code != 0 or output:
+        raise AdbError(f'{verb} {permission} on {package} failed: {output or f"exit {code}"}')
+
+
+def read_state(entry: dict, serial: str) -> str | None:
+    """Read the current value of one hardening entry."""
+    if entry['kind'] == 'appop':
+        return get_op(entry['package'], entry['name'], serial)
+    return get_permission(entry['package'], entry['name'], serial)
+
+
+def write_state(entry: dict, serial: str) -> None:
+    """Apply the wanted value of one hardening entry."""
+    if entry['kind'] == 'appop':
+        set_op(entry['package'], entry['name'], entry['mode'], serial)
+    else:
+        set_permission(entry['package'], entry['name'], entry['mode'], serial)
+
+
+def report(status: str, entry: dict, detail: str) -> None:
+    """Print one aligned status line."""
+    name = entry['name'].removeprefix('android.permission.')
+    print(f'  {status:<9} {entry["package"]:<24} {name:<22} {detail}')
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description='Reapply the Sophy tablets\' device-side hardening — appops and '
+                    'runtime permissions Headwind cannot express — over ADB.',
+        epilog='The tablet must be in Admin mode with USB debugging enabled.',
+    )
+    parser.add_argument('--serial', help='ADB serial, when more than one device is attached')
+    parser.add_argument('--check', action='store_true',
+                        help='Report drift and exit non-zero if any; change nothing')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Show what would be changed without changing it')
+    args = parser.parse_args()
+
+    try:
+        serial = require_device(args.serial)
+    except AdbError as exc:
+        print(f'Error: {exc}', file=sys.stderr)
+        sys.exit(2)
+
+    read_only = args.check or args.dry_run
+    print(f'{"Checking" if read_only else "Hardening"} {serial}')
+
+    drift = 0
+    missing = 0
+    failed = 0
+
+    for entry in HARDENING:
+        wanted = entry['mode']
+
+        try:
+            current = read_state(entry, serial)
+        except AdbError as exc:
+            report('ERROR', entry, str(exc))
+            failed += 1
+            continue
+
+        if current is None:
+            report('SKIP', entry, 'package not installed, or does not declare it')
+            missing += 1
+            continue
+
+        if current == wanted:
+            report('ok', entry, current)
+            continue
+
+        drift += 1
+        if read_only:
+            report('DRIFT', entry, f'{current} -> want {wanted}  ({entry["reason"]})')
+            continue
+
+        try:
+            write_state(entry, serial)
+        except AdbError as exc:
+            report('ERROR', entry, str(exc))
+            failed += 1
+            continue
+
+        # pm and appops both accept silently; re-read so SET means it stuck.
+        confirmed = read_state(entry, serial)
+        if confirmed != wanted:
+            report('ERROR', entry, f'set to {wanted} but still reads {confirmed}')
+            failed += 1
+            continue
+        report('SET', entry, f'{current} -> {wanted}  ({entry["reason"]})')
+
+    summary = f'{len(HARDENING)} entries: {drift} drifted, {missing} skipped, {failed} failed'
+    print(f'\n{summary}')
+
+    if failed:
+        sys.exit(1)
+    if args.check and drift:
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
