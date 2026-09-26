@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""Extract a transcript from a video URL via yt-dlp + local Whisper.
+"""Extract a transcript from a video URL or local file via yt-dlp + Whisper.
 
 Saves the transcript as a sibling raw-source markdown file in the Mnemosyne
 wiki, following the sibling raw-sources pattern. Callable manually by James
 on the CLI, by triage-inbox (with --automation), and by any agent.
+
+With --file, yt-dlp is skipped entirely and the local media feeds straight
+into the ffmpeg -> Whisper path. That covers media the Telegram Bot API
+refuses to hand over: its getFile download cap is 20 MB, so an oversized
+video has to be saved out of a Telegram client and ingested from disk.
 
 Manual default: no duration cap, human-readable progress on stderr.
 With --automation: 60-min cap (configurable), JSON stdout, fail-soft on
@@ -20,6 +25,7 @@ yt-dlp invocation per the wiki memory:
 
 Usage:
     extract-video-transcript [options] <url>
+    extract-video-transcript --file <path> [--title TITLE] [options]
 """
 
 from __future__ import annotations
@@ -59,6 +65,30 @@ VALID_SOURCES = {
     "telegram", "email", "web_clipper", "n8n_chat",
     "claude_code", "manual", "hermes_agent", "google_keep",
 }
+
+
+# ── Local file probe ─────────────────────────────────────────────────────────
+
+def ffprobe_duration(path: Path, *, verbose: bool) -> int | None:
+    """Return the media duration in whole seconds, or None if unreadable."""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        str(path),
+    ]
+    if verbose:
+        print(f"[probe] {' '.join(cmd)}", file=sys.stderr)
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        return int(float(proc.stdout.strip()))
+    except ValueError:
+        return None
 
 
 # ── yt-dlp probe + download ──────────────────────────────────────────────────
@@ -260,9 +290,29 @@ def emit_human_summary(payload: dict) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Extract a transcript from a video URL via yt-dlp + Whisper.",
+        description="Extract a transcript from a video URL or local file "
+                    "via yt-dlp + Whisper.",
     )
-    parser.add_argument("url", help="Video URL to transcribe.")
+    parser.add_argument(
+        "url", nargs="?", default=None,
+        help="Video URL to transcribe. Omit when using --file.",
+    )
+    parser.add_argument(
+        "--file", default=None, dest="local_file",
+        help="Local video/audio file to transcribe instead of a URL.",
+    )
+    parser.add_argument(
+        "--title", default=None,
+        help="Title for --file input (default: the filename stem).",
+    )
+    parser.add_argument(
+        "--source-url", default=None,
+        help="Provenance recorded for --file input (default: local:<filename>).",
+    )
+    parser.add_argument(
+        "--creator", default=None,
+        help="Creator/uploader for --file input.",
+    )
     parser.add_argument(
         "--automation", action="store_true",
         help="Triage-driven mode: enforce duration cap, JSON-only stdout, fail-soft.",
@@ -303,6 +353,20 @@ def main() -> int:
         print(f"error: --source must be one of {sorted(VALID_SOURCES)}", file=sys.stderr)
         return EXIT_USAGE
 
+    if args.url and args.local_file:
+        print("error: pass a URL or --file, not both", file=sys.stderr)
+        return EXIT_USAGE
+    if not args.url and not args.local_file:
+        print("error: pass a video URL or --file <path>", file=sys.stderr)
+        return EXIT_USAGE
+
+    local_path: Path | None = None
+    if args.local_file:
+        local_path = Path(args.local_file).expanduser().resolve()
+        if not local_path.is_file():
+            print(f"error: file not found: {local_path}", file=sys.stderr)
+            return EXIT_UNREADABLE
+
     if args.wiki_root:
         os.environ["MNEME_WIKI_PATH"] = args.wiki_root
     try:
@@ -311,24 +375,42 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_USAGE
 
-    # Probe metadata.
-    if verbose:
-        print(f"Probing {args.url} ...", file=sys.stderr)
-    meta = yt_dlp_probe(args.url, verbose=verbose)
-    if meta is None:
-        result = {"status": "unresolvable", "source_url": args.url}
-        if json_out:
-            emit_json(result)
-        else:
-            emit_human_summary(result)
-        return EXIT_UNRESOLVABLE
+    # Probe metadata. A local file has none to fetch, so ffprobe supplies the
+    # duration and the caller names the rest.
+    if local_path is not None:
+        if verbose:
+            print(f"Probing {local_path} ...", file=sys.stderr)
+        duration_s = ffprobe_duration(local_path, verbose=verbose)
+        if duration_s is None:
+            result = {"status": "unresolvable", "source_url": str(local_path),
+                      "reason": "ffprobe could not read the file"}
+            if json_out:
+                emit_json(result)
+            else:
+                emit_human_summary(result)
+            return EXIT_UNRESOLVABLE
+        title = args.title or local_path.stem
+        creator = args.creator
+        platform = "local"
+        canonical_url = args.source_url or f"local:{local_path.name}"
+    else:
+        if verbose:
+            print(f"Probing {args.url} ...", file=sys.stderr)
+        meta = yt_dlp_probe(args.url, verbose=verbose)
+        if meta is None:
+            result = {"status": "unresolvable", "source_url": args.url}
+            if json_out:
+                emit_json(result)
+            else:
+                emit_human_summary(result)
+            return EXIT_UNRESOLVABLE
 
-    title = meta.get("title") or "Untitled"
-    creator = meta.get("uploader") or meta.get("channel")
-    duration_s = int(meta.get("duration") or 0)
-    platform = meta.get("extractor_key") or meta.get("extractor") or "generic"
-    platform = platform.lower()
-    canonical_url = meta.get("webpage_url") or args.url
+        title = meta.get("title") or "Untitled"
+        creator = meta.get("uploader") or meta.get("channel")
+        duration_s = int(meta.get("duration") or 0)
+        platform = meta.get("extractor_key") or meta.get("extractor") or "generic"
+        platform = platform.lower()
+        canonical_url = meta.get("webpage_url") or args.url
 
     # Cap check.
     if args.automation and duration_s > args.duration_cap * 60:
@@ -361,7 +443,8 @@ def main() -> int:
     # Download audio.
     with tempfile.TemporaryDirectory(prefix="extract-video-") as tmp:
         tmp_path = Path(tmp)
-        audio = yt_dlp_download_audio(canonical_url, tmp_path, verbose=verbose)
+        audio = (local_path if local_path is not None
+                 else yt_dlp_download_audio(canonical_url, tmp_path, verbose=verbose))
         if audio is None:
             result = {
                 "status": "no-audio",
@@ -381,7 +464,8 @@ def main() -> int:
         if clean_audio is None:
             result = {
                 "status": "no-audio",
-                "reason": "downloaded stream has no audio track (video-only format)",
+                "reason": ("file has no audio track" if local_path is not None
+                       else "downloaded stream has no audio track (video-only format)"),
                 "source_url": canonical_url,
                 "title": title,
                 "platform": platform,
