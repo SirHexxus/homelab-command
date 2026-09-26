@@ -15,3 +15,18 @@ service_name: inbox-receiver
 app_port: 8080
 ssh_dir: /opt/inbox-receiver/.ssh
 wiki_repo: git@github.com:SirHexxus/mnemosyne-wiki.git
+
+# MinIO client. triage-inbox shells out to `mc` to materialize Telegram/email
+# attachments (file_ref payloads) out of MinIO before running the extractors.
+# It was never installed here, so every attachment captured on this host went
+# unextracted from 2026-08-31 until 2026-09-23. Pinned to the release the
+# working laptop client runs, with its checksum. MinIO archived the OSS
+# projects and dl.min.io now 410s for every mc path, so this pulls from the
+# GitHub release instead -- that tag is the last OSS release there will be.
+mc_version: RELEASE.2025-08-13T08-35-41Z
+mc_download_url: "https://github.com/minio/mc/releases/download/{{ mc_version }}/mc.linux-amd64.{{ mc_version }}"
+mc_sha256: 01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891
+mc_bin: /usr/local/bin/mc
+mc_config_dir: "{{ app_home }}/.mc"
+minio_url: http://10.0.50.16:9000
+minio_alias: homelab

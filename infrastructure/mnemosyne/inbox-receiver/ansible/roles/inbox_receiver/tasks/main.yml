@@ -164,6 +164,46 @@
     - "{{ app_home }}/.cache"
     - "{{ app_home }}/.cache/mnemosyne"
 
+# The alias lives in the app user's home, so `mc` resolves it under the same
+# HOME the worker units set. Read-only use: triage only ever stats and copies.
+- name: Install the MinIO client
+  get_url:
+    url: "{{ mc_download_url }}"
+    dest: "{{ mc_bin }}"
+    checksum: "sha256:{{ mc_sha256 }}"
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create the mc config directory
+  file:
+    path: "{{ mc_config_dir }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0700'
+
+- name: Configure the MinIO alias
+  copy:
+    content: |
+      {
+        "version": "10",
+        "aliases": {
+          "{{ minio_alias }}": {
+            "url": "{{ minio_url }}",
+            "accessKey": "{{ vault_mnemosyne_minio_access_key }}",
+            "secretKey": "{{ vault_mnemosyne_minio_secret_key }}",
+            "api": "s3v4",
+            "path": "auto"
+          }
+        }
+      }
+    dest: "{{ mc_config_dir }}/config.json"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0600'
+  no_log: true
+
 - name: Deploy inbox_receiver.py
   copy:
     src: ../../../../inbox_receiver.py

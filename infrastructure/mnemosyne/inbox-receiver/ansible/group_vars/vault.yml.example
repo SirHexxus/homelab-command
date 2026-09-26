@@ -42,3 +42,10 @@ vault_mnemosyne_calendar_aliases_json: "base64-encoded-calendar-aliases-json"
 # delivery fallback on hosts without telegram-send.
 vault_mnemosyne_telegram_bot_token: "bot-token-here"
 vault_mnemosyne_telegram_chat_id: "chat-id-here"
+
+# MinIO alias for the mc client on the worker host. triage-inbox uses it to
+# materialize file_ref attachments before running the extractors. Read-only
+# use — a scoped read key for the mnemosyne bucket is preferable to the root
+# credentials.
+vault_mnemosyne_minio_access_key: "minio-access-key-here"
+vault_mnemosyne_minio_secret_key: "minio-secret-key-here"
