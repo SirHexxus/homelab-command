@@ -1,0 +1,434 @@
+#!/usr/bin/env python3
+"""Generate the wiki inventory page for an Android phone from live ADB state.
+
+Reads the phone read-only over ADB (getprop, settings, dumpsys, appops) and
+writes a REFERENCE system map: hardware and build, integrity, privacy
+settings, special access grants, and every user-installed app with its
+installer, install date, and granted sensitive permissions. The phone is
+never written to.
+
+Volatile state (battery level, storage used, app versions, standby buckets,
+IP address) is deliberately left out so that --check only fails on real
+drift: a new app, a changed permission or setting, a new security patch.
+
+Packages named in the private list (one per line, outside any repo) are
+left out of every table and shown only as a count.
+
+The curated companion page (purpose, homelab boundaries, secrets, known
+issues) is hand-written and links here; this page is never edited by hand.
+
+Usage:
+    build-phone-map                  # write the wiki page
+    build-phone-map --dry-run        # print the page, write nothing
+    build-phone-map --check          # exit 1 if the page has drifted
+    build-phone-map --serial SERIAL  # pick a device (or $PHONE_ADB_SERIAL)
+"""
+
+import argparse
+import datetime
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+PAGE_RELPATH = Path("reference") / "Galaxy S24 FE Device Inventory.md"
+CURATED_PAGE = "Galaxy S24 FE"
+FRESH_DAYS = 30
+ADB_TIMEOUT_SECONDS = 120
+PRIVATE_PACKAGES_FILE = Path.home() / ".config" / "mnemosyne" / "phone-private-packages"
+
+BANNER = (
+    "<!-- GENERATED FILE — DO NOT EDIT.\n"
+    "     Source of truth: the phone, read over ADB.\n"
+    "     Regenerate with: build-phone-map  (homelab-command/infrastructure/"
+    "mnemosyne/scripts). -->\n"
+)
+
+# Runtime permissions worth surfacing, mapped to short labels.
+SENSITIVE_PERMISSIONS = {
+    "ACCESS_FINE_LOCATION": "location",
+    "ACCESS_COARSE_LOCATION": "approx-location",
+    "ACCESS_BACKGROUND_LOCATION": "**background-location**",
+    "RECORD_AUDIO": "mic",
+    "CAMERA": "camera",
+    "READ_CONTACTS": "contacts",
+    "READ_CALL_LOG": "**call-log**",
+    "READ_SMS": "**read-sms**",
+    "SEND_SMS": "**send-sms**",
+    "RECEIVE_SMS": "**receive-sms**",
+    "READ_PHONE_STATE": "phone-state",
+    "BODY_SENSORS": "body-sensors",
+    "ACTIVITY_RECOGNITION": "activity",
+    "READ_MEDIA_IMAGES": "photos",
+    "READ_MEDIA_VIDEO": "videos",
+    "NEARBY_WIFI_DEVICES": "nearby-wifi",
+    "BLUETOOTH_SCAN": "bt-scan",
+}
+
+# Special-access app ops checked per user-installed app.
+SPECIAL_OPS = {
+    "SYSTEM_ALERT_WINDOW": "Draw over other apps",
+    "MANAGE_EXTERNAL_STORAGE": "All-files access",
+    "GET_USAGE_STATS": "Usage access",
+    "REQUEST_INSTALL_PACKAGES": "Install unknown apps",
+}
+
+# (namespace, key, label) — values shown verbatim.
+SETTINGS = [
+    ("global", "development_settings_enabled", "Developer options"),
+    ("global", "adb_enabled", "USB debugging"),
+    ("global", "adb_wifi_enabled", "Wireless debugging"),
+    ("global", "private_dns_mode", "Private DNS mode"),
+    ("secure", "always_on_vpn_app", "Always-on VPN app"),
+    ("global", "wifi_scan_always_enabled", "Wi-Fi scanning (location)"),
+    ("global", "ble_scan_always_enabled", "Bluetooth scanning (location)"),
+    ("secure", "location_mode", "Location mode (3 = on)"),
+    ("secure", "lock_screen_show_notifications", "Notifications on lock screen"),
+    ("secure", "lock_screen_allow_private_notifications", "Private notif. content"),
+    ("system", "screen_off_timeout", "Screen timeout (ms)"),
+    ("global", "protect_battery", "Battery protection (80% cap)"),
+    ("system", "samsung_errorlog_agree", "Samsung error reporting"),
+    ("global", "package_verifier_user_consent", "Play Protect app scanning"),
+]
+
+
+class AdbError(Exception):
+    """Raised when an adb command fails or no device is reachable."""
+
+
+def run_adb(serial: str | None, *args: str) -> str:
+    """Run an adb command and return stdout, raising AdbError on failure."""
+    cmd = ["adb"] + (["-s", serial] if serial else []) + list(args)
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=ADB_TIMEOUT_SECONDS, check=False
+        )
+    except FileNotFoundError as exc:
+        raise AdbError("adb not found on PATH") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise AdbError(f"adb timed out: {' '.join(args)[:60]}…") from exc
+    if result.returncode != 0:
+        raise AdbError(f"adb {' '.join(args)[:60]}… failed: {result.stderr.strip()}")
+    return result.stdout
+
+
+def shell(serial: str | None, command: str) -> str:
+    """Run a read-only shell command on the phone."""
+    return run_adb(serial, "shell", command)
+
+
+def parse_props(text: str) -> dict[str, str]:
+    """Parse `getprop` output into a dict."""
+    return dict(re.findall(r"^\[([^\]]+)\]: \[([^\]]*)\]", text, re.MULTILINE))
+
+
+def parse_packages(dump: str, wanted: set[str]) -> dict[str, dict]:
+    """Extract installer, install date, and sensitive runtime grants per app.
+
+    Args:
+        dump: Output of `dumpsys package packages`.
+        wanted: Package names to keep (the user-installed set).
+
+    Returns:
+        Mapping of package name to {installer, installed, perms}.
+    """
+    # Stop before the duplicate blocks listed under "Hidden system packages".
+    dump = dump.split("\nHidden system packages:")[0]
+    apps: dict[str, dict] = {}
+    for block in re.split(r"\n  (?=Package \[)", dump):
+        match = re.match(r"Package \[([^\]]+)\]", block)
+        if not match or match.group(1) not in wanted:
+            continue
+        installer = re.search(r"installerPackageName=(\S+)", block)
+        installed = re.search(r"firstInstallTime=(\d{4}-\d{2}-\d{2})", block)
+        runtime = block.split("runtime permissions:", 1)
+        granted = re.findall(
+            r"android\.permission\.([A-Z_]+): granted=true", runtime[1] if len(runtime) > 1 else ""
+        )
+        perms = sorted({SENSITIVE_PERMISSIONS[p] for p in granted if p in SENSITIVE_PERMISSIONS})
+        apps[match.group(1)] = {
+            "installer": installer.group(1) if installer else "null",
+            "installed": installed.group(1) if installed else "?",
+            "perms": perms,
+        }
+    return apps
+
+
+def collect_special_access(serial: str | None, packages: list[str]) -> dict[str, list[str]]:
+    """Return op label -> apps allowed it, in one on-device loop.
+
+    User-installed apps are checked per package (some ops are uid-mode and
+    invisible to `appops query-op`); install-unknown-apps is also queried
+    across every package, because a system app (a file manager, a browser)
+    holding it is how sideloads happen.
+    """
+    ops = " ".join(SPECIAL_OPS)
+    pkgs = " ".join(packages)
+    script = (
+        f"for p in {pkgs}; do for op in {ops}; do "
+        f'appops get $p $op 2>/dev/null | grep -q ": allow" && echo "$op $p"; '
+        "done; done; true"
+    )
+    found: dict[str, set[str]] = {label: set() for label in SPECIAL_OPS.values()}
+    for line in shell(serial, script).splitlines():
+        op, _, pkg = line.partition(" ")
+        if op in SPECIAL_OPS:
+            found[SPECIAL_OPS[op]].add(pkg)
+    for pkg in shell(serial, "appops query-op --user 0 REQUEST_INSTALL_PACKAGES allow").split():
+        found[SPECIAL_OPS["REQUEST_INSTALL_PACKAGES"]].add(pkg)
+    return {label: sorted(apps) for label, apps in found.items()}
+
+
+def load_private_packages(path: Path) -> set[str]:
+    """Read package names to keep off the page; '#' starts a comment."""
+    if not path.exists():
+        return set()
+    names = (line.split("#")[0].strip() for line in path.read_text(encoding="utf-8").splitlines())
+    return {name for name in names if name}
+
+
+def collect(serial: str | None, private: set[str]) -> dict:
+    """Read everything the page needs from the phone."""
+    props = parse_props(shell(serial, "getprop"))
+    installed = {
+        line.removeprefix("package:") for line in shell(serial, "pm list packages -3").split()
+    }
+    third_party = sorted(installed - private)
+    system_count = len(shell(serial, "pm list packages -s").split())
+    disabled_count = len(shell(serial, "pm list packages -d").split())
+    meminfo = shell(serial, "cat /proc/meminfo")
+    mem_kb = int(re.search(r"MemTotal:\s+(\d+)", meminfo).group(1))
+    df_line = shell(serial, "df -h /data").splitlines()[-1].split()
+    display = shell(serial, "wm size").split(":")[-1].strip()
+    density = shell(serial, "wm density").split(":")[-1].strip()
+    battery = shell(serial, "dumpsys battery")
+    bsoh = re.search(r"mSavedBatteryBsoh: (\d+)", battery)
+    first_use = re.search(r"FirstUseDate: \[(\d{8})\]", battery)
+    lock = re.search(r"CredentialType: (\S+)", shell(serial, "dumpsys lock_settings"))
+    settings = [
+        (label, shell(serial, f"settings get {ns} {key}").strip())
+        for ns, key, label in SETTINGS
+    ]
+    dns_host = shell(serial, "settings get global private_dns_specifier").strip()
+    settings.append(("Private DNS hostname", "set" if dns_host not in ("", "null") else "not set"))
+    policy = shell(serial, "dumpsys device_policy")
+    admins = sorted(set(re.findall(r"^\s{4}(\S+/\S+):$", policy, re.MULTILINE)))
+    return {
+        "props": props,
+        "third_party": third_party,
+        "private_count": len(installed & private),
+        "system_count": system_count,
+        "disabled_count": disabled_count,
+        "mem_gb": mem_kb / 1024 / 1024,
+        "data_size": df_line[1] if len(df_line) > 1 else "?",
+        "display": f"{display} @ {density} dpi",
+        "bsoh": bsoh.group(1) if bsoh else "?",
+        "first_use": first_use.group(1) if first_use else "?",
+        "lock": lock.group(1) if lock else "?",
+        "settings": settings,
+        "accessibility": shell(
+            serial, "settings get secure enabled_accessibility_services"
+        ).strip(),
+        "listeners": shell(serial, "settings get secure enabled_notification_listeners").strip(),
+        "admins": admins,
+        "ime": shell(serial, "settings get secure default_input_method").strip(),
+        "apps": parse_packages(shell(serial, "dumpsys package packages"), set(third_party)),
+        "special": {
+            label: [app for app in apps if app not in private]
+            for label, apps in collect_special_access(serial, third_party).items()
+        },
+    }
+
+
+def _oneui(code: str) -> str:
+    """Turn ro.build.version.oneui (e.g. 80500) into '8.5'."""
+    if not code.isdigit() or len(code) < 5:
+        return code or "?"
+    return f"{int(code[:-4])}.{int(code[-4:-2])}"
+
+
+def _iso(yyyymmdd: str) -> str:
+    """Turn 20241201 into 2024-12-01; pass anything else through."""
+    if len(yyyymmdd) != 8 or not yyyymmdd.isdigit():
+        return yyyymmdd
+    return f"{yyyymmdd[:4]}-{yyyymmdd[4:6]}-{yyyymmdd[6:]}"
+
+
+def _component_list(value: str) -> str:
+    """Render a colon-separated component list as package names."""
+    if value in ("", "null"):
+        return "none"
+    return ", ".join(sorted({c.split("/")[0] for c in value.split(":") if c}))
+
+
+def render(data: dict, created: str, today: str) -> str:
+    """Render the full wiki page text."""
+    props = data["props"]
+    get = props.get
+    lines = [
+        "---",
+        "bucket: REFERENCE",
+        f"created: {created}",
+        f"updated: {today}",
+        "source: claude_code",
+        "tags: [android, hardware, security, homelab]",
+        "source_url: null",
+        'source_of_truth: "the phone over ADB (getprop, settings, dumpsys, appops)"',
+        f"verified: {today}",
+        f"fresh_days: {FRESH_DAYS}",
+        "generated_by: build-phone-map",
+        "---",
+        "",
+        BANNER,
+        f"# {PAGE_RELPATH.stem}",
+        "",
+        (
+            "Generated inventory of James's phone. Operating context, homelab boundaries, "
+            f"secrets, and known issues live on the curated map [[{CURATED_PAGE}]]. "
+            "Volatile state (battery level, storage used, app versions, IP) is left out on "
+            "purpose — read it live over ADB."
+        ),
+        "",
+        "## Hardware and build",
+        "",
+        "| Field | Value |",
+        "|-------|-------|",
+        f"| Model | {get('ro.product.brand', '?')} {get('ro.product.model', '?')} "
+        f"(device `{get('ro.product.device', '?')}`, product `{get('ro.product.name', '?')}`) |",
+        f"| SoC / ABI | {get('ro.soc.manufacturer', '?')} {get('ro.soc.model', '?')} "
+        f"/ {get('ro.product.cpu.abi', '?')} |",
+        f"| RAM | {data['mem_gb']:.1f} GiB usable |",
+        f"| Storage (`/data`) | {data['data_size']} |",
+        f"| Display | {data['display']} |",
+        f"| Android / One UI | {get('ro.build.version.release', '?')} "
+        f"(SDK {get('ro.build.version.sdk', '?')}) / {_oneui(get('ro.build.version.oneui', ''))} |",
+        f"| Build | `{get('ro.build.display.id', '?')}` |",
+        f"| Security patch | {get('ro.build.version.security_patch', '?')} |",
+        f"| Carrier CSC | {get('ro.csc.sales_code', '?')} "
+        f"(firmware {get('ro.boot.carrierid', '?')}) |",
+        f"| Battery | health {data['bsoh']}%, first used {_iso(data['first_use'])} |",
+        "",
+        "## Integrity",
+        "",
+        "| Check | Value |",
+        "|-------|-------|",
+        f"| Build type / keys | {get('ro.build.type', '?')} / {get('ro.build.tags', '?')} |",
+        f"| Bootloader locked | {get('ro.boot.flash.locked', '?')} |",
+        f"| Verified boot | {get('ro.boot.verifiedbootstate', '?')} |",
+        f"| Knox warranty bit | {get('ro.boot.warranty_bit', '?')} |",
+        f"| Encryption | {get('ro.crypto.state', '?')} ({get('ro.crypto.type', '?')}-based) |",
+        f"| Screen lock | {data['lock']} |",
+        "",
+        "## Settings",
+        "",
+        "| Setting | Value |",
+        "|---------|-------|",
+    ]
+    lines += [f"| {label} | {value} |" for label, value in data["settings"]]
+    lines += [
+        "",
+        "## Special access",
+        "",
+        "| Grant | Apps |",
+        "|-------|------|",
+        f"| Accessibility services | {_component_list(data['accessibility'])} |",
+        f"| Notification listeners | {_component_list(data['listeners'])} |",
+        f"| Device admins | {', '.join(a.split('/')[0] for a in data['admins']) or 'none'} |",
+        f"| Default keyboard | {data['ime'].split('/')[0]} |",
+    ]
+    for label, apps in data["special"].items():
+        lines.append(f"| {label} | {', '.join(apps) or 'none'} |")
+    lines += [
+        "",
+        "## Installed apps",
+        "",
+        (
+            f"{len(data['third_party']) + data['private_count']} user-installed "
+            f"({data['private_count']} private, not listed), {data['system_count']} system, "
+            f"{data['disabled_count']} disabled. Installer `com.android.vending` is the Play "
+            "Store, `easyMover` is Smart Switch (carried over from the old phone), and "
+            "`packageinstaller` means sideloaded from a file. \"preloaded\" marks apps that "
+            "Samsung ships with a placeholder install date. Bold permissions are the "
+            "high-risk ones."
+        ),
+        "",
+        "| Package | Installer | Installed | Sensitive permissions granted |",
+        "|---------|-----------|-----------|-------------------------------|",
+    ]
+    first_use = data["first_use"]
+    for pkg in data["third_party"]:
+        app = data["apps"].get(pkg, {"installer": "?", "installed": "?", "perms": []})
+        installed = app["installed"]
+        # Preloads carry fake dates (2008-12-31, 2021-12-31) before first use.
+        if first_use.isdigit() and installed.replace("-", "") < first_use:
+            installed = "preloaded"
+        lines.append(
+            f"| `{pkg}` | {app['installer']} | {installed} | {', '.join(app['perms'])} |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _strip_dates(text: str) -> str:
+    """Drop the lines that change on every run, for --check comparison."""
+    return re.sub(r"^(updated|verified): .*\n", "", text, flags=re.MULTILINE)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--wiki-root",
+        type=Path,
+        default=DEFAULT_WIKI_ROOT,
+        help=f"wiki root (default: {DEFAULT_WIKI_ROOT})",
+    )
+    parser.add_argument(
+        "--serial",
+        default=os.environ.get("PHONE_ADB_SERIAL"),
+        help="adb device serial (default: $PHONE_ADB_SERIAL, else adb's only device)",
+    )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="print the page; write nothing")
+    mode.add_argument(
+        "--check", action="store_true", help="exit 1 if the page differs from the phone"
+    )
+    args = parser.parse_args()
+
+    page_path = args.wiki_root / PAGE_RELPATH
+    current = page_path.read_text(encoding="utf-8") if page_path.exists() else ""
+    today = datetime.date.today().isoformat()
+    created_match = re.search(r"^created: (\S+)", current, re.MULTILINE)
+    created = created_match.group(1) if created_match else today
+
+    try:
+        run_adb(args.serial, "get-state")
+        private = load_private_packages(PRIVATE_PACKAGES_FILE)
+        generated = render(collect(args.serial, private), created, today)
+    except AdbError as exc:
+        print(f"Error: {exc} (is the phone connected with USB debugging on?)", file=sys.stderr)
+        return 2
+
+    if args.dry_run:
+        sys.stdout.write(generated)
+        return 0
+
+    if args.check:
+        if _strip_dates(current) == _strip_dates(generated):
+            print(f"{page_path.name} matches the phone")
+            return 0
+        print(
+            f"{page_path.name} has DRIFTED from the phone — run build-phone-map",
+            file=sys.stderr,
+        )
+        return 1
+
+    page_path.write_text(generated, encoding="utf-8")
+    print(f"Wrote {page_path}: {len(generated)} bytes.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
