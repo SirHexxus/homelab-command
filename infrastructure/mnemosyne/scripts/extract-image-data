@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract OCR data from an image via Gemini multimodal.
+"""Extract OCR data from an image via Gemini multimodal on Vertex AI.
 
 Saves the result as a sibling raw-source markdown file in the Mnemosyne wiki.
 With --work-schedule, parses to a structured ScheduleOverride JSON and
@@ -10,8 +10,9 @@ Callable manually by James on the CLI, by triage-inbox (with --automation),
 and by any agent. Triage NEVER passes --apply — calendar writes require
 explicit human / agent authorization.
 
-Reuses the daily-digest Gemini integration pattern (google-genai client,
-creds from $GEMINI_CREDENTIALS or ~/.config/mnemosyne/gemini-creds.json).
+Calls Gemini on Vertex AI through lib/llm_client, which loads the
+service-account config from $VERTEX_CREDENTIALS or
+~/.config/mnemosyne/vertex-creds.json.
 """
 
 from __future__ import annotations
@@ -43,7 +44,6 @@ EXIT_CALENDAR_FAIL = 6
 EXIT_DECLINED = 7
 
 GEMINI_MODEL = "gemini-2.5-flash"
-DEFAULT_GEMINI_CREDS_PATH = Path.home() / ".config" / "mnemosyne" / "gemini-creds.json"
 DEFAULT_CALENDAR_ALIASES = Path.home() / ".config" / "mnemosyne" / "calendar-aliases.json"
 DEFAULT_GCAL_CREDS_PATH = Path.home() / ".config" / "mnemosyne" / "gcal-creds.json"
 SCRIPT_VERSION = "extract-image-data@1.1"
@@ -58,11 +58,6 @@ PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 
 
 # ── Credentials ──────────────────────────────────────────────────────────────
-
-# NOTE: load_gemini_creds was used with the direct Gemini API. The script now
-# routes through Vertex AI via lib/llm_client.py, which reads vertex-creds.json.
-# This function is retained but unused as of 2026-06-03; safe to delete once
-# daily-digest also migrates.
 
 
 def load_calendar_aliases() -> dict[str, str]:
