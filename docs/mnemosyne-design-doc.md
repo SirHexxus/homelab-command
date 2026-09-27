@@ -127,24 +127,14 @@ the schema location without tracking personal data.
 
 ### 4.3 MinIO: Object Storage
 
-Binary and raw content (voice memos, file attachments).
+Original files behind wiki pages (PDFs, images, video, audio), in the `mnemosyne` bucket
+(created 2026-04-16). Wiki pages reference objects through the `file_ref` frontmatter field,
+whose format SCHEMA.md governs.
 
-**Bucket:** `mnemosyne` (created 2026-04-16)
-
-**Path structure within bucket:**
-```
-/{source_type}/{year}/{month}/{uuid}.{ext}
-```
-Examples: `/voice/2026/02/abc123.ogg`, `/web/2026/02/def456.pdf`, `/claude_code/2026/04/abc123.pdf`
-
-**Source types:**
-- `voice` — Telegram voice memos (OGG)
-- `telegram` — Telegram file attachments
-- `email` — Email attachments
-- `claude_code` — Files processed via Claude Code `/mneme` skill
-- `web` — Web clipper attachments
-
-Referenced from wiki pages via `file_ref` frontmatter field (e.g. `file_ref: mnemosyne/claude_code/2026/04/uuid.pdf`). Accessed via presigned URLs.
+The live layout — prefixes, which writer owns each, key patterns, and where the credentials
+are stored — is kept in one place, the wiki system map [[Mnemosyne MinIO Bucket]]
+(`~/mneme/wiki/reference/Mnemosyne MinIO Bucket.md`). This section used to describe a
+planned five-prefix layout that was never built; see the map rather than restating it here.
 
 ### 4.4 Obsidian: Human UI
 
