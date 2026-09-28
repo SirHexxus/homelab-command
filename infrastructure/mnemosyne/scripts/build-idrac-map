@@ -1,0 +1,356 @@
+#!/usr/bin/env python3
+"""Generate the wiki hardware inventory page for a Dell server from its iDRAC.
+
+Reads the iDRAC's Redfish API read-only (GET requests only) and writes a
+REFERENCE system map: identity, processors, every DIMM slot, storage
+controllers and drives, NICs, power supplies, fans, firmware versions, and
+the BIOS settings that matter for running a hypervisor. The server is never
+written to; a Read Only iDRAC account is enough.
+
+Volatile state (temperatures, fan speeds, power draw, NIC link state, the
+iDRAC clock) is deliberately left out so that --check only fails on real
+drift: a DIMM or drive added, removed, or changing health, a firmware update,
+a BIOS setting change. Event logs are history, not inventory; the curated
+companion page summarizes them.
+
+Credentials come from a netrc file (mode 600, outside any repo) holding one
+line: `machine <address> login <user> password <password>`.
+
+Usage:
+    build-idrac-map r730              # write the wiki page
+    build-idrac-map r730 --dry-run    # print the page, write nothing
+    build-idrac-map r730 --check      # exit 1 if the page has drifted
+"""
+
+import argparse
+import datetime
+import json
+import netrc
+import re
+import ssl
+import sys
+import urllib.error
+import urllib.request
+from base64 import b64encode
+from pathlib import Path
+
+DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+CREDS_DIR = Path.home() / ".config" / "homelab"
+FRESH_DAYS = 30
+HTTP_TIMEOUT_SECONDS = 120
+
+# One entry per Dell host with a Redfish-capable iDRAC (iDRAC8 2.40+ or iDRAC9).
+HOSTS = {
+    "r730": {
+        "address": "10.0.10.40",
+        "netrc": CREDS_DIR / "r730-idrac.netrc",
+        "page": "Dell PowerEdge R730 Hardware Inventory",
+        "curated": "Dell PowerEdge R730",
+        "dimm_slots": 24,
+    },
+}
+
+SYSTEM = "/redfish/v1/Systems/System.Embedded.1"
+CHASSIS = "/redfish/v1/Chassis/System.Embedded.1"
+MANAGER = "/redfish/v1/Managers/iDRAC.Embedded.1"
+
+# (attribute, label) — BIOS settings worth tracking on a hypervisor host.
+BIOS_SETTINGS = [
+    ("BootMode", "Boot mode"),
+    ("SetBootOrderEn", "Boot order"),
+    ("PxeDev1EnDis", "PXE device 1"),
+    ("SecureBoot", "Secure Boot"),
+    ("ProcVirtualization", "CPU virtualization (VT-x)"),
+    ("SriovGlobalEnable", "SR-IOV"),
+    ("ProcX2Apic", "x2APIC"),
+    ("LogicalProc", "Hyper-Threading"),
+    ("SysProfile", "System profile"),
+    ("MemOpMode", "Memory operating mode"),
+    ("NodeInterleave", "Node interleaving"),
+    ("MemTest", "POST memory test"),
+    ("EmbSata", "Embedded SATA"),
+    ("IntegratedRaid", "Integrated RAID"),
+    ("ErrPrompt", "F1/F2 prompt on error"),
+    ("AcPwrRcvry", "AC power recovery"),
+    ("SerialComm", "Serial communication"),
+]
+
+BANNER = (
+    "<!-- GENERATED FILE — DO NOT EDIT.\n"
+    "     Source of truth: the server's iDRAC, read over Redfish.\n"
+    "     Regenerate with: build-idrac-map {key}  (homelab-command/infrastructure/"
+    "mnemosyne/scripts). -->\n"
+)
+
+
+class RedfishError(Exception):
+    """Raised when the iDRAC is unreachable or a request fails."""
+
+
+class Redfish:
+    """Minimal read-only Redfish client for one iDRAC."""
+
+    def __init__(self, address: str, netrc_path: Path) -> None:
+        try:
+            auth = netrc.netrc(str(netrc_path)).authenticators(address)
+        except (FileNotFoundError, netrc.NetrcParseError) as exc:
+            raise RedfishError(f"cannot read credentials from {netrc_path}: {exc}") from exc
+        if not auth:
+            raise RedfishError(f"no 'machine {address}' entry in {netrc_path}")
+        login, _, password = auth
+        self.base = f"https://{address}"
+        self.header = "Basic " + b64encode(f"{login}:{password}".encode()).decode()
+        # iDRACs ship self-signed certificates.
+        self.context = ssl._create_unverified_context()
+
+    def get(self, path: str) -> dict:
+        """GET a Redfish resource and return its JSON body."""
+        request = urllib.request.Request(self.base + path, headers={"Authorization": self.header})
+        try:
+            with urllib.request.urlopen(
+                request, timeout=HTTP_TIMEOUT_SECONDS, context=self.context
+            ) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as exc:
+            raise RedfishError(f"GET {path} returned HTTP {exc.code}") from exc
+        except (urllib.error.URLError, TimeoutError) as exc:
+            raise RedfishError(f"GET {path} failed: {exc}") from exc
+
+    def members(self, path: str) -> list[dict]:
+        """GET a collection with its members expanded one level."""
+        return self.get(path + "?$expand=*($levels=1)").get("Members", [])
+
+
+def health(resource: dict) -> str:
+    """Return a resource's health, marking anything but OK in bold."""
+    value = (resource.get("Status") or {}).get("Health") or "—"
+    return value if value in ("OK", "—") else f"**{value}**"
+
+
+def collect(client: Redfish) -> dict:
+    """Read everything the page needs from the iDRAC."""
+    storage = []
+    for ref in client.get(SYSTEM + "/Storage").get("Members", []):
+        controller = client.get(ref["@odata.id"])
+        volumes = client.get(controller["Volumes"]["@odata.id"]).get("Members", [])
+        drives = [client.get(d["@odata.id"]) for d in controller.get("Drives", [])]
+        storage.append({"controller": controller, "volumes": volumes, "drives": drives})
+    return {
+        "system": client.get(SYSTEM),
+        "manager": client.get(MANAGER),
+        "processors": client.members(SYSTEM + "/Processors"),
+        "memory": client.members(SYSTEM + "/Memory"),
+        "nics": client.members(SYSTEM + "/EthernetInterfaces"),
+        "storage": storage,
+        "power": client.get(CHASSIS + "/Power"),
+        "thermal": client.get(CHASSIS + "/Thermal"),
+        "firmware": client.members("/redfish/v1/UpdateService/FirmwareInventory"),
+        "bios": client.get(SYSTEM + "/Bios").get("Attributes", {}),
+    }
+
+
+def _slot(dimm: dict) -> str:
+    """Return the short slot name (A1, B12) from a Redfish DIMM id."""
+    return dimm["Id"].rsplit("DIMMSLOT", 1)[-1]
+
+
+def _slot_key(dimm: dict) -> tuple[str, int]:
+    slot = _slot(dimm)
+    return (slot[0], int(slot[1:]) if slot[1:].isdigit() else 0)
+
+
+def _gib(mib: int | None) -> str:
+    return f"{mib // 1024} GB" if mib else "—"
+
+
+def render(data: dict, host: dict, key: str, created: str, today: str) -> str:
+    """Render the inventory page."""
+    system, manager = data["system"], data["manager"]
+    memory = sorted(data["memory"], key=_slot_key)
+    total_gib = (system.get("MemorySummary") or {}).get("TotalSystemMemoryGiB")
+    lines = [
+        "---",
+        "bucket: REFERENCE",
+        f"created: {created}",
+        f"updated: {today}",
+        "source: claude_code",
+        "tags: [hardware, homelab, dell, server, rack]",
+        "source_url: null",
+        f'source_of_truth: "iDRAC Redfish API at https://{host["address"]}/redfish/v1"',
+        f"verified: {today}",
+        f"fresh_days: {FRESH_DAYS}",
+        "generated_by: build-idrac-map",
+        "---",
+        "",
+        BANNER.format(key=key),
+        f"# {host['page']}",
+        "",
+        f"Generated hardware inventory. Purpose, network placement, operating rules, secrets, "
+        f"log history, and known issues live on the curated map [[{host['curated']}]]. "
+        "Volatile state (temperatures, fan speeds, power draw, NIC link state) is left out on "
+        "purpose — read it live from the iDRAC.",
+        "",
+        "## Identity",
+        "",
+        "| Field | Value |",
+        "|-------|-------|",
+        f"| Model | {system.get('Model')} |",
+        f"| Service tag | {system.get('SKU')} |",
+        f"| Overall health | {health(system)} |",
+        f"| BIOS | {system.get('BiosVersion')} |",
+        f"| iDRAC | {manager.get('Model')}, firmware {manager.get('FirmwareVersion')} |",
+        f"| Management address | {host['address']} |",
+        "",
+        "## Processors",
+        "",
+        "| Socket | Model | Cores / threads | Health |",
+        "|--------|-------|-----------------|--------|",
+    ]
+    for cpu in sorted(data["processors"], key=lambda c: c["Id"]):
+        lines.append(
+            f"| {cpu['Id']} | {cpu.get('Model')} | "
+            f"{cpu.get('TotalCores')} / {cpu.get('TotalThreads')} | {health(cpu)} |"
+        )
+
+    lines += [
+        "",
+        "## Memory",
+        "",
+        f"{total_gib:.0f} GB in {len(memory)} of {host['dimm_slots']} slots. Empty slots are not "
+        "listed.",
+        "",
+        "| Slot | Size | Type | Speed (MHz) | Ranks | Part number | Health |",
+        "|------|------|------|-------------|-------|-------------|--------|",
+    ]
+    for dimm in memory:
+        lines.append(
+            f"| {_slot(dimm)} | {_gib(dimm.get('CapacityMiB'))} | "
+            f"{dimm.get('MemoryDeviceType')} | {dimm.get('OperatingSpeedMhz')} | "
+            f"{dimm.get('RankCount')} | {dimm.get('Manufacturer')} "
+            f"{dimm.get('PartNumber')} | {health(dimm)} |"
+        )
+
+    lines += ["", "## Storage", ""]
+    for entry in data["storage"]:
+        controller = entry["controller"]
+        info = (controller.get("StorageControllers") or [{}])[0]
+        lines += [
+            f"### {info.get('Name') or controller.get('Id')}",
+            "",
+            f"Firmware {info.get('FirmwareVersion')}; health {health(controller)}; "
+            f"{len(entry['drives'])} drives; {len(entry['volumes'])} virtual disks.",
+            "",
+        ]
+        if not entry["drives"]:
+            continue
+        lines += [
+            "| Bay | Model | Type | Capacity | RPM | Firmware | Serial | Health |",
+            "|-----|-------|------|----------|-----|----------|--------|--------|",
+        ]
+        for drive in sorted(entry["drives"], key=lambda d: d["Id"]):
+            capacity_gb = (drive.get("CapacityBytes") or 0) / 1e9
+            lines.append(
+                f"| {drive['Id'].split(':')[0].replace('Disk.Bay.', '')} | "
+                f"{drive.get('Manufacturer')} {drive.get('Model')} | "
+                f"{drive.get('MediaType')} {drive.get('Protocol')} | {capacity_gb:.0f} GB | "
+                f"{drive.get('RotationSpeedRPM') or '—'} | {drive.get('Revision')} | "
+                f"{drive.get('SerialNumber')} | {health(drive)} |"
+            )
+        lines.append("")
+
+    lines += [
+        "## Network interfaces",
+        "",
+        "| Port | MAC | Health |",
+        "|------|-----|--------|",
+    ]
+    for nic in sorted(data["nics"], key=lambda n: n["Id"]):
+        lines.append(f"| {nic['Id']} | {nic.get('MACAddress')} | {health(nic)} |")
+
+    lines += [
+        "",
+        "## Power and cooling",
+        "",
+        "| Unit | Model | Health |",
+        "|------|-------|--------|",
+    ]
+    for psu in data["power"].get("PowerSupplies", []):
+        model = " ".join((psu.get("Model") or "").split())
+        name = (psu.get("Name") or "").removesuffix(" Status")
+        lines.append(f"| {name} | {model} | {health(psu)} |")
+    fans = data["thermal"].get("Fans", [])
+    fan_health = sorted({(f.get("Status") or {}).get("Health") or "—" for f in fans})
+    lines += ["", f"{len(fans)} fans; health: {', '.join(fan_health)}.", ""]
+
+    lines += ["## Firmware", "", "| Component | Version |", "|-----------|---------|"]
+    installed = [f for f in data["firmware"] if f["Id"].startswith("Installed")]
+    for item in sorted(installed, key=lambda f: f.get("Name", "")):
+        lines.append(f"| {item.get('Name')} | {item.get('Version')} |")
+
+    lines += ["", "## BIOS settings", "", "| Setting | Value |", "|---------|-------|"]
+    bios = data["bios"]
+    for attribute, label in BIOS_SETTINGS:
+        if attribute in bios:
+            lines.append(f"| {label} | `{bios[attribute]}` |")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _strip_dates(text: str) -> str:
+    """Drop the lines that change on every run, for --check comparison."""
+    return re.sub(r"^(updated|verified): .*\n", "", text, flags=re.MULTILINE)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("host", choices=sorted(HOSTS), help="which server to map")
+    parser.add_argument(
+        "--wiki-root",
+        type=Path,
+        default=DEFAULT_WIKI_ROOT,
+        help=f"wiki root (default: {DEFAULT_WIKI_ROOT})",
+    )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="print the page; write nothing")
+    mode.add_argument(
+        "--check", action="store_true", help="exit 1 if the page differs from the iDRAC"
+    )
+    args = parser.parse_args()
+
+    host = HOSTS[args.host]
+    page_path = args.wiki_root / "reference" / f"{host['page']}.md"
+    current = page_path.read_text(encoding="utf-8") if page_path.exists() else ""
+    today = datetime.date.today().isoformat()
+    created_match = re.search(r"^created: (\S+)", current, re.MULTILINE)
+    created = created_match.group(1) if created_match else today
+
+    try:
+        data = collect(Redfish(host["address"], host["netrc"]))
+    except RedfishError as exc:
+        print(f"Error: {exc} (is the iDRAC reachable?)", file=sys.stderr)
+        return 2
+    generated = render(data, host, args.host, created, today)
+
+    if args.dry_run:
+        sys.stdout.write(generated)
+        return 0
+
+    if args.check:
+        if _strip_dates(current) == _strip_dates(generated):
+            print(f"{page_path.name} matches the iDRAC")
+            return 0
+        print(
+            f"{page_path.name} has DRIFTED from the iDRAC — run build-idrac-map {args.host}",
+            file=sys.stderr,
+        )
+        return 1
+
+    page_path.write_text(generated, encoding="utf-8")
+    print(f"Wrote {page_path}: {len(generated)} bytes.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
