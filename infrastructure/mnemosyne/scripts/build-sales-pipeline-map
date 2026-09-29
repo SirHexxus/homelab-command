@@ -1,0 +1,441 @@
+#!/usr/bin/env python3
+"""Generate the wiki inventory page for the Hexxus sales pipeline from live state.
+
+Reads three sources, all read-only, and writes a REFERENCE system map:
+
+- the n8n public API: the `pipeline` data table's columns, every workflow that
+  touches that table or is a Stripe sale alert (active flag, trigger, error
+  workflow, Claude tag, whether the homelab-command export matches), and the
+  tools the Pipeline Ops MCP server exposes;
+- the hermes host (LXC 110) over ssh: the client reply-monitor timers, leftover
+  legacy units, and per-client monitor state;
+- the workstation: the per-client configs and the tools in the control room.
+
+Volatile values (row counts by stage, notified-message counts, timer next-run
+times) are deliberately left out so --check only fails on real drift: a new or
+deactivated workflow, a changed column, a stale export, a new client or timer.
+Prospect data never appears on the page; read rows live.
+
+The curated companion page (purpose, operating rules, the monitor setup
+procedure, secrets, known issues) is hand-written and links here; this page is
+never edited by hand.
+
+Usage:
+    build-sales-pipeline-map              # write the wiki page
+    build-sales-pipeline-map --dry-run    # print the page, write nothing
+    build-sales-pipeline-map --check      # exit 1 if the page has drifted
+"""
+
+import argparse
+import datetime
+import json
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+PAGE_RELPATH = Path("reference") / "Sales Pipeline Inventory.md"
+CURATED_PAGE = "Sales Pipeline"
+FRESH_DAYS = 14
+
+N8N_BASE = "https://automation.hexxusweb.com/api/v1"
+N8N_ENV = Path.home() / ".config" / "hexxus" / "n8n.env"
+DATA_TABLE_ID = "hDWNYxoRip0JcCJb"
+MCP_WORKFLOW_ID = "VVgPSjTtSvvmfy0q"
+ERROR_WORKFLOW_ID = "vXSYJNLnQlyeQ79i"
+EXTRA_WORKFLOW_PATTERN = re.compile(r"stripe sale", re.IGNORECASE)
+
+EXPORT_DIR = (
+    Path.home() / "projects" / "homelab-command" / "infrastructure" / "platform" / "n8n"
+    / "workflows"
+)
+CONTROL_ROOM = Path.home() / "projects" / "sales-pipeline"
+CLIENT_DIR = Path.home() / ".config" / "hexxus" / "clients"
+# Client config keys safe to publish. Addresses and recipients stay off the page.
+CLIENT_KEYS = ("CLIENT_NAME", "MAILBOXES", "SEND_MAILBOX", "WATCH_FOLDERS")
+
+MONITOR_HOST = "root@10.0.50.17"
+SSH_TIMEOUT_SECONDS = 30
+HTTP_TIMEOUT_SECONDS = 30
+
+BANNER = (
+    "<!-- GENERATED FILE — DO NOT EDIT.\n"
+    "     Source of truth: the n8n API, the hermes host (ssh), and the workstation.\n"
+    "     Regenerate with: build-sales-pipeline-map  (homelab-command/infrastructure/"
+    "mnemosyne/scripts). -->\n"
+)
+
+# Runs on the hermes host. Prints one JSON document; reads only.
+REMOTE_PROBE = r"""
+import json, pathlib, subprocess
+def sh(*a):
+    return subprocess.run(a, capture_output=True, text=True).stdout.strip()
+units = {}
+for path in sorted(pathlib.Path('/etc/systemd/system').glob('*monitor*.timer')):
+    name = path.name
+    cal = [l.split('=', 1)[1] for l in path.read_text().splitlines()
+           if l.startswith('OnCalendar=')]
+    units[name] = {'enabled': sh('systemctl', 'is-enabled', name),
+                   'active': sh('systemctl', 'is-active', name),
+                   'calendar': ', '.join(cal)}
+state = {}
+for path in sorted(pathlib.Path('/root/.local/state/hexxus').glob('*-monitor.json')):
+    d = json.loads(path.read_text())
+    state[path.name[:-len('-monitor.json')]] = {
+        'sent': d.get('sent'), 'sent_date': (d.get('sent_time') or '')[:10],
+        'done': bool(d.get('done'))}
+clients = sorted(p.stem for p in pathlib.Path('/root/.config/hexxus/clients').glob('*.env'))
+opt = sorted(p.name for p in pathlib.Path('/opt').iterdir() if 'monitor' in p.name)
+print(json.dumps({'units': units, 'state': state, 'clients': clients, 'opt': opt}))
+"""
+
+
+class SourceError(Exception):
+    """A source could not be read."""
+
+
+def read_env_value(path: Path, key: str) -> str:
+    """Return one KEY=value from an env file without sourcing it."""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith(f"{key}="):
+            return line.split("=", 1)[1].strip()
+    raise SourceError(f"{key} not found in {path}")
+
+
+def read_env(path: Path) -> dict[str, str]:
+    """Parse a KEY=value env file, skipping comments."""
+    values: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            values[key.strip()] = value.strip()
+    return values
+
+
+def n8n_get(api_key: str, path: str) -> dict:
+    """GET one n8n public-API path and return the decoded JSON."""
+    request = urllib.request.Request(
+        f"{N8N_BASE}{path}", headers={"X-N8N-API-KEY": api_key, "Accept": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
+            return json.load(response)
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise SourceError(f"n8n GET {path} failed: {exc}") from exc
+
+
+def list_workflows(api_key: str) -> list[dict]:
+    """Every workflow on the instance, following pagination."""
+    workflows: list[dict] = []
+    cursor = ""
+    while True:
+        suffix = f"&cursor={cursor}" if cursor else ""
+        page = n8n_get(api_key, f"/workflows?limit=250{suffix}")
+        workflows += page.get("data", [])
+        cursor = page.get("nextCursor") or ""
+        if not cursor:
+            return workflows
+
+
+def describe_trigger(workflow: dict) -> str:
+    """A short, stable description of a workflow's trigger node."""
+    for node in workflow.get("nodes", []):
+        node_type = node.get("type", "")
+        short = node_type.rsplit(".", 1)[-1]
+        if "trigger" not in node_type.lower() and short != "webhook":
+            continue
+        params = node.get("parameters", {})
+        if short == "scheduleTrigger":
+            rules = params.get("rule", {}).get("interval", [])
+            parts = []
+            for rule in rules:
+                if "expression" in rule:
+                    parts.append(f"cron `{rule['expression']}`")
+                    continue
+                field = rule.get("field", "?")
+                at = f"{rule.get('triggerAtHour', 0):02d}:{rule.get('triggerAtMinute', 0):02d}"
+                if field == "days":
+                    every = rule.get("daysInterval", 1)
+                    parts.append(f"daily {at}" if every == 1 else f"every {every} days {at}")
+                elif field in ("minutes", "hours"):
+                    parts.append(f"every {rule.get(f'{field}Interval', 1)} {field}")
+                else:
+                    parts.append(field)
+            timezone = workflow.get("settings", {}).get("timezone") or "instance default tz"
+            return f"schedule ({'; '.join(parts) or 'default'}, {timezone})"
+        if short == "stripeTrigger":
+            return f"Stripe webhook ({', '.join(params.get('events', [])) or '?'})"
+        if short == "mcpTrigger":
+            return "MCP server trigger"
+        if short == "executeWorkflowTrigger":
+            return "called as sub-workflow"
+        return short
+    return "none"
+
+
+def export_status(workflow: dict) -> str:
+    """Whether a homelab-command export exists for the workflow and matches live."""
+    for path in sorted(EXPORT_DIR.glob("*.json")):
+        try:
+            exported = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        same_id = exported.get("id") == workflow["id"]
+        same_name = exported.get("name") == workflow["name"]
+        if not (same_id or same_name):
+            continue
+        if exported.get("versionId") == workflow.get("versionId"):
+            return f"`{path.name}` current"
+        if exported.get("nodes") == workflow.get("nodes"):
+            return f"`{path.name}` nodes match (no versionId)"
+        return f"`{path.name}` **stale**"
+    return "**none**"
+
+
+def collect_n8n() -> dict:
+    """Read the data table, the pipeline workflows, and the MCP tool list."""
+    api_key = read_env_value(N8N_ENV, "N8NAPIKEY")
+    tables = n8n_get(api_key, "/data-tables").get("data", [])
+    table = next((t for t in tables if t["id"] == DATA_TABLE_ID), None)
+    if table is None:
+        raise SourceError(f"data table {DATA_TABLE_ID} not found")
+
+    summaries = list_workflows(api_key)
+    workflows = []
+    for summary in summaries:
+        text = json.dumps(summary.get("nodes", []))
+        if DATA_TABLE_ID in text or EXTRA_WORKFLOW_PATTERN.search(summary.get("name", "")):
+            workflows.append(n8n_get(api_key, f"/workflows/{summary['id']}"))
+    workflows.sort(key=lambda w: (not w.get("active"), w["name"]))
+
+    mcp = next((w for w in workflows if w["id"] == MCP_WORKFLOW_ID), None)
+    if mcp is None:
+        mcp = n8n_get(api_key, f"/workflows/{MCP_WORKFLOW_ID}")
+    tools = sorted(
+        node["name"] for node in mcp.get("nodes", []) if node["type"].endswith("toolWorkflow")
+    )
+    return {"table": table, "workflows": workflows, "tools": tools}
+
+
+def collect_host() -> dict:
+    """Read the monitor timers and state on the hermes host over ssh."""
+    try:
+        result = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", MONITOR_HOST, "python3", "-"],
+            input=REMOTE_PROBE,
+            capture_output=True,
+            text=True,
+            timeout=SSH_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise SourceError(f"ssh {MONITOR_HOST} timed out") from exc
+    if result.returncode != 0:
+        raise SourceError(f"ssh {MONITOR_HOST} failed: {result.stderr.strip()}")
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise SourceError(f"unreadable probe output from {MONITOR_HOST}") from exc
+
+
+def collect_workstation() -> dict:
+    """Read client configs (safe keys only) and the control-room tool list."""
+    clients = {}
+    for path in sorted(CLIENT_DIR.glob("*.env")):
+        values = read_env(path)
+        clients[path.stem] = {key: values.get(key, "") for key in CLIENT_KEYS}
+    tools = {}
+    for path in sorted((CONTROL_ROOM / "tools").iterdir()):
+        if path.is_file() and not path.name.startswith("."):
+            tools[path.name] = _first_doc_line(path)
+    return {"clients": clients, "tools": tools}
+
+
+def _first_doc_line(path: Path) -> str:
+    """The first line of a script's docstring or leading comment."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return ""
+    match = re.search(r'"""\s*(.+)', text)
+    if match:
+        return _first_sentence(match.group(1))
+    for line in text.splitlines()[1:6]:
+        if line.startswith("#") and len(line) > 2:
+            return _first_sentence(line.lstrip("# "))
+    return ""
+
+
+def _first_sentence(line: str) -> str:
+    """Trim a summary line to its first sentence, without the full stop."""
+    return line.strip().split(". ", 1)[0].rstrip(".")
+
+
+def render(n8n: dict, host: dict, local: dict, created: str, today: str) -> str:
+    """Assemble the page."""
+    lines = [
+        "---",
+        "bucket: REFERENCE",
+        f"created: {created}",
+        f"updated: {today}",
+        "source: claude_code",
+        "tags: [sales-pipeline, n8n, hexxus, automation, homelab]",
+        "source_url: null",
+        'source_of_truth: "n8n public API + hermes host (ssh 10.0.50.17) + '
+        '~/.config/hexxus/clients + ~/projects/sales-pipeline/tools"',
+        f"verified: {today}",
+        f"fresh_days: {FRESH_DAYS}",
+        "generated_by: build-sales-pipeline-map",
+        "---",
+        "",
+        BANNER.rstrip("\n"),
+        "",
+        "# Sales Pipeline Inventory",
+        "",
+        f"Generated inventory of the Hexxus sales pipeline. Purpose, operating rules, the "
+        f"monitor setup procedure, secrets, and known issues live on the curated map "
+        f"[[{CURATED_PAGE}]]. Prospect rows, stage counts, and notified-message counts are "
+        f"left out on purpose. Read them live.",
+        "",
+        f"## Data table `{n8n['table']['name']}` (`{n8n['table']['id']}`)",
+        "",
+        "| # | Column | Type |",
+        "|---|--------|------|",
+    ]
+    for column in sorted(n8n["table"]["columns"], key=lambda c: c["index"]):
+        lines.append(f"| {column['index']} | `{column['name']}` | {column['type']} |")
+
+    lines += [
+        "",
+        "## n8n workflows",
+        "",
+        "Every workflow that references the data table, plus the Stripe sale alerts.",
+        "",
+        "| Workflow | ID | Active | Trigger | Error workflow | `Claude` tag | Export |",
+        "|----------|----|--------|---------|----------------|--------------|--------|",
+    ]
+    for workflow in n8n["workflows"]:
+        error_wf = workflow.get("settings", {}).get("errorWorkflow")
+        error_cell = "Mnemosyne Error Alerts" if error_wf == ERROR_WORKFLOW_ID else (
+            f"**{error_wf}**" if error_wf else "**none**")
+        tagged = "yes" if any(t.get("name") == "Claude" for t in workflow.get("tags", [])) else "**no**"
+        lines.append(
+            f"| {workflow['name']} | `{workflow['id']}` | "
+            f"{'yes' if workflow.get('active') else '**no**'} | {describe_trigger(workflow)} | "
+            f"{error_cell} | {tagged} | {export_status(workflow)} |"
+        )
+
+    lines += [
+        "",
+        "## Pipeline Ops MCP tools",
+        "",
+        f"Exposed by `{MCP_WORKFLOW_ID}`: " + ", ".join(f"`{t}`" for t in n8n["tools"]) + ".",
+        "",
+        "## Reply-monitor timers (hermes, LXC 110)",
+        "",
+        "| Timer | Enabled | Active | Schedule |",
+        "|-------|---------|--------|----------|",
+    ]
+    for name, unit in host["units"].items():
+        lines.append(
+            f"| `{name}` | {unit['enabled']} | {unit['active']} | `{unit['calendar'] or '?'}` |"
+        )
+    lines += [
+        "",
+        f"Monitor directories under `/opt`: {', '.join(f'`{d}`' for d in host['opt']) or 'none'}.",
+        "",
+        "## Clients",
+        "",
+        "| Slug | Name | Mailboxes | Send mailbox | Folders | On hermes | Host state |",
+        "|------|------|-----------|--------------|---------|-----------|------------|",
+    ]
+    slugs = sorted(set(local["clients"]) | set(host["clients"]))
+    for slug in slugs:
+        config = local["clients"].get(slug, {})
+        state = host["state"].get(slug)
+        if state is None:
+            state_cell = "none"
+        elif state["done"]:
+            state_cell = "retired"
+        elif state["sent"]:
+            state_cell = f"armed, sent {state['sent_date']}"
+        else:
+            state_cell = "not sent"
+        lines.append(
+            f"| `{slug}` | {config.get('CLIENT_NAME') or '**no local config**'} | "
+            f"{config.get('MAILBOXES') or 'purelymail (default)'} | "
+            f"{config.get('SEND_MAILBOX') or 'purelymail (default)'} | "
+            f"{config.get('WATCH_FOLDERS') or 'INBOX, Junk (default)'} | "
+            f"{'yes' if slug in host['clients'] else '**no**'} | {state_cell} |"
+        )
+
+    lines += [
+        "",
+        "## Control-room tools (`~/projects/sales-pipeline/tools/`)",
+        "",
+        "| Tool | Summary |",
+        "|------|---------|",
+    ]
+    for name, summary in local["tools"].items():
+        lines.append(f"| `{name}` | {summary} |")
+    return "\n".join(lines) + "\n"
+
+
+def _strip_dates(text: str) -> str:
+    """Drop the lines that change on every run, for --check comparison."""
+    return re.sub(r"^(updated|verified): .*\n", "", text, flags=re.MULTILINE)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--wiki-root",
+        type=Path,
+        default=DEFAULT_WIKI_ROOT,
+        help=f"wiki root (default: {DEFAULT_WIKI_ROOT})",
+    )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="print the page; write nothing")
+    mode.add_argument(
+        "--check", action="store_true", help="exit 1 if the page differs from the live system"
+    )
+    args = parser.parse_args()
+
+    page_path = args.wiki_root / PAGE_RELPATH
+    current = page_path.read_text(encoding="utf-8") if page_path.exists() else ""
+    today = datetime.date.today().isoformat()
+    created_match = re.search(r"^created: (\S+)", current, re.MULTILINE)
+    created = created_match.group(1) if created_match else today
+
+    try:
+        generated = render(collect_n8n(), collect_host(), collect_workstation(), created, today)
+    except (SourceError, OSError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.dry_run:
+        sys.stdout.write(generated)
+        return 0
+
+    if args.check:
+        if _strip_dates(current) == _strip_dates(generated):
+            print(f"{page_path.name} matches the live system")
+            return 0
+        print(
+            f"{page_path.name} has DRIFTED from the live system — run build-sales-pipeline-map",
+            file=sys.stderr,
+        )
+        return 1
+
+    page_path.write_text(generated, encoding="utf-8")
+    print(f"Wrote {page_path}: {len(generated)} bytes.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
