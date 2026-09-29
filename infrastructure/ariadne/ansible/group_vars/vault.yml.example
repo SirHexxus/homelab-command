@@ -1,0 +1,10 @@
+# vault.yml — copy to vault.yml, fill in, then encrypt:
+#   ansible-vault encrypt group_vars/vault.yml
+# vault.yml is gitignored; never commit it, encrypted or not.
+# Generate values with: openssl rand -hex 32
+
+vault_authelia_jwt_secret: "CHANGEME"
+vault_authelia_session_secret: "CHANGEME"
+vault_authelia_storage_encryption_key: "CHANGEME"
+vault_umami_postgres_password: "CHANGEME"
+vault_umami_app_secret: "CHANGEME"
