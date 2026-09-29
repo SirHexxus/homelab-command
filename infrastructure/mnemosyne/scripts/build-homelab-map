@@ -1,0 +1,662 @@
+#!/usr/bin/env python3
+"""Generate the wiki host inventory for the whole homelab.
+
+Reads four sources and writes one REFERENCE system map:
+
+- Terraform state (every infrastructure/**/terraform/terraform.tfstate) —
+  the guests Terraform declares, with their sizing and addresses.
+- Ansible inventories (every infrastructure/**/ansible/inventory.ini) —
+  every host Ansible manages, with the SSH user and key it connects with.
+- The Proxmox node, live and read-only (pvesh get over SSH) — every guest
+  that actually exists, its config, the bridges, and the storage pools.
+- pfSense config.xml in the repo — VLANs, DHCP reservations, DNS overrides.
+
+Declared (IaC) and discovered (Proxmox) rows are shown side by side, and
+every gap between them is listed under Drift. Nothing is written to any
+system. Volatile state (running or stopped, uptime, usage) is left out so
+--check fails only on real change.
+
+Terraform state is gitignored and the Proxmox root key lives only on the
+workstation, so this runs from the workstation, not from LXC 103.
+
+Usage:
+    build-homelab-map              # write the wiki page
+    build-homelab-map --dry-run    # print the page, write nothing
+    build-homelab-map --check      # exit 1 if the page has drifted
+"""
+
+import argparse
+import datetime
+import ipaddress
+import json
+import re
+import shlex
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+INFRA_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+PAGE = "Homelab Host Inventory"
+CURATED = "Homelab Platform Services"
+FRESH_DAYS = 14
+# The real export is gitignored; fall back to the redacted copy on other clones.
+PFSENSE_CONFIG = next(
+    path
+    for path in (
+        INFRA_ROOT / "network" / "pfsense" / "config.xml",
+        INFRA_ROOT / "network" / "pfsense" / "config.xml.example",
+    )
+    if path.exists() or path.name.endswith(".example")
+)
+PROXMOX_ADDRESS = "10.0.10.2"
+PROXMOX_NODE = "puppetmaster"
+PROXMOX_KEY = Path.home() / ".ssh" / "id_ed25519"
+SSH_TIMEOUT_SECONDS = 90
+# Guests that configure their own address, invisible to Proxmox; the value
+# must match the address their Ansible inventory uses.
+SELF_ADDRESSED_GUESTS = {200: "10.0.10.1"}
+GUEST_TYPES = {
+    "proxmox_virtual_environment_container": "LXC",
+    "proxmox_virtual_environment_vm": "VM",
+}
+
+# Runs on the Proxmox node via `python3 -`; read-only pvesh GETs only.
+REMOTE_SCRIPT = f"""
+import json, subprocess
+def get(path):
+    out = subprocess.run(["pvesh", "get", path, "--output-format", "json"],
+                         capture_output=True, text=True, check=True).stdout
+    return json.loads(out)
+node = "{PROXMOX_NODE}"
+guests = []
+for kind in ("lxc", "qemu"):
+    for guest in get(f"/nodes/{{node}}/{{kind}}"):
+        config = get(f"/nodes/{{node}}/{{kind}}/{{guest['vmid']}}/config")
+        guests.append({{"kind": kind, "vmid": int(guest["vmid"]), "config": config}})
+print(json.dumps({{
+    "version": get("/version"),
+    "network": get(f"/nodes/{{node}}/network"),
+    "storage": get(f"/nodes/{{node}}/storage"),
+    "guests": guests,
+}}))
+"""
+
+BANNER = (
+    "<!-- GENERATED FILE — DO NOT EDIT.\n"
+    "     Source of truth: homelab-command Terraform state + Ansible inventories,\n"
+    "     the Proxmox node (pvesh, read-only), and pfSense config.xml.\n"
+    "     Regenerate with: build-homelab-map  (homelab-command/infrastructure/"
+    "mnemosyne/scripts). -->\n"
+)
+
+
+class SourceError(Exception):
+    """Raised when a source cannot be read."""
+
+
+def service_dir(path: Path, marker: str) -> str:
+    """Return the service directory (relative to infrastructure/) above marker."""
+    parts = path.relative_to(INFRA_ROOT).parts
+    return "/".join(parts[: parts.index(marker)])
+
+
+def read_terraform() -> list[dict]:
+    """Return every Proxmox guest recorded in a Terraform state file."""
+    guests = []
+    for state_path in sorted(INFRA_ROOT.rglob("terraform/terraform.tfstate")):
+        if ".terraform" in state_path.parts:
+            continue
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise SourceError(f"cannot read {state_path}: {exc}") from exc
+        for resource in state.get("resources", []):
+            if resource.get("type") not in GUEST_TYPES:
+                continue
+            for instance in resource.get("instances", []):
+                # Pick named fields only: state files also hold passwords and keys.
+                attrs = instance["attributes"]
+                init = (attrs.get("initialization") or [{}])[0]
+                address = None
+                for ip_config in init.get("ip_config") or []:
+                    for ipv4 in ip_config.get("ipv4") or []:
+                        address = ipv4.get("address")
+                network = (attrs.get("network_interface") or attrs.get("network_device") or [{}])[0]
+                guests.append({
+                    "vmid": attrs.get("vm_id"),
+                    "name": init.get("hostname") or attrs.get("name"),
+                    "type": GUEST_TYPES[resource["type"]],
+                    "ip": address.split("/")[0] if address and address != "dhcp" else address,
+                    "vlan": network.get("vlan_id"),
+                    "cores": (attrs.get("cpu") or [{}])[0].get("cores"),
+                    "memory": (attrs.get("memory") or [{}])[0].get("dedicated"),
+                    "disk": (attrs.get("disk") or [{}])[0].get("size"),
+                    "service": service_dir(state_path, "terraform"),
+                })
+    return guests
+
+
+def read_inventories() -> list[dict]:
+    """Return every host line from every Ansible inventory, with its group vars."""
+    hosts = []
+    for inventory in sorted(INFRA_ROOT.rglob("ansible/inventory.ini")):
+        group_vars: dict[str, dict] = {}
+        members: list[tuple[str, str, dict]] = []
+        section = None
+        for raw in inventory.read_text(encoding="utf-8").splitlines():
+            line = raw.split("#", 1)[0].strip() if not raw.lstrip().startswith("#") else ""
+            if not line:
+                continue
+            if line.startswith("[") and line.endswith("]"):
+                section = line[1:-1]
+                continue
+            if section is None:
+                continue
+            if section.endswith(":vars"):
+                key, _, value = line.partition("=")
+                group_vars.setdefault(section[:-5], {})[key.strip()] = value.strip().strip("'\"")
+                continue
+            tokens = shlex.split(line)
+            host_vars = dict(token.split("=", 1) for token in tokens[1:] if "=" in token)
+            members.append((section, tokens[0], host_vars))
+        for group, name, host_vars in members:
+            merged = {**group_vars.get(group, {}), **host_vars}
+            hosts.append({
+                "service": service_dir(inventory, "ansible"),
+                "group": group,
+                "name": name,
+                "address": merged.get("ansible_host", name),
+                "user": merged.get("ansible_user", "—"),
+                "key": merged.get("ansible_ssh_private_key_file")
+                or ("password (vault)" if "ansible_password" in merged else "—"),
+                "connection": merged.get("ansible_connection", "ssh"),
+            })
+    return hosts
+
+
+def read_proxmox() -> dict:
+    """Read the node's version, bridges, storage, and every guest's config."""
+    command = [
+        "ssh", "-i", str(PROXMOX_KEY), "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+        f"root@{PROXMOX_ADDRESS}", "python3", "-",
+    ]
+    try:
+        result = subprocess.run(
+            command, input=REMOTE_SCRIPT, capture_output=True, text=True,
+            timeout=SSH_TIMEOUT_SECONDS, check=True,
+        )
+        return json.loads(result.stdout)
+    except subprocess.TimeoutExpired as exc:
+        raise SourceError(f"Proxmox at {PROXMOX_ADDRESS} timed out") from exc
+    except subprocess.CalledProcessError as exc:
+        raise SourceError(f"Proxmox read failed: {exc.stderr.strip()}") from exc
+    except json.JSONDecodeError as exc:
+        raise SourceError(f"Proxmox returned unreadable output: {exc}") from exc
+
+
+def _options(value: str) -> dict:
+    """Parse a Proxmox option string (`a=1,b=2,flag`) into a dict."""
+    parsed = {}
+    for item in value.split(","):
+        key, _, val = item.partition("=")
+        parsed[key] = val
+    return parsed
+
+
+def normalize_guest(guest: dict) -> dict:
+    """Reduce a raw guest config to the fields the page shows."""
+    config = guest["config"]
+    net = _options(config.get("net0", ""))
+    ip = net.get("ip")
+    if guest["kind"] == "qemu":
+        ip = _options(config.get("ipconfig0", "")).get("ip")
+    ip = SELF_ADDRESSED_GUESTS.get(guest["vmid"], ip)
+    disk_spec = config.get("rootfs") or config.get("scsi0") or config.get("virtio0") or ""
+    disk = _options(disk_spec).get("size", "")
+    return {
+        "vmid": guest["vmid"],
+        "name": config.get("hostname") or config.get("name"),
+        "type": "LXC" if guest["kind"] == "lxc" else "VM",
+        "ip": ip.split("/")[0] if ip and ip != "dhcp" else ip,
+        "bridge": net.get("bridge"),
+        "vlan": int(net["tag"]) if net.get("tag") else None,
+        "bridges": sorted(
+            {_options(config[k]).get("bridge") for k in config if re.fullmatch(r"net\d+", k)}
+        ),
+        "cores": int(config["cores"]) if config.get("cores") else None,
+        "memory": int(config["memory"]) if config.get("memory") else None,
+        "disk": int(disk.rstrip("G")) if disk.endswith("G") else None,
+        "onboot": bool(int(config.get("onboot", 0))),
+        "unprivileged": bool(int(config.get("unprivileged", 0))),
+        "description": (config.get("description") or "").strip().splitlines()[0:1],
+    }
+
+
+def _children(root: ET.Element, tag: str) -> list[ET.Element]:
+    """Return the children of root's first `tag` element, or nothing."""
+    element = root.find(tag)
+    return list(element) if element is not None else []
+
+
+def read_pfsense() -> dict:
+    """Read VLANs, DHCP reservations, and DNS overrides from config.xml."""
+    try:
+        root = ET.parse(PFSENSE_CONFIG).getroot()
+    except (OSError, ET.ParseError) as exc:
+        raise SourceError(f"cannot read {PFSENSE_CONFIG}: {exc}") from exc
+    interfaces = {}
+    for iface in _children(root, "interfaces"):
+        interfaces[iface.tag] = {
+            "if": iface.findtext("if"),
+            "name": iface.findtext("descr") or iface.tag,
+            "ip": iface.findtext("ipaddr"),
+            "subnet": iface.findtext("subnet"),
+        }
+    vlan_names = {v.findtext("vlanif"): v.findtext("descr") for v in _children(root, "vlans")}
+    networks = []
+    for key, iface in interfaces.items():
+        if key == "wan":
+            continue
+        match = re.search(r"\.(\d+)$", iface["if"] or "")
+        dhcp = root.find(f"dhcpd/{key}")
+        dhcp_range = None
+        if dhcp is not None and dhcp.find("enable") is not None and dhcp.find("range") is not None:
+            dhcp_range = f"{dhcp.findtext('range/from')}–{dhcp.findtext('range/to')}"
+        networks.append({
+            "vlan": int(match.group(1)) if match else None,
+            "name": iface["name"],
+            "vlan_descr": vlan_names.get(iface["if"]),
+            "gateway": f"{iface['ip']}/{iface['subnet']}" if iface["ip"] else "—",
+            "dhcp": dhcp_range or "off",
+            "pool": (
+                (dhcp.findtext("range/from"), dhcp.findtext("range/to")) if dhcp_range else None
+            ),
+        })
+    reservations = []
+    for scope in _children(root, "dhcpd"):
+        for mapping in scope.findall("staticmap"):
+            reservations.append({
+                "network": interfaces.get(scope.tag, {}).get("name", scope.tag),
+                "ip": mapping.findtext("ipaddr"),
+                "hostname": mapping.findtext("hostname"),
+                "descr": mapping.findtext("descr") or "",
+            })
+    overrides = [
+        {
+            "fqdn": f"{h.findtext('host')}.{h.findtext('domain')}",
+            "ip": h.findtext("ip"),
+            "descr": h.findtext("descr") or "",
+        }
+        for h in root.findall("unbound/hosts")
+    ]
+    return {"networks": networks, "reservations": reservations, "overrides": overrides}
+
+
+def vlan_of(ip: str | None, networks: list[dict]) -> int | None:
+    """Return the VLAN whose gateway subnet contains ip, if known."""
+    if not ip or ip == "dhcp":
+        return None
+    try:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
+        return None
+    for network in networks:
+        if network["gateway"] != "—" and address in ipaddress.ip_network(
+            network["gateway"], strict=False
+        ):
+            return network["vlan"] if network["vlan"] is not None else 10
+    return None
+
+
+def find_drift(
+    terraform: list[dict], inventory: list[dict], guests: list[dict], pfsense: dict
+) -> list[str]:
+    """List every disagreement between declared and discovered state."""
+    findings = []
+    live = {g["vmid"]: g for g in guests}
+    declared = {t["vmid"]: t for t in terraform}
+    inventory_ips = {h["address"] for h in inventory}
+    known_vlans = {n["vlan"] if n["vlan"] is not None else 10 for n in pfsense["networks"]}
+
+    for vmid, guest in sorted(live.items()):
+        if vmid not in declared and guest["ip"] not in inventory_ips:
+            findings.append(
+                f"**Undeclared guest** {vmid} `{guest['name']}` ({guest['type']}) exists on "
+                "Proxmox with no Terraform state and no Ansible inventory entry."
+            )
+        if "vmbr0" in guest["bridges"] and guest["name"] != "pfsense":
+            findings.append(
+                f"**On the WAN bridge** {vmid} `{guest['name']}` has a NIC on `vmbr0`, "
+                "outside pfSense."
+            )
+        if guest["vlan"] is not None and guest["vlan"] not in known_vlans:
+            findings.append(
+                f"**Unknown VLAN** {vmid} `{guest['name']}` is tagged VLAN {guest['vlan']}, "
+                "which pfSense config.xml does not define."
+            )
+        if guest["type"] == "LXC" and not guest["unprivileged"]:
+            findings.append(f"**Privileged LXC** {vmid} `{guest['name']}`.")
+
+    for vmid, tf in sorted(declared.items()):
+        guest = live.get(vmid)
+        if guest is None:
+            findings.append(
+                f"**Missing guest** {vmid} `{tf['name']}` is in Terraform state "
+                f"(`{tf['service']}`) but not on Proxmox."
+            )
+            continue
+        for field, unit in (("cores", ""), ("memory", " MB"), ("disk", " GB"), ("ip", ""),
+                            ("vlan", ""), ("name", "")):
+            if tf[field] is not None and tf[field] != guest[field]:
+                findings.append(
+                    f"**Terraform drift** {vmid} `{guest['name']}` {field}: state says "
+                    f"{tf[field]}{unit}, Proxmox has {guest[field]}{unit} (`{tf['service']}`)."
+                )
+
+    guest_ips = {g["ip"] for g in guests}
+    for host in inventory:
+        address = host["address"]
+        try:
+            ipaddress.ip_address(address)
+        except ValueError:
+            findings.append(
+                f"**Unresolved inventory host** `{host['name']}` in `{host['service']}` has "
+                f"address `{address}`."
+            )
+            continue
+        if address not in guest_ips and vlan_of(address, pfsense["networks"]) is None:
+            findings.append(
+                f"**Off-network inventory host** `{host['name']}` in `{host['service']}` "
+                f"({address}) is on no pfSense network."
+            )
+
+    stateless = sorted(
+        service_dir(tf_file, "terraform")
+        for tf_file in INFRA_ROOT.glob("**/terraform/main.tf")
+        if ".terraform" not in tf_file.parts
+        and "resource " in tf_file.read_text(encoding="utf-8")
+        and not (tf_file.parent / "terraform.tfstate").exists()
+    )
+    for service in stateless:
+        findings.append(
+            f"**Terraform with no state** `{service}/terraform` declares resources but has "
+            "never been applied or imported."
+        )
+
+    reserved = {r["ip"] for r in pfsense["reservations"]}
+    addresses = {g["ip"]: g["name"] for g in guests if g["ip"] and g["ip"] != "dhcp"}
+    addresses.update({h["address"]: h["name"] for h in inventory})
+    for address, name in sorted(addresses.items()):
+        try:
+            ip = ipaddress.ip_address(address)
+        except ValueError:
+            continue
+        for network in pfsense["networks"]:
+            pool = network.get("pool")
+            if pool and address not in reserved and (
+                ipaddress.ip_address(pool[0]) <= ip <= ipaddress.ip_address(pool[1])
+            ):
+                findings.append(
+                    f"**Inside a DHCP pool** `{name}` ({address}) is in the {network['name']} "
+                    f"pool {network['dhcp']} with no reservation."
+                )
+
+    for network in pfsense["networks"]:
+        if network["vlan"] and network["vlan_descr"] and network["vlan_descr"] != network["name"]:
+            findings.append(
+                f"**pfSense name mismatch** VLAN {network['vlan']} is `{network['vlan_descr']}` "
+                f"as a VLAN but `{network['name']}` as an interface."
+            )
+    return findings
+
+
+def _size(guest: dict) -> str:
+    memory = f"{guest['memory'] / 1024:g} GB" if guest.get("memory") else "—"
+    disk = f"{guest['disk']} GB" if guest.get("disk") else "—"
+    return f"{guest.get('cores') or '—'} / {memory} / {disk}"
+
+
+def render(
+    terraform: list[dict], inventory: list[dict], proxmox: dict, pfsense: dict,
+    created: str, today: str,
+) -> str:
+    """Render the inventory page."""
+    guests = sorted((normalize_guest(g) for g in proxmox["guests"]), key=lambda g: g["vmid"])
+    declared = {t["vmid"]: t for t in terraform}
+    by_ip: dict[str, list[dict]] = {}
+    for host in inventory:
+        by_ip.setdefault(host["address"], []).append(host)
+    networks = sorted(pfsense["networks"], key=lambda n: n["vlan"] or 10)
+    version = proxmox["version"].get("version")
+
+    lines = [
+        "---",
+        "bucket: REFERENCE",
+        f"created: {created}",
+        f"updated: {today}",
+        "source: claude_code",
+        "tags: [homelab, infrastructure, proxmox, inventory, catalog]",
+        "source_url: null",
+        'source_of_truth: "homelab-command infrastructure/**/terraform.tfstate + '
+        "infrastructure/**/ansible/inventory.ini + Proxmox puppetmaster (pvesh, read-only) + "
+        'infrastructure/network/pfsense/config.xml"',
+        f"verified: {today}",
+        f"fresh_days: {FRESH_DAYS}",
+        "generated_by: build-homelab-map",
+        "---",
+        "",
+        BANNER,
+        f"# {PAGE}",
+        "",
+        "Generated inventory of every host in the homelab: what Terraform and Ansible declare, "
+        "what actually runs on Proxmox, and the networks pfSense defines. What each service is "
+        f"for, how the pieces depend on each other, operating rules, secrets, and known issues "
+        f"live on the curated map [[{CURATED}]]. Part of [[Project - Homelab Command]].",
+        "",
+        "Running state, uptime, and resource usage are left out on purpose. Read them live "
+        "with `pvesh get /cluster/resources` on the node.",
+        "",
+        "## Networks",
+        "",
+        "From pfSense `config.xml` in the repo, which can lag the live firewall.",
+        "",
+        "| VLAN | Name | Gateway | DHCP range |",
+        "|------|------|---------|------------|",
+    ]
+    for network in networks:
+        vlan = network["vlan"] if network["vlan"] is not None else "10 (untagged)"
+        lines.append(
+            f"| {vlan} | {network['name']} | {network['gateway']} | {network['dhcp']} |"
+        )
+
+    lines += [
+        "",
+        "## Proxmox node",
+        "",
+        f"`{PROXMOX_NODE}` at {PROXMOX_ADDRESS}, Proxmox VE {version}. Hardware: "
+        "[[Dell PowerEdge T150]].",
+        "",
+        "| Interface | Type | Ports | VLAN-aware | Address |",
+        "|-----------|------|-------|------------|---------|",
+    ]
+    for iface in sorted(proxmox["network"], key=lambda i: i["iface"]):
+        if iface.get("type") not in ("bridge", "bond", "eth", "vlan"):
+            continue
+        lines.append(
+            f"| {iface['iface']} | {iface.get('type')} | {iface.get('bridge_ports') or '—'} | "
+            f"{'yes' if iface.get('bridge_vlan_aware') else '—'} | {iface.get('cidr') or '—'} |"
+        )
+    lines += ["", "| Storage | Type | Content |", "|---------|------|---------|"]
+    for store in sorted(proxmox["storage"], key=lambda s: s["storage"]):
+        content = ", ".join(sorted((store.get("content") or "").split(",")))
+        lines.append(f"| {store['storage']} | {store.get('type')} | {content} |")
+
+    lines += [
+        "",
+        "## Proxmox guests",
+        "",
+        "Sizing is what Proxmox has now (cores / RAM / disk). **Terraform** names the service "
+        "directory whose state declares the guest; **Ansible** names every inventory that "
+        "manages its address.",
+        "",
+    ]
+    # Keyed by (sort order, heading); the WAN bridge sorts after every VLAN.
+    groups: dict[tuple[int, str], list[dict]] = {}
+    for guest in guests:
+        if guest["bridges"] == ["vmbr0"]:
+            key = (10_000, "WAN bridge (vmbr0)")
+        else:
+            vlan = guest["vlan"] or vlan_of(guest["ip"], networks) or 10
+            name = next((n["name"] for n in networks if (n["vlan"] or 10) == vlan), "unknown")
+            key = (vlan, f"VLAN {vlan} — {name}")
+        groups.setdefault(key, []).append(guest)
+    for key in sorted(groups):
+        lines += [
+            f"### {key[1]}",
+            "",
+            "| VMID | Name | Type | IP | Size | On boot | Terraform | Ansible | Description |",
+            "|------|------|------|----|------|---------|-----------|---------|-------------|",
+        ]
+        for guest in groups[key]:
+            tf = declared.get(guest["vmid"])
+            terraform_dir = f"`{tf['service']}`" if tf else "—"
+            ansible = sorted({f"`{h['service']}`" for h in by_ip.get(guest["ip"], [])})
+            description = guest["description"][0] if guest["description"] else "—"
+            lines.append(
+                f"| {guest['vmid']} | {guest['name']} | {guest['type']} | {guest['ip'] or '—'} | "
+                f"{_size(guest)} | {'yes' if guest['onboot'] else 'no'} | {terraform_dir} | "
+                f"{', '.join(ansible) or '—'} | {description.replace('|', '/')} |"
+            )
+        lines.append("")
+
+    guest_ips = {g["ip"] for g in guests}
+    outside = [h for h in inventory if h["address"] not in guest_ips]
+    lines += [
+        "## Hosts outside Proxmox",
+        "",
+        "Inventory hosts whose address matches no Proxmox guest: bare metal, appliances, and "
+        "hosts elsewhere.",
+        "",
+        "| Host | Address | Network | Managed from |",
+        "|------|---------|---------|--------------|",
+    ]
+    seen = set()
+    for host in sorted(outside, key=lambda h: (h["address"], h["service"])):
+        if (host["address"], host["name"]) in seen:
+            continue
+        seen.add((host["address"], host["name"]))
+        vlan = vlan_of(host["address"], networks)
+        services = sorted(
+            {f"`{h['service']}`" for h in outside if h["address"] == host["address"]}
+        )
+        lines.append(
+            f"| {host['name']} | {host['address']} | {f'VLAN {vlan}' if vlan else 'off-network'} | "
+            f"{', '.join(services)} |"
+        )
+
+    lines += [
+        "",
+        "## DHCP reservations and DNS overrides",
+        "",
+        "| Kind | Network | Name | Address | Note |",
+        "|------|---------|------|---------|------|",
+    ]
+    for item in sorted(pfsense["reservations"], key=lambda r: r["ip"]):
+        lines.append(
+            f"| DHCP reservation | {item['network']} | {item['hostname']} | {item['ip']} | "
+            f"{item['descr']} |"
+        )
+    for item in sorted(pfsense["overrides"], key=lambda o: o["fqdn"]):
+        vlan = vlan_of(item["ip"], networks)
+        lines.append(
+            f"| DNS override | {f'VLAN {vlan}' if vlan else '—'} | {item['fqdn']} | "
+            f"{item['ip']} | {item['descr']} |"
+        )
+
+    lines += [
+        "",
+        "## Ansible access",
+        "",
+        "How each inventory connects. Keys are paths on the workstation, never values.",
+        "",
+        "| Service | Group | Host | Address | User | Credential |",
+        "|---------|-------|------|---------|------|------------|",
+    ]
+    for host in sorted(inventory, key=lambda h: (h["service"], h["group"], h["name"])):
+        credential = host["key"] if host["connection"] == "ssh" else f"{host['key']} (local)"
+        lines.append(
+            f"| `{host['service']}` | {host['group']} | {host['name']} | {host['address']} | "
+            f"{host['user']} | `{credential}` |"
+        )
+
+    findings = find_drift(terraform, inventory, guests, pfsense)
+    lines += ["", "## Drift", ""]
+    if findings:
+        lines.append(
+            "Disagreements between the sources at generation time. Each is either doc drift "
+            f"or a real fault; [[{CURATED}]] tracks which and what is being done about it."
+        )
+        lines.append("")
+        lines += [f"- {finding}" for finding in findings]
+    else:
+        lines.append("None: every source agrees.")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _strip_dates(text: str) -> str:
+    """Drop the lines that change on every run, for --check comparison."""
+    return re.sub(r"^(updated|verified): .*\n", "", text, flags=re.MULTILINE)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--wiki-root",
+        type=Path,
+        default=DEFAULT_WIKI_ROOT,
+        help=f"wiki root (default: {DEFAULT_WIKI_ROOT})",
+    )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="print the page; write nothing")
+    mode.add_argument(
+        "--check", action="store_true", help="exit 1 if the page differs from the sources"
+    )
+    args = parser.parse_args()
+
+    page_path = args.wiki_root / "reference" / f"{PAGE}.md"
+    current = page_path.read_text(encoding="utf-8") if page_path.exists() else ""
+    today = datetime.date.today().isoformat()
+    created_match = re.search(r"^created: (\S+)", current, re.MULTILINE)
+    created = created_match.group(1) if created_match else today
+
+    try:
+        generated = render(
+            read_terraform(), read_inventories(), read_proxmox(), read_pfsense(), created, today
+        )
+    except SourceError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.dry_run:
+        sys.stdout.write(generated)
+        return 0
+
+    if args.check:
+        if _strip_dates(current) == _strip_dates(generated):
+            print(f"{page_path.name} matches its sources")
+            return 0
+        print(f"{page_path.name} has DRIFTED — run build-homelab-map", file=sys.stderr)
+        return 1
+
+    page_path.write_text(generated, encoding="utf-8")
+    print(f"Wrote {page_path}: {len(generated)} bytes.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
