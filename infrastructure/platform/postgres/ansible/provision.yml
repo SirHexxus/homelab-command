@@ -158,15 +158,27 @@
         state: started
 
     # 10. CREATE DATABASES AND USERS
+    # Sets the password on every run, so rotating a vault value rotates the role.
+    # The vault must hold each role's CURRENT password, or this run resets it.
+    # Roles with no vault_<owner>_password here (umami: owned by the Ariadne
+    # playbook) are skipped. Run alone with: --tags db_users
     - name: Create database users and databases
       shell: |
-        sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='{{ item.owner }}'" | grep -q 1 || \
+        if sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='{{ item.owner }}'" | grep -q 1; then
+          sudo -u postgres psql -c "ALTER ROLE {{ item.owner }} WITH PASSWORD '{{ vars['vault_' + item.owner + '_password'] }}';"
+        else
           sudo -u postgres psql -c "CREATE ROLE {{ item.owner }} WITH LOGIN PASSWORD '{{ vars['vault_' + item.owner + '_password'] }}';"
+        fi
         sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='{{ item.name }}'" | grep -q 1 || \
           sudo -u postgres psql -c "CREATE DATABASE {{ item.name }} OWNER {{ item.owner }};"
       loop: "{{ postgres_databases }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: vars['vault_' + item.owner + '_password'] is defined
       register: db_create
       changed_when: "'CREATE' in db_create.stdout"
+      no_log: true
+      tags: [db_users]
 
     # 11. ENABLE EXTENSIONS PER DATABASE
     - name: Enable extensions per database
