@@ -1,0 +1,27 @@
+# {{ item.domain }} → static files in {{ static_sites_webroot_base }}/{{ item.domain }}
+# Managed by Ansible — static_sites role. Publish with ../static-publish.
+# SSL: added below by certbot --nginx on first provision.
+# Purpose: {{ item.purpose | default('static site') }}
+server {
+	listen 80;
+	server_name {{ item.domain }};
+
+	root {{ static_sites_webroot_base }}/{{ item.domain }};
+	index index.html;
+{% if item.noindex | default(true) %}
+
+	# Preview copy: keep search engines off it so it never competes with the
+	# real site. add_header in a location replaces these, so repeat it there.
+	add_header X-Robots-Tag "noindex, nofollow" always;
+
+	location = /robots.txt {
+		add_header X-Robots-Tag "noindex, nofollow" always;
+		default_type text/plain;
+		return 200 "User-agent: *\nDisallow: /\n";
+	}
+{% endif %}
+
+	location / {
+		try_files $uri $uri/ =404;
+	}
+}

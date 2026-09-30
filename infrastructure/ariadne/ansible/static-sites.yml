@@ -1,0 +1,15 @@
+# static-sites.yml - Deploy static sites on Ariadne without a full provision
+#
+# Runs only the static_sites role against the nginx container. Needs no vault
+# secrets, and skips provision.yml's package upgrades.
+#
+# Usage:
+#   ansible-playbook static-sites.yml --check --diff
+#   ansible-playbook static-sites.yml
+
+---
+- name: Deploy static sites on NPM container
+  hosts: npm_containers
+
+  roles:
+    - static_sites

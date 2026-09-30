@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# static-publish — push a built static site to its webroot on Ariadne
+#
+# Usage: ./static-publish <domain> <local_dir> [--dry-run]
+#
+# The domain must be listed under static_sites in
+# group_vars/npm_containers.yml (run static-sites.yml first to create the
+# webroot and cert). Mirrors local_dir exactly: files missing locally are
+# deleted remotely, so --dry-run first shows what would change.
+#
+# Examples:
+#   ./static-publish smithscale.hexxusweb.com ~/projects/smithscale-site/_site --dry-run
+#   ./static-publish smithscale.hexxusweb.com ~/projects/smithscale-site/_site
+
+set -u
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+readonly VARS_FILE="${SCRIPT_DIR}/group_vars/npm_containers.yml"
+readonly INVENTORY="${SCRIPT_DIR}/inventory.ini"
+readonly WEBROOT_BASE="/var/www"
+
+usage() {
+	echo "Usage: ./static-publish <domain> <local_dir> [--dry-run]"
+	exit 1
+}
+
+[[ $# -lt 2 ]] && usage
+domain="$1"
+local_dir="${2%/}"
+dry_run=""
+[[ "${3:-}" == "--dry-run" ]] && dry_run="--dry-run"
+[[ -n "${3:-}" && -z "${dry_run}" ]] && usage
+
+if ! grep -q "domain: \"${domain}\"" "${VARS_FILE}"; then
+	echo "error: ${domain} is not in static_sites (${VARS_FILE})" >&2
+	exit 1
+fi
+if [[ ! -f "${local_dir}/index.html" ]]; then
+	echo "error: ${local_dir}/index.html not found - build the site first" >&2
+	exit 1
+fi
+
+host="$(awk '/^npm-01 /{for(i=1;i<=NF;i++) if($i ~ /^ansible_host=/) \
+	{sub(/^ansible_host=/,"",$i); print $i}}' "${INVENTORY}")"
+if [[ -z "${host}" ]]; then
+	echo "error: npm-01 host not found in ${INVENTORY}" >&2
+	exit 1
+fi
+
+# _redirects is Netlify-only config; nginx would serve it as a plain file.
+rsync -rlptz --delete --itemize-changes ${dry_run} \
+	--exclude '_redirects' \
+	-e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+	"${local_dir}/" "root@${host}:${WEBROOT_BASE}/${domain}/"
+status=$?
+if [[ ${status} -ne 0 ]]; then
+	echo "error: rsync failed (exit ${status})" >&2
+	exit "${status}"
+fi
+[[ -n "${dry_run}" ]] && echo "(dry run - nothing changed)"
+exit 0

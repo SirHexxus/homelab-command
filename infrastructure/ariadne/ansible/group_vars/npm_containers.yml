@@ -41,3 +41,14 @@ media_proxy_services:
   - domain: "automation.hexxusweb.com"
     upstream: "10.0.50.13:5678"
     websocket: true       # n8n uses websockets
+
+# static sites — served from /var/www/<domain> on this container by the
+# static_sites role; content pushed with ./static-publish
+# noindex: true (default) → X-Robots-Tag + disallow-all robots.txt
+static_sites:
+  # Hexxus client preview: Smith Scale rebuild, for client sign-off before
+  # cutover to Netlify. Remove after launch (2026-10-03 target).
+  - domain: "smithscale.hexxusweb.com"
+    purpose: "Smith Scale rebuild preview for client review"
+    noindex: true
+

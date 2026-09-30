@@ -1,0 +1,6 @@
+# roles/static_sites/defaults/main.yml
+
+static_sites_certbot_email: "admin@sirhexx.com"
+static_sites_proxy_hosts_dir: /etc/nginx/proxy_hosts
+static_sites_webroot_base: /var/www
+static_sites: []

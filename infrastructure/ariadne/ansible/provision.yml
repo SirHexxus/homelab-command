@@ -126,6 +126,12 @@
         name: media_proxy
       tags: [media_proxy]
 
+    # 7. STATIC SITES
+    - name: Deploy static sites (served from /var/www on this container)
+      import_role:
+        name: static_sites
+      tags: [static_sites]
+
     - name: Display connection information
       debug:
         msg: |

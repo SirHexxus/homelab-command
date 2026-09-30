@@ -1,0 +1,83 @@
+---
+# roles/static_sites/tasks/main.yml — serve static sites straight from nginx
+# on Ariadne, for every entry in static_sites.
+#
+# No backend host is involved, so no pfSense allow rule is needed: the files
+# live on this container under static_sites_webroot_base/<domain>/ and are
+# pushed there by ../static-publish.
+#
+# SSL workflow (single run):
+#   1. If no cert exists yet, deploy an HTTP-only server block. Deploying the
+#      443 block first would fail `nginx -t` on the missing cert files.
+#   2. certbot --nginx obtains the cert and rewrites the block for 443 plus
+#      an HTTP→HTTPS redirect.
+#   3. force: no on the template preserves certbot's edits on later runs.
+
+# =========================================================================
+# 1. WEBROOTS
+# =========================================================================
+- name: "static_sites | Create webroot"
+  ansible.builtin.file:
+    path: "{{ static_sites_webroot_base }}/{{ item.domain }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ static_sites }}"
+  loop_control:
+    label: "{{ item.domain }}"
+
+# =========================================================================
+# 2. NGINX CONFIGS
+# =========================================================================
+- name: "static_sites | Deploy server block"
+  ansible.builtin.template:
+    src: static.conf.j2
+    dest: "{{ static_sites_proxy_hosts_dir }}/{{ item.domain }}.conf"
+    owner: root
+    group: root
+    mode: "0644"
+    force: no  # preserve certbot's SSL modifications on subsequent runs
+  loop: "{{ static_sites }}"
+  loop_control:
+    label: "{{ item.domain }}"
+  register: static_sites_conf
+
+- name: "static_sites | Validate nginx config"
+  ansible.builtin.command: nginx -t
+  changed_when: false
+  when: static_sites_conf is changed
+
+- name: "static_sites | Reload nginx before requesting certs"
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+  when: static_sites_conf is changed
+
+# =========================================================================
+# 3. SSL — obtain Let's Encrypt certs (skipped if cert already exists)
+# =========================================================================
+- name: "static_sites | Check SSL cert"
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ item.domain }}/fullchain.pem"
+  register: static_sites_cert
+  loop: "{{ static_sites }}"
+  loop_control:
+    label: "{{ item.domain }}"
+
+- name: "static_sites | Obtain SSL certificate"
+  ansible.builtin.command:
+    cmd: >
+      certbot --nginx -d {{ item.item.domain }}
+      --non-interactive --agree-tos
+      --email {{ static_sites_certbot_email }}
+      --redirect
+  loop: "{{ static_sites_cert.results }}"
+  loop_control:
+    label: "{{ item.item.domain }}"
+  when: not item.stat.exists
+  register: static_sites_certbot
+  retries: 2
+  delay: 5
+  until: static_sites_certbot.rc == 0
+  notify: reload nginx
