@@ -43,6 +43,14 @@ See `docs/homelab-philosophy.md` for the values and principles behind all homela
 |----------|---------|
 | [App Evaluation Report (2026-03-11)](app-evaluation-report-2026-03-11.md) | Classification and scoring of 1,166 awesome-selfhosted apps against the homelab profile |
 
+## Case studies and lessons learned
+
+Blameless post-incident reviews and the lessons drawn from them live in [`case-studies/`](case-studies/README.md).
+
+| Document | Purpose |
+|----------|---------|
+| [Secrets Committed to a Public IaC Repository (2026-09-29)](case-studies/2026-09-29-leaked-secrets-in-public-repo.md) | Credentials in public git history: detection, containment, verified rotation, history rewrite, root causes |
+
 ## Templates
 
 | Document | Purpose |
