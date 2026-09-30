@@ -1012,6 +1012,30 @@
 		</rule>
 		<rule>
 			<id></id>
+			<tracker>1773818613</tracker>
+			<type>pass</type>
+			<interface>opt3</interface>
+			<ipprotocol>inet</ipprotocol>
+			<protocol>tcp</protocol>
+			<statetype>keep state</statetype>
+			<source>
+				<any></any>
+			</source>
+			<destination>
+				<address>10.0.80.0/24</address>
+			</destination>
+			<descr>Allow Personal to Media</descr>
+			<created>
+				<time>1773818613</time>
+				<username>root@10.0.10.68 43716 22</username>
+			</created>
+			<updated>
+				<time>1773818613</time>
+				<username>root@10.0.10.68 43716 22</username>
+			</updated>
+		</rule>
+		<rule>
+			<id></id>
 			<tracker>1771313764</tracker>
 			<type>block</type>
 			<interface>opt3</interface>

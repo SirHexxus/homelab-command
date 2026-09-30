@@ -50,3 +50,6 @@ thoughts.md
 __pycache__/
 *.pyc
 .vault-pass
+
+# pfSense live export holds secrets; the repo tracks the redacted config.xml.example
+infrastructure/network/pfsense/config.xml
