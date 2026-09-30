@@ -53,3 +53,6 @@ __pycache__/
 
 # pfSense live export holds secrets; the repo tracks the redacted config.xml.example
 infrastructure/network/pfsense/config.xml
+
+# Obsidian vault config (editor settings; the repo is opened as a vault)
+.obsidian/
