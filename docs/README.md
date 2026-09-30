@@ -1,14 +1,10 @@
 # docs
 
-Reference documents for the homelab-command monorepo. All design decisions, infrastructure
-conventions, and operational procedures live here.
+Reference documents for the homelab-command monorepo. All design decisions, infrastructure conventions, and operational procedures live here.
 
 See `docs/homelab-philosophy.md` for the values and principles behind all homelab decisions.
 
-> **Versioning policy (D4 / AUD-015, 2026-06-14):** document filenames are version-free; the
-> authoritative version lives in each doc's header and the Version column below. Filenames are
-> **not** renamed on version bumps, so links never break. The `-vX.Y` filename suffixes were
-> stripped in the S5.1 sweep (2026-09-13).
+> **Versioning policy (D4 / AUD-015, 2026-06-14):** document filenames are version-free; the authoritative version lives in each doc's header and the Version column below. Filenames are **not** renamed on version bumps, so links never break. The `-vX.Y` filename suffixes were stripped in the S5.1 sweep (2026-09-13).
 
 ---
 

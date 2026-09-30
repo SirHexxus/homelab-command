@@ -3,10 +3,7 @@
 **Last Updated:** April 2026
 **Status:** Living Document - implementation will surface unknowns not captured here
 
-> **Architecture Note (April 2026):** This document reflects the wiki model architecture.
-> The original design (v1.0) used Postgres/pgvector as the primary store with Notion as the
-> UI layer. That design was superseded - see Section 4 for the rationale and a full comparison.
-> All Postgres schema references in prior versions are retired.
+> **Architecture Note (April 2026):** This document reflects the wiki model architecture. The original design (v1.0) used Postgres/pgvector as the primary store with Notion as the UI layer. That design was superseded - see Section 4 for the rationale and a full comparison. All Postgres schema references in prior versions are retired.
 
 ---
 
@@ -51,8 +48,7 @@ INGESTION LAYER
 
 **Two paths into the wiki:**
 - **Automated path (Hermes + n8n):** Telegram → n8n webhook → Hermes classifies → wiki write
-- **Direct path (Claude Code):** `/mneme` or `/mneme-ask` skill - Claude reads SCHEMA.md,
-  navigates index.md, reads/writes pages directly. No Hermes dependency.
+- **Direct path (Claude Code):** `/mneme` or `/mneme-ask` skill - Claude reads SCHEMA.md, navigates index.md, reads/writes pages directly. No Hermes dependency.
 
 Both paths produce identical output - the wiki format defined in `SCHEMA.md` is the contract.
 
@@ -76,11 +72,7 @@ Buckets fall into two structural categories that drive different ingestion and s
 | PROJECT | Compound | `projects/` | Multi-step work with a defined end state | Has a finish line |
 | PURSUIT | Compound | `pursuits/` | Ongoing endeavors without a terminal end state | No finish line |
 
-**IDEA vs. REFERENCE disambiguation:** This is the highest-risk classification boundary. When
-confidence is below threshold at this specific boundary, the classifier must ask rather than
-guess. If the user declines to clarify, **default to IDEA** - a subjective framing of an
-objective fact is a less disorienting misclassification than an objective fact filed as a
-personal insight. See `SCHEMA.md` for worked examples.
+**IDEA vs. REFERENCE disambiguation:** This is the highest-risk classification boundary. When confidence is below threshold at this specific boundary, the classifier must ask rather than guess. If the user declines to clarify, **default to IDEA** - a subjective framing of an objective fact is a less disorienting misclassification than an objective fact filed as a personal insight. See `SCHEMA.md` for worked examples.
 
 ---
 
@@ -102,20 +94,16 @@ The primary store is a private git repository of markdown files at `~/mneme/wiki
 | Knowledge growth | Retrieval-time RAG | Ingest-time synthesis (compounding) |
 | Human-readable | Only via Notion UI | Always - it's just markdown |
 
-The wiki model optimizes for *compounding knowledge* - each new note makes the wiki richer,
-not just bigger. For an ADHD capture system where the goal is to reduce friction and increase
-discoverability, ingest-time synthesis is a better fit than retrieval-time reconstruction.
+The wiki model optimizes for *compounding knowledge* - each new note makes the wiki richer, not just bigger. For an ADHD capture system where the goal is to reduce friction and increase discoverability, ingest-time synthesis is a better fit than retrieval-time reconstruction.
 
-**Governance:** `~/mneme/wiki/SCHEMA.md` is the single source of truth for all write operations.
-Any agent or tool that writes to the wiki must read SCHEMA.md first.
+**Governance:** `~/mneme/wiki/SCHEMA.md` is the single source of truth for all write operations. Any agent or tool that writes to the wiki must read SCHEMA.md first.
 
 **Key files:**
 - `wiki/SCHEMA.md` - governance, naming conventions, frontmatter schema, wikilink rules
 - `wiki/index.md` - catalog of all pages, organized by bucket (one compact entry per page)
 - `wiki/log.md` - append-only event log (ISO timestamp, operation, bucket, title, source)
 
-**Symlink:** `infrastructure/mnemosyne/wiki → ~/mneme/wiki` - allows monorepo to reference
-the schema location without tracking personal data.
+**Symlink:** `infrastructure/mnemosyne/wiki → ~/mneme/wiki` - allows monorepo to reference the schema location without tracking personal data.
 
 ### 4.2 Redis: Ephemeral and Session Storage
 
@@ -127,32 +115,23 @@ the schema location without tracking personal data.
 
 ### 4.3 MinIO: Object Storage
 
-Original files behind wiki pages (PDFs, images, video, audio), in the `mnemosyne` bucket
-(created 2026-04-16). Wiki pages reference objects through the `file_ref` frontmatter field,
-whose format SCHEMA.md governs.
+Original files behind wiki pages (PDFs, images, video, audio), in the `mnemosyne` bucket (created 2026-04-16). Wiki pages reference objects through the `file_ref` frontmatter field, whose format SCHEMA.md governs.
 
-The live layout — prefixes, which writer owns each, key patterns, and where the credentials
-are stored — is kept in one place, the wiki system map [[Mnemosyne MinIO Bucket]]
-(`~/mneme/wiki/reference/Mnemosyne MinIO Bucket.md`). This section used to describe a
-planned five-prefix layout that was never built; see the map rather than restating it here.
+The live layout — prefixes, which writer owns each, key patterns, and where the credentials are stored — is kept in one place, the wiki system map [[Mnemosyne MinIO Bucket]] (`~/mneme/wiki/reference/Mnemosyne MinIO Bucket.md`). This section used to describe a planned five-prefix layout that was never built; see the map rather than restating it here.
 
 ### 4.4 Obsidian: Human UI
 
-Obsidian reads the wiki repo directly from the local clone. No sync required beyond the
-Obsidian git plugin (auto-pull on interval, auto-commit on change).
+Obsidian reads the wiki repo directly from the local clone. No sync required beyond the Obsidian git plugin (auto-pull on interval, auto-commit on change).
 
 Key Obsidian features in use:
 - **Graph view** - powered by `[[wikilinks]]`; requires consistent wikilink syntax from all writers
-- **Dataview plugin** - queries YAML frontmatter; used for ADMIN due dates, PERSON follow-ups,
-  PROJECT status tables. Field names in frontmatter must exactly match SCHEMA.md - inconsistent
-  names break Dataview queries silently.
+- **Dataview plugin** - queries YAML frontmatter; used for ADMIN due dates, PERSON follow-ups, PROJECT status tables. Field names in frontmatter must exactly match SCHEMA.md - inconsistent names break Dataview queries silently.
 
 ---
 
 ## 5. IngestItem Interface
 
-All ingestion sources normalize to a common `IngestItem` envelope before processing. This is
-the contract between the ingestion layer (n8n / Claude Code) and the processing layer (Hermes / Claude).
+All ingestion sources normalize to a common `IngestItem` envelope before processing. This is the contract between the ingestion layer (n8n / Claude Code) and the processing layer (Hermes / Claude).
 
 ```
 IngestItem:
@@ -367,8 +346,7 @@ Complexity Classification (Ollama self-assesses)
 | Gemini 2.0 Flash | Google API (free tier) | Complex tasks; cost-effective escalation |
 | Claude Sonnet | Anthropic API (paid) | Strategic/judgment tasks; final escalation |
 
-*Note: nomic-embed-text (embedding model) is no longer required - index.md-based navigation
-replaces vector similarity search at the scale this system will operate at.*
+*Note: nomic-embed-text (embedding model) is no longer required - index.md-based navigation replaces vector similarity search at the scale this system will operate at.*
 
 ---
 
@@ -418,8 +396,7 @@ Offers to file substantial answers as new IDEA or REFERENCE pages
 | Idea Synthesis Report | Sunday, 6:05 PM | Week's IDEAs cross-referenced against full wiki; filed as synthesis page |
 | Monthly Trend Report | 1st of month, 8:00 AM | Topic clusters, recurring themes, stale IDEAs, inactive projects |
 
-**Telegram message length limit: 4096 characters.** Long reports must be split across multiple
-messages or truncated with a pointer to the full report page in the wiki.
+**Telegram message length limit: 4096 characters.** Long reports must be split across multiple messages or truncated with a pointer to the full report page in the wiki.
 
 ---
 
@@ -441,8 +418,7 @@ Sends health report to Telegram. On confirmation: fixes broken links, creates st
 
 Runs Sunday after Lint, before Weekly Summary:
 
-Hermes scans PERSON/PROJECT/PURSUIT pages for likely duplicates (near-identical names or
-summaries). Presents candidates to user via Telegram with merge/rename/keep options.
+Hermes scans PERSON/PROJECT/PURSUIT pages for likely duplicates (near-identical names or summaries). Presents candidates to user via Telegram with merge/rename/keep options.
 
 ---
 
@@ -461,8 +437,7 @@ summaries). Presents candidates to user via Telegram with merge/rename/keep opti
 
 All services on VLAN 50 (Lab Services).
 
-**Wiki repo:** `~/mneme/wiki/` on the local workstation. Hermes accesses via deploy key (SSH).
-Remote: private GitHub repo (`mnemosyne-wiki`). Obsidian reads the local clone directly.
+**Wiki repo:** `~/mneme/wiki/` on the local workstation. Hermes accesses via deploy key (SSH). Remote: private GitHub repo (`mnemosyne-wiki`). Obsidian reads the local clone directly.
 
 ---
 

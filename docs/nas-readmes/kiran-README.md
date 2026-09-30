@@ -1,7 +1,6 @@
 # Kiran
 
-Kiran's personal and professional files. Much of this is legacy content from the Seagate
-migration — Kiran intends to review and cull as time allows.
+Kiran's personal and professional files. Much of this is legacy content from the Seagate migration — Kiran intends to review and cull as time allows.
 
 ---
 

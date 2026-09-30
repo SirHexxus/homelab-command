@@ -61,12 +61,9 @@ They have been removed from this roadmap to keep scope clean.
 
 ## Current pursuits & timeline
 
-The phases below support the homelab's core purpose: skill building, portfolio, and family
-services. Current external pursuits (certs, job application) are tracked separately in Mnemosyne.
-See `docs/homelab-philosophy.md` for the full context.
+The phases below support the homelab's core purpose: skill building, portfolio, and family services. Current external pursuits (certs, job application) are tracked separately in Mnemosyne. See `docs/homelab-philosophy.md` for the full context.
 
-**Original timeline:** 16 weeks from February 16, 2026. Phases have slipped — targets below
-reflect revised estimates as of 2026-04-16.
+**Original timeline:** 16 weeks from February 16, 2026. Phases have slipped — targets below reflect revised estimates as of 2026-04-16.
 
 ---
 
@@ -199,22 +196,16 @@ reflect revised estimates as of 2026-04-16.
 - [ ] Configure DDNS on Porkbun for sirhexx.com
 
 ### IaC Tooling / Claude Code Agents
-- [ ] Write project agent: `mnemosyne-pipeline-engineer` — n8n workflow architect for
-  7-bucket wiki system; needs Ollama embed endpoint, n8n webhook URL, workflow JSON sample,
-  `SCHEMA.md` from wiki repo, `IngestItem` dataclass definition
-- [ ] Write project agent: `hermes-python-architect` — knows agent_loop.py, skill_registry.py,
-  context.py, audit.py internals; needs skill registration snippet, context dataclass fields,
-  audit.py pattern, `/opt/hermes/` layout post-provisioning
-- [ ] Hermes Layer A: add `<!-- ollama-prompt -->` sections to security-engineer +
-  workflow-optimizer agents (Mistral 7B-sized; store as `.md` files alongside each agent definition)
+- [ ] Write project agent: `mnemosyne-pipeline-engineer` — n8n workflow architect for 7-bucket wiki system; needs Ollama embed endpoint, n8n webhook URL, workflow JSON sample, `SCHEMA.md` from wiki repo, `IngestItem` dataclass definition
+- [ ] Write project agent: `hermes-python-architect` — knows agent_loop.py, skill_registry.py, context.py, audit.py internals; needs skill registration snippet, context dataclass fields, audit.py pattern, `/opt/hermes/` layout post-provisioning
+- [ ] Hermes Layer A: add `<!-- ollama-prompt -->` sections to security-engineer + workflow-optimizer agents (Mistral 7B-sized; store as `.md` files alongside each agent definition)
 
 ---
 
 ## Phase 3 — SIEM Stack (Argus Phase 1)
 **Duration:** ~5–7 weeks | **Revised Target:** mid-June 2026
 
-*Argus represents the first genuinely new domain in this project (SIEMs, detection engineering,
-log pipelines). The timeline reflects real learning time, not just deployment time.*
+*Argus represents the first genuinely new domain in this project (SIEMs, detection engineering, log pipelines). The timeline reflects real learning time, not just deployment time.*
 
 ### Deployment
 - [ ] Deploy Splunk Free (10.0.50.20)
@@ -235,12 +226,9 @@ log pipelines). The timeline reflects real learning time, not just deployment ti
 - [ ] Architecture diagram committed to GitHub
 
 ### IaC Tooling / Claude Code Agents
-- [ ] Write project agent: `argus-detection-engineer` — Splunk SPL, Suricata signatures,
-  Wazuh decoders/rules, Crowdsec scenarios; needs top 5 threat scenarios, Wazuh mode
-  (active-response vs. passive), one baseline SPL query, known FP sources
+- [ ] Write project agent: `argus-detection-engineer` — Splunk SPL, Suricata signatures, Wazuh decoders/rules, Crowdsec scenarios; needs top 5 threat scenarios, Wazuh mode (active-response vs. passive), one baseline SPL query, known FP sources
 - [ ] Write project agent: `incident-response-commander` — homelab stack; quarantine = Ansible → VLAN 66; MITRE ATT&CK mandatory
-- [ ] Hermes Layer B: implement n8n quality gates — confidence gate, schema gate,
-  idempotency gate (Mnemosyne); triage threshold gate, completeness gate (Argus)
+- [ ] Hermes Layer B: implement n8n quality gates — confidence gate, schema gate, idempotency gate (Mnemosyne); triage threshold gate, completeness gate (Argus)
 
 ### Documentation
 - [ ] Complete DMZ Design Doc v1.0
@@ -272,8 +260,7 @@ log pipelines). The timeline reflects real learning time, not just deployment ti
 ### IaC Tooling / Claude Code Agents
 - [ ] Hermes Layer C: n8n MCP bridge — FastAPI service on n8n LXC (10.0.50.13) wrapping
   n8n REST API as MCP tools; Ansible role + `~/.claude/settings.json` MCP entry
-- [ ] Write sites agent: `brand-guardian` — Deep Blue/Amber/Dark Gray palette, Rajdhani +
-  Space Grotesk + JetBrains Mono; sirhexx.com (React/JSX) vs. hexxusweb.com (vanilla)
+- [ ] Write sites agent: `brand-guardian` — Deep Blue/Amber/Dark Gray palette, Rajdhani + Space Grotesk + JetBrains Mono; sirhexx.com (React/JSX) vs. hexxusweb.com (vanilla)
 - [ ] Write global agent: `hexxus-voice` — synthesizes Voice + Visual Identity Guide;
   needs 2-3 writing samples + tone words from Voice Identity Guide
 
@@ -309,33 +296,20 @@ log pipelines). The timeline reflects real learning time, not just deployment ti
 
 ## Themis — Endpoint Management (Parallel Track)
 
-Themis sits **off the Phase 1–5 critical path.** It answers an immediate family need — a child's
-school tablet restricted to Acellus during school hours — rather than an application deliverable,
-and its MVP deliberately runs off-rack so it is not blocked by the ISP change and the
-server-closet move. Full design: `docs/themis-design-doc.md`.
+Themis sits **off the Phase 1–5 critical path.** It answers an immediate family need — a child's school tablet restricted to Acellus during school hours — rather than an application deliverable, and its MVP deliberately runs off-rack so it is not blocked by the ISP change and the server-closet move. Full design: `docs/themis-design-doc.md`.
 
 ### MVP — Sophy kiosk (off-rack)
-- [x] **Gate 1 spike:** confirm the Headwind REST API reassigns `configurationId` in one
-      authenticated call — *answered from source 2026-09-13 (`DeviceResource.updateDevice`);
-      hardware confirmation folds into Gate 4*
-- [x] Incus system container on the ThinkPad (`bin/incus-poc-up`); Ansible role set written
-      against it *(2026-09-13)*
+- [x] **Gate 1 spike:** confirm the Headwind REST API reassigns `configurationId` in one authenticated call — *answered from source 2026-09-13 (`DeviceResource.updateDevice`); hardware confirmation folds into Gate 4*
+- [x] Incus system container on the ThinkPad (`bin/incus-poc-up`); Ansible role set written against it *(2026-09-13)*
 - [x] Tomcat 9 + Headwind + local Postgres provisioned *(2026-09-13; `provision.yml` converges)*
-- [x] Let's Encrypt cert for `themis.sirhexx.com` issued via Ariadne and synced in
-      (`cert-sync.yml`); pfSense host override; verify LAN resolution (Gate 7) *(2026-09-13)*
-- [x] Both tablets enrolled via ADB; per-device `<number>: School` / `<number>: Free Time`
-      configurations built (different school apps by age; Jellyfin, camera, games in Free Time);
-      shared `Sophy: Locked` parent lock *(2026-09-13)*
-- [x] Verify user restrictions (Gate 5), school-app behaviour (Gate 3 — Acellus; ABC Mouse
-      lesson run pending), check-in latency (Gate 4: 1.2 s over MQTT) *(2026-09-13)*
+- [x] Let's Encrypt cert for `themis.sirhexx.com` issued via Ariadne and synced in (`cert-sync.yml`); pfSense host override; verify LAN resolution (Gate 7) *(2026-09-13)*
+- [x] Both tablets enrolled via ADB; per-device `<number>: School` / `<number>: Free Time` configurations built (different school apps by age; Jellyfin, camera, games in Free Time); shared `Sophy: Locked` parent lock *(2026-09-13)*
+- [x] Verify user restrictions (Gate 5), school-app behaviour (Gate 3 — Acellus; ABC Mouse lesson run pending), check-in latency (Gate 4: 1.2 s over MQTT) *(2026-09-13)*
 - [x] Cron: 20:00 → Locked, 06:00 → School on both tablets *(2026-09-13)*
-- [x] Shared `Sophy: Admin` configuration (everything open, for setting a tablet up) and the
-      parent control page at `themis.sirhexx.com/sophy/` — per-tablet School / Free Time /
-      Locked / Admin from a phone, current mode shown *(2026-09-13)*
+- [x] Shared `Sophy: Admin` configuration (everything open, for setting a tablet up) and the parent control page at `themis.sirhexx.com/sophy/` — per-tablet School / Free Time / Locked / Admin from a phone, current mode shown *(2026-09-13)*
 - [ ] NFC/Tasker macro on the parent phone (same API call as `sophy-switch`)
 - [ ] QR provisioning payload validated including signature checksum (Gate 6)
-- [ ] Off-home WireGuard tunnel to pfSense — WG Tunnel on each tablet, auto-on for every network
-      but the home SSID, always-on VPN lockdown; firewall rules mirror VLAN 20 (design doc §7.4)
+- [ ] Off-home WireGuard tunnel to pfSense — WG Tunnel on each tablet, auto-on for every network but the home SSID, always-on VPN lockdown; firewall rules mirror VLAN 20 (design doc §7.4)
 
 ### Rack migration — *gated on the server-closet move*
 - [ ] LXC 111 provisioned at 10.0.50.23 via Terraform
@@ -346,8 +320,7 @@ server-closet move. Full design: `docs/themis-design-doc.md`.
 - [ ] Themis Postgres added to the backup set, with a **tested restore**
 
 ### Fleet phase — *gated on Gate 2 and the §11 security controls*
-- [ ] **Gate 2:** verify Headwind Work Profile support; if inadequate, evaluate a self-hosted
-      Android Management API controller instead
+- [ ] **Gate 2:** verify Headwind Work Profile support; if inadequate, evaluate a self-hosted Android Management API controller instead
 - [ ] Adult device policy groups (update rings, managed app baseline, compliance state)
 - [ ] Always-on VPN enforcement; MFA on the admin console; scoped API tokens
 - [ ] Portfolio write-up framed in Mobility-as-a-Service vocabulary
@@ -356,23 +329,16 @@ server-closet move. Full design: `docs/themis-design-doc.md`.
 
 ## Phemius — Living-Room Media Client (Parallel Track)
 
-Phemius sits **off the Phase 1–5 critical path.** It replaces the living-room smart-TV OS with a
-Kodi HTPC the household owns, playing what Orpheus already holds — a family-services and privacy
-deliverable, not an application one. Phase 1 is wired to the existing switch and does not depend
-on the server-closet move. Full design: `docs/phemius-design-doc.md`.
+Phemius sits **off the Phase 1–5 critical path.** It replaces the living-room smart-TV OS with a Kodi HTPC the household owns, playing what Orpheus already holds — a family-services and privacy deliverable, not an application one. Phase 1 is wired to the existing switch and does not depend on the server-closet move. Full design: `docs/phemius-design-doc.md`.
 
 ### Phase 1 — living room
-- [ ] Run two Cat6 drops behind the living-room TV → switch *(first — the only item with a lead
-      time under our control; unblocks VLAN placement)*
+- [ ] Run two Cat6 drops behind the living-room TV → switch *(first — the only item with a lead time under our control; unblocks VLAN placement)*
 - [ ] Purchase the BOM (§3): N150 mini PC, universal remote, Flirc USB, onn 4K Pro, BT keyboard
-- [ ] pfSense: deny-all MAC block for the Vizio panel; VLAN 80 client rules for Phemius (Gate 5 —
-      outbound apt + YouTube API); quarantine segment for the onn
+- [ ] pfSense: deny-all MAC block for the Vizio panel; VLAN 80 client rules for Phemius (Gate 5 — outbound apt + YouTube API); quarantine segment for the onn
 - [ ] Factory-reset the Vizio with the network step skipped; panel is a dumb display from here on
 - [ ] Install Debian 13 on the N150; Ansible → `kodi-gbm` standalone (Gate 1)
-- [ ] **Gate 2 spike:** Flirc + universal remote drive Kodi without raising the panel OSD — before
-      anything is mounted behind the panel
-- [ ] Add-ons and Jellyfin binding; Kids/Adults Kodi profiles on separate Jellyfin accounts
-      (Gate 6)
+- [ ] **Gate 2 spike:** Flirc + universal remote drive Kodi without raising the panel OSD — before anything is mounted behind the panel
+- [ ] Add-ons and Jellyfin binding; Kids/Adults Kodi profiles on separate Jellyfin accounts (Gate 6)
 - [ ] Curated kids' YouTube library via yt-dlp/metube → Jellyfin (§9)
 - [ ] Tunarr on Hephaestus; one channel from the coherent core; test direct/remux mode (Gate 3)
 - [ ] Expand channels per §8.1; audio-normalisation pass (§8.2) only if Gate 3 requires it
@@ -387,30 +353,19 @@ on the server-closet move. Full design: `docs/phemius-design-doc.md`.
 
 ## Medon — Family Messaging (Queued)
 
-Medon sits **off the Phase 1–5 critical path.** A closed chat server so the children's tablets
-can message the parents — voice and video messages, photos, private and group rooms — without
-any path to arbitrary accounts. Telegram cannot enforce that (phone-number accounts, client-side
-privacy settings a child can undo, public search); a self-hosted server with **federation off and
-registration off** enforces it structurally: the only accounts that exist are the four family
-members. Named for the loyal herald of Odysseus's house. Design doc pending.
+Medon sits **off the Phase 1–5 critical path.** A closed chat server so the children's tablets can message the parents — voice and video messages, photos, private and group rooms — without any path to arbitrary accounts. Telegram cannot enforce that (phone-number accounts, client-side privacy settings a child can undo, public search); a self-hosted server with **federation off and registration off** enforces it structurally: the only accounts that exist are the four family members. Named for the loyal herald of Odysseus's house. Design doc pending.
 
 Decided 2026-09-14:
-- Stack: Matrix — Synapse (or Conduit) in Docker Compose on Hephaestus, media repo on
-  `general-store`; accounts created by admin only
-- Clients: FluffyChat on the tablets (FOSS, kid-friendly, voice/video messages, calls); Element
-  for the parents
-- Reach: on the LAN directly; off-home via the Themis WireGuard tunnel (Themis design doc §7.4)
-  or the client-server API published through Ariadne (`chat.sirhexx.com`) — federation off means
-  login is the only exposed surface
+- Stack: Matrix — Synapse (or Conduit) in Docker Compose on Hephaestus, media repo on `general-store`; accounts created by admin only
+- Clients: FluffyChat on the tablets (FOSS, kid-friendly, voice/video messages, calls); Element for the parents
+- Reach: on the LAN directly; off-home via the Themis WireGuard tunnel (Themis design doc §7.4) or the client-server API published through Ariadne (`chat.sirhexx.com`) — federation off means login is the only exposed surface
 
 ### Build order — *after sophy-02 is caught up and the Themis VPN question is settled*
 - [ ] `docs/medon-design-doc.md` v1.0 — threat model is "who can the kids talk to", not uptime
-- [ ] `infrastructure/medon/` — `compose.yaml` + Ansible on Hephaestus; vault convention
-      `vault_medon_*`
+- [ ] `infrastructure/medon/` — `compose.yaml` + Ansible on Hephaestus; vault convention `vault_medon_*`
 - [ ] Ariadne vhost `chat.sirhexx.com` (client-server API only; no federation port)
 - [ ] Four accounts; family room + per-child DM rooms; media retention limits set
-- [ ] FluffyChat whitelisted in both Sophy School and Free Time profiles (not Locked); camera and
-      microphone granted via Headwind push; verify notifications reach a kiosked tablet
+- [ ] FluffyChat whitelisted in both Sophy School and Free Time profiles (not Locked); camera and microphone granted via Headwind push; verify notifications reach a kiosked tablet
 - [ ] Element on both parent phones; verify voice message, video message, photo, and call each way
 
 ---
@@ -454,35 +409,18 @@ Career Advancement pursuit in Mnemosyne.
 
 ## Version History
 
-- v2.5 (2026-09-14): Add Medon (closed family messaging — Matrix on Hephaestus, FluffyChat on the
-  tablets) as a queued parallel track; queue the Themis off-home WireGuard tunnel (design doc
-  §7.4); register Themis Design Doc v1.4
-- v2.4 (2026-09-13): Add Phemius (living-room Kodi HTPC) as a parallel track off the Phase 1–5
-  critical path — Phase 1 living room wired to the existing switch, Phase 2 office gated on the
-  server-closet move; register Phemius Design Doc v1.0; docs filename version suffixes stripped
-  (S5.1 / AUD-015)
-- v2.3 (2026-09-09): Add Themis (endpoint management / MDM) as a parallel track off the Phase 1–5
-  critical path — MVP runs off-rack on the ThinkPad pending the ISP change and server-closet move;
-  register Themis Design Doc v1.0; allocate VMID 111 / 10.0.50.23
+- v2.5 (2026-09-14): Add Medon (closed family messaging — Matrix on Hephaestus, FluffyChat on the tablets) as a queued parallel track; queue the Themis off-home WireGuard tunnel (design doc §7.4); register Themis Design Doc v1.4
+- v2.4 (2026-09-13): Add Phemius (living-room Kodi HTPC) as a parallel track off the Phase 1–5 critical path — Phase 1 living room wired to the existing switch, Phase 2 office gated on the server-closet move; register Phemius Design Doc v1.0; docs filename version suffixes stripped (S5.1 / AUD-015)
+- v2.3 (2026-09-09): Add Themis (endpoint management / MDM) as a parallel track off the Phase 1–5 critical path — MVP runs off-rack on the ThinkPad pending the ISP change and server-closet move; register Themis Design Doc v1.0; allocate VMID 111 / 10.0.50.23
 - v2.2 (2026-05-24): Phase 2 Mnemosyne current-path audit — checked off n8n→inbox ingest, inotifywait systemd watcher, hourly `triage-inbox` cron, `daily-digest` cron, and `infrastructure/mnemosyne/scripts/` maintenance; remaining items narrowed to sleep window + `!!` bypass, Weekly Summary script, README verification
 - v2.1 (2026-05-20): Hermes off hold via direct Gemini API billing ($5/mo cap, `gemini-3.5-flash` pinned); Phase 2 Hermes section rewritten — Telegram bot superseded by n8n, blockers removed, post-hold-lift candidates queued for 2026-06-01 Decide gate; Phase 2 Mnemosyne section relabeled (Interim→Current path, Full→Target path / Phase 2T); Hermes Design Doc bumped to v1.1; file renamed v1.8→v2.1
 - v2.0 (2026-04-27): Hermes replanning complete — hold triggers documented, replanning item checked off; Mnemosyne Phase 2 restructured into interim cron path (active) vs full pipeline (deferred); Phase 5 CRDC submission window adjusted to mid-August for family trip July 25–Aug 12
-- v1.9 (2026-04-16): Full audit + re-sync — check off all completed work (Hermes LXC live,
-  pfSense full firewall IaC, Ariadne media_proxy + ntfy proxy, Mnemosyne wiki scaffold,
-  Iris SSH runbook, Ariadne Design Doc); extract cert prep to Mnemosyne Career Advancement
-  pursuit; revise phase targets to reflect actual progress; remove Phase 4 (Security+) as
-  standalone phase; renumber phases 5→4 and 6→5; file renamed v1.4→v1.8→v1.9
-- v1.8 (2026-04-13): Update Phase 2 to reflect actual current state — Hermes Phase 2 items
-  checked off, Mnemosyne section rewritten for git wiki model (Notion/pgvector architecture retired),
-  IaC Tooling agent specs corrected
-- v1.7 (2026-04-13): Remove "North Star" framing; replace with philosophy doc reference and
-  Current Pursuits framing; add Homelab Philosophy to Document Registry
-- v1.6 (2026-04-03): All Orpheus media services stay on TrueNAS Scale (no VLAN 80 LXC migration);
-  Docker VM renamed Hephaestus; Portainer Server LXC back-burnered
+- v1.9 (2026-04-16): Full audit + re-sync — check off all completed work (Hermes LXC live, pfSense full firewall IaC, Ariadne media_proxy + ntfy proxy, Mnemosyne wiki scaffold, Iris SSH runbook, Ariadne Design Doc); extract cert prep to Mnemosyne Career Advancement pursuit; revise phase targets to reflect actual progress; remove Phase 4 (Security+) as standalone phase; renumber phases 5→4 and 6→5; file renamed v1.4→v1.8→v1.9
+- v1.8 (2026-04-13): Update Phase 2 to reflect actual current state — Hermes Phase 2 items checked off, Mnemosyne section rewritten for git wiki model (Notion/pgvector architecture retired), IaC Tooling agent specs corrected
+- v1.7 (2026-04-13): Remove "North Star" framing; replace with philosophy doc reference and Current Pursuits framing; add Homelab Philosophy to Document Registry
+- v1.6 (2026-04-03): All Orpheus media services stay on TrueNAS Scale (no VLAN 80 LXC migration); Docker VM renamed Hephaestus; Portainer Server LXC back-burnered
 - v1.5 (2026-03-18): Checked off switch trunk/access port configuration (applied to live switch today)
-- v1.4 (2026-03-11): Added IaC Tooling / Claude Code Agents sections to Phases 1–3 and 5;
-  marked Phase 1 agent work complete; documented Phase 2–5 agent deliverables with input
-  dependencies
+- v1.4 (2026-03-11): Added IaC Tooling / Claude Code Agents sections to Phases 1–3 and 5; marked Phase 1 agent work complete; documented Phase 2–5 agent deliverables with input dependencies
 - v1.3 (2026-03-10): IaC Runbook — Proxmox node spec + tag-gated modularity standard
 
 ---

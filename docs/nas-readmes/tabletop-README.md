@@ -35,6 +35,5 @@ tabletop/
 
 ## Notes
 
-- `gm-resources/` is for material that could apply to any campaign — if it's tied to a
-  specific campaign, it belongs in `campaigns/<name>/` instead
+- `gm-resources/` is for material that could apply to any campaign — if it's tied to a specific campaign, it belongs in `campaigns/<name>/` instead
 - `unsorted/` is a staging area — file content into the appropriate directory as time allows

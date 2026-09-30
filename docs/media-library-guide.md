@@ -2,8 +2,7 @@
 
 ## Overview
 
-This document defines where every type of media lives, naming conventions, associated tools,
-and migration rules from external storage (Seagate) to the NAS (TrueNAS R710 at `10.0.80.5`).
+This document defines where every type of media lives, naming conventions, associated tools, and migration rules from external storage (Seagate) to the NAS (TrueNAS R710 at `10.0.80.5`).
 
 **NAS media root:** `/mnt/general_pool/media` (NFS-mounted on laptop at `/mnt/truenas-media`)
 
@@ -38,9 +37,7 @@ and migration rules from external storage (Seagate) to the NAS (TrueNAS R710 at 
 
 ## Anime Split Rule
 
-**Anime series require a separate Jellyfin library** because they use AniDB/AniList metadata,
-not TMDB/TVDB. Mixing anime and non-anime in the same library causes incorrect artwork,
-wrong episode numbering, and broken season detection.
+**Anime series require a separate Jellyfin library** because they use AniDB/AniList metadata, not TMDB/TVDB. Mixing anime and non-anime in the same library causes incorrect artwork, wrong episode numbering, and broken season detection.
 
 - Anime **series** go in `anime-shows/` — never in `shows/`
 - Anime **films** go in `movies/` or `kid-movies/` based on kid-access rules — not a separate directory
@@ -196,8 +193,7 @@ Migration is handled by the `media-scripts` Python suite (`infrastructure/media-
 | Individual GB/GBC titles | GB/GBC | `roms/gb/` or `roms/gbc/` |
 
 **PS1 note:** The ReDump PS1 collection is 476G — largest single archive. Ingest last.
-Many PS1 games will be in `.bin/.cue` or `.img` format; convert to `.chd` to save ~40% space
-(use `chdman createcd --input game.cue --output game.chd`).
+Many PS1 games will be in `.bin/.cue` or `.img` format; convert to `.chd` to save ~40% space (use `chdman createcd --input game.cue --output game.chd`).
 
 ---
 
@@ -205,10 +201,7 @@ Many PS1 games will be in `.bin/.cue` or `.img` format; convert to `.chd` to sav
 
 ### Strategy
 
-The `kid-movies/` and `kid-shows/` libraries serve as a **human-curated approved list** —
-not a ratings-filtered view. The content in these directories has been explicitly chosen as
-appropriate for unsupervised viewing by the kids, regardless of official rating. This is
-intentionally separate from TMDB/MPAA ratings, which are too coarse for household use.
+The `kid-movies/` and `kid-shows/` libraries serve as a **human-curated approved list** — not a ratings-filtered view. The content in these directories has been explicitly chosen as appropriate for unsupervised viewing by the kids, regardless of official rating. This is intentionally separate from TMDB/MPAA ratings, which are too coarse for household use.
 
 ### Jellyfin Profile Structure
 
@@ -224,17 +217,14 @@ and `kid-shows/` only. No content rating cap is applied — the filesystem is th
 
 - **kid-movies/ only** — films appropriate for unsupervised viewing by the kids
 - **movies/ only** — films not approved for unsupervised viewing
-- **No duplication** — a film lives in exactly one location. Adults can see `kid-movies/`
-  through their profile, so nothing is inaccessible to them.
-- **Straddling films** (e.g. The Nightmare Before Christmas, Labyrinth) go in `kid-movies/`
-  if approved for unsupervised viewing — the deciding factor is parental judgement, not genre.
+- **No duplication** — a film lives in exactly one location. Adults can see `kid-movies/` through their profile, so nothing is inaccessible to them.
+- **Straddling films** (e.g. The Nightmare Before Christmas, Labyrinth) go in `kid-movies/` if approved for unsupervised viewing — the deciding factor is parental judgement, not genre.
 
 ### Phased Access Plan
 
 As the kids get older, access is expanded in stages rather than all at once:
 
-1. **Current** — kid-movies/kid-shows only. Curated list grows as more films are approved;
-   approved films are moved from `movies/` to `kid-movies/` as appropriate.
+1. **Current** — kid-movies/kid-shows only. Curated list grows as more films are approved; approved films are moved from `movies/` to `kid-movies/` as appropriate.
 
 2. **Intermediate** — when ready, grant access to `movies/` with a content rating cap
    (e.g. max PG-13) configured on their Jellyfin profile. The kid-movies library remains
@@ -269,23 +259,19 @@ As the kids get older, access is expanded in stages rather than all at once:
 
 ## Ongoing Rules
 
-1. **Uploads dir is staging only** — Sonarr/Radarr/qBittorrent deposit to `uploads/`, then
-   Arr stack moves to `shows/` or `movies/`. Never treat `uploads/` as permanent storage.
+1. **Uploads dir is staging only** — Sonarr/Radarr/qBittorrent deposit to `uploads/`, then Arr stack moves to `shows/` or `movies/`. Never treat `uploads/` as permanent storage.
 
 2. **No mixed content in library dirs** — Anime never in `shows/` or `movies/`.
    Kids' content never in `shows/` or `movies/`. Adult content never anywhere in this tree.
 
-3. **CBZ-only for manga/comics** — No .rar, .cbr, .zip allowed in Komga library dirs.
-   Convert on import.
+3. **CBZ-only for manga/comics** — No .rar, .cbr, .zip allowed in Komga library dirs. Convert on import.
 
-4. **Audiobooks: m4b preferred** — .mp3 folders acceptable but m4b (single file + chapters)
-   is the target format. Convert loose mp3 folders when processing.
+4. **Audiobooks: m4b preferred** — .mp3 folders acceptable but m4b (single file + chapters) is the target format. Convert loose mp3 folders when processing.
 
 5. **Photos stay in Immich** — Personal photos do not go in the Jellyfin library.
    Immich handles photos/videos from phones; Jellyfin handles curated video content only.
 
-6. **NAS is authoritative** — Seagate is source/archive. After successful migration and
-   verification of each content type, the Seagate copy can be considered archived/redundant.
+6. **NAS is authoritative** — Seagate is source/archive. After successful migration and verification of each content type, the Seagate copy can be considered archived/redundant.
 
 ---
 

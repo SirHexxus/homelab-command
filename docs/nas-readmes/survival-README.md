@@ -1,11 +1,8 @@
 # Survival
 
-Community Resource Library — an offline reference archive for practical knowledge and skills.
-Intended to function as a self-contained knowledge base accessible during partial or total
-societal disruption, with or without internet access.
+Community Resource Library — an offline reference archive for practical knowledge and skills. Intended to function as a self-contained knowledge base accessible during partial or total societal disruption, with or without internet access.
 
-Originally sourced from the Seagate external drive (2026-03-19), merging the Community
-Resource Library, the Mega Folder, and the masterFileReference Library collections.
+Originally sourced from the Seagate external drive (2026-03-19), merging the Community Resource Library, the Mega Folder, and the masterFileReference Library collections.
 
 ---
 
@@ -42,8 +39,7 @@ survival/
 
 ## Naming Schema
 
-**Function first, details second.** Directory and file names should immediately communicate
-what something *does* or *is for* — not what it technically is.
+**Function first, details second.** Directory and file names should immediately communicate what something *does* or *is for* — not what it technically is.
 
 - `medical-wound-care-guide.pdf` not `FM-21-11.pdf`
 - `nuke-bio-chem/` not `NBC/`

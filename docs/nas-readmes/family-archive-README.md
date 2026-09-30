@@ -1,7 +1,6 @@
 # Family Archive
 
-Long-term personal archive for the Chang family — David and Lorna's files, wedding records,
-and important household documents.
+Long-term personal archive for the Chang family — David and Lorna's files, wedding records, and important household documents.
 
 ---
 
