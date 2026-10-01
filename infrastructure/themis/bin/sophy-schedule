@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+"""Reapply the scheduled push tasks the Sophy tablets depend on.
+
+Headwind's push plugin can send a message to a device on a cron schedule, and
+the tablets rely on one: a nightly reboot. The schedule lives only in the
+Headwind database, so rebuilding Themis or migrating it to the rack loses it
+silently — nothing in the panel says a task is missing. This table is the
+source of truth; the database is a copy.
+
+Each entry below exists because something broke in production:
+
+    reboot, nightly, every tablet
+        2026-10-01. ABC Mouse ran in one process for the tablet's whole
+        uptime — mode switches swap the configuration but never restart an
+        app — and grew to 2.5 GB on a 3.9 GB tablet. Starved of memory, it
+        played harsh, distorted noise. A nightly reboot caps every app's
+        lifetime at a day, and also clears zombie tasks like Jellyfin's
+        2026-09-14 picture-in-picture one.
+
+Cron fields are evaluated by the server, which runs on UTC, so a task does
+not follow daylight saving: 10:00 UTC is 03:00 PDT and 02:00 PST. Both are
+overnight, so the drift is accepted rather than corrected twice a year.
+
+Tasks are matched by what they do (device, message type, schedule), not by
+id or comment. A task this script created carries MANAGED_MARKER in its
+comment, and only those are removed when they leave the table; any other
+task on the server is reported and left alone.
+
+Credentials come from the environment, as for sophy-switch (THEMIS_URL,
+THEMIS_USER, THEMIS_PASSWORD; source ~/.config/themis/env).
+
+Examples:
+    sophy-schedule --check
+    sophy-schedule --dry-run
+    sophy-schedule
+"""
+
+# ── Standard library imports ──────────────────────────────────────────────────
+import argparse
+import sys
+from pathlib import Path
+
+# Allow importing from lib/ when running from the project root or bin/
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# ── Local imports ─────────────────────────────────────────────────────────────
+from lib.sophy_headwind import (  # noqa: E402
+    ALL_DEVICES,
+    ConfigError,
+    HeadwindError,
+    env_config,
+    login,
+    request,
+)
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+MANAGED_MARKER = '[sophy-schedule]'
+
+# Cron fields compared to decide whether a server task matches an entry.
+CRON_FIELDS = ('min', 'hour', 'day', 'weekday', 'month')
+
+# Every scheduled push the Sophy tablets depend on. Times are UTC (see the
+# module docstring). The full story behind each entry is there too.
+SCHEDULE = tuple(
+    {
+        'device': device,
+        'messageType': 'reboot',
+        'payload': '',
+        'min': '0',
+        'hour': '10',
+        'day': '*',
+        'weekday': '*',
+        'month': '*',
+        'reason': 'nightly reboot 03:00 PDT / 02:00 PST; caps app memory bloat (2026-10-01)',
+    }
+    for device in ALL_DEVICES
+)
+
+TASK_PAGE_SIZE = 500
+
+
+# ── Functions ─────────────────────────────────────────────────────────────────
+
+def task_key(device: str, message_type: str, task: dict) -> tuple[str, ...]:
+    """Identify a task by what it does: device, message type, and schedule."""
+    return (device, message_type, *(str(task[field]) for field in CRON_FIELDS))
+
+
+def entry_key(entry: dict) -> tuple[str, ...]:
+    """The task_key a SCHEDULE entry should have on the server."""
+    return task_key(entry['device'], entry['messageType'], entry)
+
+
+def server_key(task: dict) -> tuple[str, ...]:
+    """The task_key of a task as the server returns it."""
+    return task_key(task.get('deviceNumber') or '', task['messageType'], task)
+
+
+def describe(key: tuple[str, ...]) -> str:
+    """Render a task key as one aligned line."""
+    device, message_type, *cron = key
+    return f'{device:<10} {message_type:<14} {" ".join(cron)} UTC'
+
+
+def list_tasks(base_url: str, token: str) -> list[dict]:
+    """Return every scheduled push task on the server."""
+    payload = request(base_url, 'POST', '/plugins/push/private/searchTasks',
+                      {'pageNum': 1, 'pageSize': TASK_PAGE_SIZE}, token=token)
+    return payload['data']['items']
+
+
+def create_task(base_url: str, token: str, entry: dict) -> None:
+    """Create one device-scoped scheduled task from a SCHEDULE entry."""
+    body = {
+        'scope': 'device',
+        'deviceNumber': entry['device'],
+        'groupId': '',
+        'configurationId': '',
+        'messageType': entry['messageType'],
+        'payload': entry['payload'],
+        'comment': f'{MANAGED_MARKER} {entry["reason"]}',
+        **{field: entry[field] for field in CRON_FIELDS},
+    }
+    request(base_url, 'PUT', '/plugins/push/private/task', body, token=token)
+
+
+def delete_task(base_url: str, token: str, task_id: int) -> None:
+    """Delete one scheduled task by id."""
+    request(base_url, 'DELETE', f'/plugins/push/private/task/{task_id}', token=token)
+
+
+def reconcile(base_url: str, token: str, mode: str) -> int:
+    """Compare the server to SCHEDULE and, in apply mode, fix the difference.
+
+    Returns the number of differences found (missing + stale managed tasks).
+    """
+    tasks = list_tasks(base_url, token)
+    present = {server_key(task) for task in tasks}
+    wanted = {entry_key(entry) for entry in SCHEDULE}
+
+    missing = [entry for entry in SCHEDULE if entry_key(entry) not in present]
+    stale = [task for task in tasks if server_key(task) not in wanted
+             and MANAGED_MARKER in (task.get('comment') or '')]
+    unmanaged = [task for task in tasks if server_key(task) not in wanted
+                 and MANAGED_MARKER not in (task.get('comment') or '')]
+
+    for entry in SCHEDULE:
+        status = 'missing' if entry in missing else 'ok'
+        print(f'  {status:<9} {describe(entry_key(entry))}')
+    for task in stale:
+        print(f'  {"stale":<9} {describe(server_key(task))}  (id {task["id"]})')
+    for task in unmanaged:
+        print(f'  {"unmanaged":<9} {describe(server_key(task))}  (id {task["id"]}, left alone)')
+
+    if mode == 'apply':
+        for entry in missing:
+            create_task(base_url, token, entry)
+            print(f'  created   {describe(entry_key(entry))}')
+        for task in stale:
+            delete_task(base_url, token, task['id'])
+            print(f'  deleted   id {task["id"]}')
+
+        # Re-read: the API answers OK to writes it may not have kept.
+        if missing or stale:
+            remaining = {server_key(task) for task in list_tasks(base_url, token)}
+            unconfirmed = [entry for entry in SCHEDULE if entry_key(entry) not in remaining]
+            if unconfirmed:
+                raise HeadwindError(f'{len(unconfirmed)} task(s) still missing after apply')
+
+    drift = len(missing) + len(stale)
+    print(f'\n{len(SCHEDULE)} entries: {len(missing)} missing, {len(stale)} stale, '
+          f'{len(unmanaged)} unmanaged')
+    return drift
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description='Reapply the scheduled push tasks the Sophy tablets depend on.',
+    )
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--check', action='store_true',
+                       help='Report drift and exit 1 if any; change nothing')
+    group.add_argument('--dry-run', action='store_true',
+                       help='Show what would be created or deleted; change nothing')
+    args = parser.parse_args()
+    mode = 'check' if args.check else 'dry-run' if args.dry_run else 'apply'
+
+    try:
+        config = env_config()
+        drift = reconcile(config['THEMIS_URL'], login(config), mode)
+    except ConfigError as exc:
+        print(f'Error: {exc}', file=sys.stderr)
+        sys.exit(2)
+    except HeadwindError as exc:
+        print(f'Error: {exc}', file=sys.stderr)
+        sys.exit(1)
+
+    if mode == 'check' and drift:
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()

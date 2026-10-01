@@ -53,6 +53,14 @@ silently, with nothing in the panel to say so. It is declarative and idempotent:
 flag applies them. Run it after any reset, re-enrollment, or new app install,
 with the tablet in Admin and USB debugging on.
 
+`bin/sophy-schedule` does the same for Headwind push-plugin **scheduled tasks**,
+which live only in the Headwind database: today, a nightly `reboot` of every
+tablet at 10:00 UTC (03:00 PDT / 02:00 PST — the server runs on UTC, so the
+schedule drifts with DST). Mode switches never restart apps; without the reboot
+ABC Mouse grew to 2.5 GB over ~29 h and played distorted noise (2026-10-01).
+Same `--check` / `--dry-run` / apply contract, credentials from the env file.
+Run it after any rebuild and after the rack migration.
+
 Migration to the rack is an inventory swap and a re-run. Keep every environment
 difference in `group_vars/themis.yml`:
 
@@ -107,10 +115,10 @@ difference in `group_vars/themis.yml`:
 `docs/themis-design-doc.md` §12 lists seven verification gates. Gate 1 (one
 authenticated call reassigns `configurationId` and pushes it) was answered from
 the Headwind source on 2026-09-13 — `PUT /rest/private/devices` with
-`{"ids":[id],"configurationId":N}`; `bin/sophy-switch` wraps it. What is still
-unmeasured is the push latency on real hardware (Gate 4) and which user
-restrictions Headwind actually exposes (Gate 5); record both in §12 as they
-are tested.
+`{"ids":[id],"configurationId":N}`; `bin/sophy-switch` wraps it. Gates 3
+(Acellus), 4, 5 and 7 are answered in §12 as well; Gate 4 still lacks Doze
+behaviour off-charger, and Gates 2 and 6 are open. Record new measurements in
+§12 as they are taken.
 
 ## Naming
 
