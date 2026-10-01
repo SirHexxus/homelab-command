@@ -105,13 +105,22 @@ Fact-check age threshold: {fact_check_age} days
    the same topic, entity, or theme where this stub belongs. Per the schema, IDEA insights
    on the same theme should EXTEND the existing page. If a candidate looks likely, read that
    ONE page to confirm.
+   Match on TOPIC, not on source: a listicle from a different creator, or with a different
+   item count, still merges into the collection page for that topic (e.g. a "7 Linux homelab
+   projects" post belongs in [[Linux Projects for Homelab]]).
 3a. IF a merge target exists:
     - Extend it with the stub's content (never duplicate); set its `updated:` to {today}.
+    - Add the new items as a section crediting their source (creator, link). If the target's
+      intro or headings describe a closed count ("these five", "The Six Projects"), reword
+      them so the page reads as an open collection.
     - Do NOT delete the stub file; do NOT touch index.md/log.md — the wrapper does that.
 3b. IF no merge target:
     - Rewrite the stub body: expand into structured Markdown with bucket-appropriate
       headings; add [[wikilinks]] for named people/projects/pursuits; remove 'stub' from
       tags; set `updated:` to {today}.
+    - Write the body content-first: lead with the topic, credit the creator as the source
+      of the first items ("The first five came from @x"), and never frame the list as a
+      closed set.
     - UNFINISHED-FLAGGING (every bucket EXCEPT ADMIN): if the enriched body is under 150
       words OR substantively incomplete, set `status: draft` and add `unfinished` to tags;
       otherwise remove any `status: draft` line and the `unfinished` tag. Never apply this

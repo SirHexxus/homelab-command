@@ -144,6 +144,10 @@ inbox item as a stub.
    Honor bucket_hint if provided and plausible. Default to IDEA when uncertain.
 
 2. Generate a page title following the naming conventions in the schema.
+   Title the TOPIC, not the package it arrived in (see "Content-First Titles"):
+   no creator handles or channel names, and no listicle count. A post titled
+   "UCFYX: 5 Linux Projects for Homelab" is filed as "Linux Projects for Homelab".
+   Keep a number only when it is part of the thing's name (a book title, OWASP Top 10).
    Apply filename sanitization rules above.
 
 3. Output the COMPLETE stub page file between the two markers below, each on its own line,
