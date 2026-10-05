@@ -1,6 +1,6 @@
 # Themis Project: Mobile Device Management Design Doc
 **Version:** 1.5
-**Last Updated:** 2026-10-01
+**Last Updated:** 2026-10-05
 **Status:** **MVP live** on the off-rack PoC — both tablets enrolled as Device Owner, per-device School/Free Time profiles, shared parent lock and Admin mode, 20:00/06:00 schedule, parent control page at `/sophy/`. Rack migration pending the server-closet move.
 
 ---
@@ -313,6 +313,61 @@ The intent is two-directional, over **one notification service** — Iris/ntfy �
 **Open question that gates the device-bound half:** §4.1 locks the notification shade in kiosk mode, which is exactly the surface ntfy delivers to — and Locked and School are the modes where a bedtime warning matters most. Test ntfy on one tablet in each of Free Time, School and Locked before any design work. If the shade is suppressed, the choice is relaxing that lockout for a mode or finding an overlay mechanism. Tracked as an ADMIN task in Mnemosyne.
 
 **Prerequisite, now fixed:** the audit log was 99.3% `jwt.login` noise (~2,900 rows/day) because `bin/sophy-web` authenticated on every `/state` poll. Forwarding it to Iris before fixing that would have shipped mostly noise. See §7.3.
+
+### 7.7 App update pipeline (designed, not built)
+
+**Status: designed 2026-10-05, not built.** Today every app on the tablets except the launcher was installed through Aurora, by hand, in Admin, one tablet at a time. Headwind's catalog knows those apps' package names but holds no APK for them, so it cannot install or update them. Nothing watches for new versions. A fix the vendor ships reaches a tablet only when someone remembers to open Aurora on it. The pipeline below closes that gap: watch for updates, fetch and verify them off the tablets, and hand Headwind a file it can distribute, with a parent approving each release.
+
+**Worked through by hand on 2026-10-05.** ABC Mouse 1.70.1 was pulled from sophy-02, packaged as an XAPK, and staged on the Themis server for sophy-01. Every stage except watching and approval was done manually that day, and these facts came out of it:
+
+| Fact | Consequence for the pipeline |
+|------|------------------------------|
+| Play apps ship as **split APKs** (ABC Mouse: base + `arm64_v8a` + `mdpi` + `en` + `es`). Headwind's own "split" flag is unrelated: it means one APK per CPU architecture | Distribute as **XAPK**: a zip of the splits plus a `manifest.json`. The server's `APKFileAnalyzer` reads `package_name`, `version_code`, `version_name` and `name` from the manifest, and launcher 6.39 has `XapkUtils` to install it |
+| nginx caps request bodies at 200 MB (`client_max_body_size 200m`); the ABC Mouse XAPK is 260 MiB | Skip the panel upload. Write the file into `/opt/hmdm/files/` (served at `https://themis.sirhexx.com/files/`) and point the catalog version's `url` at it. Downloads are not capped |
+| A new version is two calls: `PUT /private/applications/versions` (`applicationId`, `version`, `versionCode`, `url`), then `PUT /private/configurations/application/upgrade` with `{configurationId, applicationId}` in the body, once per configuration that uses the app. The panel's resource template reads `/configurations/:id/application/:appId/upgrade`, but those placeholders are never filled; that path returns 404 | The publish step is plain REST through `lib/sophy_headwind.py`; no panel automation. Take routes from the server classes, not the panel's URL templates |
+| The launcher installs only the apps of the configuration the tablet is **currently** in | An update reaches a tablet the next time it enters a configuration that lists the app, not instantly. ABC Mouse is not in sophy-01's School, so sophy-01 updates in Free Time or Admin |
+| An update must be signed with the same key as the installed app, or Android refuses it | Signature pinning is free to enforce and is the pipeline's main security control (below) |
+
+**Stages.**
+
+| # | Stage | What it does |
+|---|-------|--------------|
+| 1 | Watch | Nightly: for each app in the update table, compare the latest upstream version with the newest catalog version in Headwind |
+| 2 | Fetch | Download the new release: split APKs from Google Play through `gplayapi` (Aurora Store's library) with anonymous login, or the upstream release directly for apps published outside Play |
+| 3 | Verify | Signature pin, `libpairipcore.so` check, version-code check (below). Any failure stops the release and alerts |
+| 4 | Package | Build the XAPK for split apps, or keep a single APK as is; record its SHA-256 |
+| 5 | Stage | Write the file into `/opt/hmdm/files/` and add the catalog version. **No configuration is upgraded yet** |
+| 6 | Approve | ntfy (Iris) alert: app, old → new version, size, signature fingerprint. A parent approves from the phone |
+| 7 | Release | Upgrade every configuration that lists the app. Confirm per tablet from the device record's `applications[]` on its next check-in |
+
+**Source per app.** Prefer the vendor's own channel and use Play only when there is no other. Jellyfin publishes signed releases on GitHub and F-Droid, so it needs no Play access at all. ABC Mouse, Bible App for Kids and Acellus are Play-only. The update table records each app's source, so a source can change without code changes.
+
+**Play access: `gplayapi`, anonymous.** Aurora Store is not a separate store. It is a different client for the same Play backend, so its APKs are byte-for-byte what Play serves. Driving the Aurora *app* would need an Android VM and UI scripting, which is heavy and fragile. Its JVM library, `gplayapi`, runs headless on a server and supports two things the pipeline wants:
+
+- **Anonymous login.** Aurora's token dispenser hands out shared accounts, so the pipeline holds no Google credential of ours and none of our accounts can be banned.
+- **A device profile.** Play then serves exactly the splits an Onn 7" Core needs (`arm64_v8a`, `mdpi`, the device languages), the same set that arrived on sophy-02.
+
+The dispenser is a third-party service. It has outages and rate limits, and Google periodically blocks the shared accounts. For a nightly check, a failed night is a retry, not an incident: alert after three consecutive fetch failures for the same app. Trusting the dispenser for logins does not mean trusting it for content, because stage 3 verifies every file whatever its source. A misbehaving source can cause a failed fetch, never a bad install. **Fallback:** a dedicated throwaway Google account, used only if the dispenser proves unreliable in practice.
+
+**Security controls.** This pipeline puts new code on a child's Device Owner tablet, so the controls are not optional:
+
+- **Signature pinning.** The pinned value is each app's signing-certificate SHA-256, taken once from the copy already installed and working on a tablet (`apksigner verify --print-certs`). A release whose certificate differs is rejected, whatever its source claims. This stops a tampered or swapped APK even when the download channel is compromised. Android would refuse to install it anyway, but failing on the server keeps a bad file out of the catalog altogether.
+- **Play licensing check.** Reject any release containing `libpairipcore.so`. A release that newly adds Play Integrity licensing would fail on the kiosk tablets the way Minno did (2026-09-14), so it must not ship over a working version.
+- **Version codes only increase.** A downgrade is a rollback attack or a fetch error; either way it stops.
+- **A human approves every release.** Nothing is released to the tablets unattended, consistent with the household rule for autonomous actions. Approval is one tap; the notification carries the signature fingerprint and the version change.
+- **No family account ever touches Play access.** Anonymous dispenser tokens are the default; the fallback account holds nothing and belongs to no one. Scripted Play downloads breach Google's terms either way; with anonymous login the realistic consequence is a failed fetch when a shared account is blocked. Accepted.
+
+**Where it runs.** A separate unprivileged container, not the Themis host. The downloader handles untrusted input and talks to a third-party token service (and would hold the fallback Google credential); Themis holds Device Owner over the tablets. Keeping them apart means a compromised downloader can only offer files. It can put nothing in the catalog except through stage 3, and it cannot upgrade a configuration without approval. During the PoC it is a second Incus container on the ThinkPad. After the rack move it becomes its own LXC on VLAN 50, with an allocation recorded in the roster. The hand-off to `/opt/hmdm/files/` is the only write path into Themis, and it must not be able to touch anything else on that host.
+
+**Rollback.** Keep the previous catalog version and its file for every app. Rolling back is a configuration pointing at the older version, but Android will not downgrade an installed app in place, so a bad release on a tablet means uninstall and reinstall. That is a reason for the approval step, not a gap in it.
+
+**Open before building:**
+
+- Whether launcher 6.39 installs an XAPK pushed through Headwind end to end. The first real test is the ABC Mouse 1.70.1 rollout to sophy-01. Record the result here.
+- How the hand-off writes into `/opt/hmdm/files/`. Likely candidates are an Incus or Proxmox shared directory, or SSH with a forced command; the requirement is that the downloader can write that one directory and nothing else.
+- The approval channel. ntfy action buttons can call back to a small endpoint, and `bin/sophy-web` already runs a loopback API behind the parent page's authentication (§7.3). Extending it with "pending releases" is the obvious candidate.
+
+**Build order.** Signature pinning and the update table first, run by hand against the 1.70.1 rollout; then fetch and package; then the approval path; automation last.
 
 ---
 
