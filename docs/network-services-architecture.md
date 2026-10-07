@@ -136,8 +136,7 @@
 | YoLink Hub | 10.0.10.65 | DHCP static mapping |
 | Helm HPS20 (helm-log) | 10.0.10.25 | Static DHCP reservation — MAC 72:c6:b9:0d:32:ac; ntfy broker :2586 |
 | TrueNAS Scale (R710) | 10.0.10.30 | Static — eno1 MAC 00:26:b9:55:a7:6d; management + PBS |
-| R730 host (Proxmox, planned) | 10.0.10.3 | Reserved — NIC.Integrated.1-1 MAC B0:83:FE:D0:BF:95; used today by the Lifecycle Controller only |
-| R730 iDRAC8 | 10.0.10.40 | Static on the dedicated iDRAC port — MAC 18:66:DA:68:6D:38. 10.0.10.40–.49 reserved for server management controllers (iDRAC/iLO) |
+| Server management controllers | 10.0.10.40–.49 | Reserved block for iDRAC/iLO ports (the HP DL380p Gen8 iLOs go here) |
 | James's Laptop (wired) | 10.0.10.x | DHCP |
 
 ### VLAN 20 -- Personal
