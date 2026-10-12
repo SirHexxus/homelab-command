@@ -152,6 +152,16 @@ ensure_container() {
 		log_info "Launching $CONTAINER from $IMAGE"
 		run incus launch "$IMAGE" "$CONTAINER" || return 1
 	fi
+
+	# Without this, incus restores only the last power state, and a laptop
+	# shutdown can record STOPPED, leaving the tablets' server down after boot.
+	if [[ "$(incus config get "$CONTAINER" boot.autostart 2> /dev/null)" \
+		== true ]]; then
+		log_skip "boot.autostart already set on $CONTAINER"
+	else
+		log_info "Setting boot.autostart on $CONTAINER"
+		run incus config set "$CONTAINER" boot.autostart=true || return 1
+	fi
 	[[ "$dry_run" == true ]] && return 0
 
 	local waited=0
