@@ -6,7 +6,7 @@
 # source of truth for both.
 
 # Where the scripts land. The deployed units reference this path literally,
-# so changing it re-templates all 38 units in the same run.
+# so changing it re-templates all 40 units in the same run.
 mneme_root: /opt/mnemosyne/homelab-command
 mneme_scripts_dir: "{{ mneme_root }}/infrastructure/mnemosyne/scripts"
 mneme_wiki_root: /opt/inbox-receiver/wiki
@@ -74,6 +74,9 @@ mneme_workers:
   - name: check-overdue
     exec: "{{ mneme_scripts_dir }}/maintenance/check-overdue-tasks"
     schedule: "*-*-* 07:00:00"
+  - name: task-throughput
+    exec: "{{ mneme_scripts_dir }}/maintenance/report-task-throughput"
+    schedule: "Sun *-*-* 08:00:00"
   - name: orphan-enrich
     exec: "{{ mneme_scripts_dir }}/maintenance/check-orphan-files --enrich"
     schedule: "Sun *-*-* 09:00:00"

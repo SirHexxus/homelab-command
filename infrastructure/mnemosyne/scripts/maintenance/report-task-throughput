@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+################################################################################
+# Script Name: report-task-throughput
+# Description: Weekly ADMIN task throughput — are tasks getting done?
+# Author: James Stacy
+# Version: 1.0.0
+#
+# Usage: report-task-throughput
+#
+# Options:
+#   -h, --help      Show this help message
+#
+# Exit Codes:
+#   0 - Success
+#   1 - Configuration error
+#   2 - Invalid arguments
+################################################################################
+
+set -u
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/wiki-common.sh" || exit 1
+
+show_help() {
+	cat << EOF
+Usage: $(basename "$0") [options]
+
+Writes the weekly task throughput report: per priority, open / unreviewed /
+past-window counts, tasks opened and closed this week, and median days to
+close over four weeks. Unlike the check-* scripts it always writes a report —
+the trend is the point, so a quiet week is still a data point.
+
+Options:
+    -h, --help      Show this help message
+
+EOF
+}
+
+main() {
+	local today body
+	today=$(date '+%Y-%m-%d')
+	if ! body=$(python3 "$SCRIPT_DIR/../lib/task_throughput.py" \
+		--markdown --wiki-root "$WIKI_DIR"); then
+		log_error "task_throughput.py failed — no report written"
+		return 1
+	fi
+	write_report 'task-throughput' "$today" "$body"
+}
+
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		-h|--help) show_help; exit 0 ;;
+		*)
+			log_error "Unknown option: $1"
+			show_help
+			exit 2
+			;;
+	esac
+done
+
+main
