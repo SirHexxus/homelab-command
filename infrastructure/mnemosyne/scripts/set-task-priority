@@ -1,0 +1,263 @@
+#!/usr/bin/env python3
+"""Set an ADMIN task's urgency, impact, and real deadline — and record the decision.
+
+`priority:` is never typed by hand: it is the urgency x impact matrix result
+from `lib/task_priority.py` (`schema/priority.json`), recomputed here on every
+write. A change also stamps `reviewed:` to today, which restarts the task's
+attention window, bumps `updated:`, logs an `update` event in `mneme_log`, and
+commits the page.
+
+`--due` is for real, externally anchored deadlines only (a client date, a
+family commitment) — never to simulate urgency. When `due` changes, the
+task's `index.md` line is updated to match (`due …` is shown there only when a
+real deadline exists).
+
+Usage:
+  set-task-priority "<task-title>" [--urgency L] [--impact L]
+                    [--due DATE | --clear-due] [--review] [--dry-run]
+  set-task-priority "Renew Ariadne SSL Cert" --urgency HIGH --impact HIGH
+  set-task-priority "File Quarterly Taxes" --due 2027-01-15
+  set-task-priority "Configure Bazarr" --review     # re-decided: keep as-is
+  set-task-priority --recompute-all [--apply]       # after a matrix change
+
+Levels: LOW < MEDIUM < HIGH < CRITICAL. DATE is YYYY-MM-DD or
+YYYY-MM-DDTHH:MM (America/Los_Angeles).
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from datetime import date
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+import admin_page  # noqa: E402
+import mneme_log  # noqa: E402
+import task_priority  # noqa: E402
+import task_status  # noqa: E402
+import wiki_git  # noqa: E402
+
+DEFAULT_WIKI_ROOT = task_status.default_wiki_root()
+SOURCE = "set-task-priority"
+# The `[User]` / `[Maintenance]` tag that leads every ADMIN index summary.
+TAG_RE = re.compile(r"\[(?:User|Maintenance)\]")
+# A `due <value>` token anywhere in an index summary (`due null` included).
+DUE_TOKEN_RE = re.compile(r" ?\bdue (?:null|\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2})?)")
+
+
+def _value(fields: dict[str, str], key: str) -> str | None:
+    """Frontmatter value, with absent / empty / `null` collapsed to None."""
+    raw = fields.get(key)
+    return None if task_priority.is_null(raw) else raw
+
+
+def _fmt(value: str | None) -> str:
+    return value if value is not None else "null"
+
+
+def plan_change(
+    fields: dict[str, str],
+    urgency: str | None,
+    impact: str | None,
+    due: str | None,
+    clear_due: bool,
+    today: str,
+) -> dict[str, str | None]:
+    """Frontmatter updates for one decision (urgency/impact/due/review)."""
+    new_u = urgency or _value(fields, "urgency")
+    new_i = impact or _value(fields, "impact")
+    updates: dict[str, str | None] = {
+        "urgency": _fmt(new_u),
+        "impact": _fmt(new_i),
+        "priority": _fmt(task_priority.compute_priority(new_u, new_i)),
+        "reviewed": today,
+    }
+    if due is not None:
+        updates["due"] = due
+    elif clear_due:
+        updates["due"] = "null"
+    if "updated" in fields:
+        updates["updated"] = today
+    return updates
+
+
+def describe(fields: dict[str, str], updates: dict[str, str | None]) -> list[str]:
+    """Human-readable `field: old -> new` lines for the fields that change."""
+    lines = []
+    for key in ("urgency", "impact", "priority", "due", "reviewed"):
+        if key not in updates:
+            continue
+        old = fields.get(key) or "(none)"
+        new = updates[key]
+        if old != new:
+            lines.append(f"  {key}: {old} -> {new}")
+    return lines
+
+
+def rewrite_index_due(index_text: str, title: str, due: str | None) -> tuple[str, bool]:
+    """Set the `due …` token on `title`'s ADMIN index line.
+
+    The token sits right after the `[User]`/`[Maintenance]` tag and is shown
+    only for a real deadline; with `due` None it is removed. Returns
+    (new_text, changed). A line with no tag is left alone.
+    """
+    prefix = f"- [[{title}]] | ADMIN |"
+    lines = index_text.splitlines(keepends=True)
+    for i, line in enumerate(lines):
+        if not line.startswith(prefix):
+            continue
+        head, summary = line[:len(prefix)], line[len(prefix):]
+        summary = DUE_TOKEN_RE.sub("", summary)
+        if due is not None:
+            match = TAG_RE.search(summary)
+            if match is None:
+                return index_text, False
+            summary = f"{summary[:match.end()]} due {due}{summary[match.end():]}"
+        new_line = head + summary
+        if new_line == line:
+            return index_text, False
+        lines[i] = new_line
+        return "".join(lines), True
+    return index_text, False
+
+
+def set_one(args: argparse.Namespace) -> int:
+    """Apply one decision to one task."""
+    for name in ("urgency", "impact"):
+        raw = getattr(args, name)
+        if raw is not None and task_priority.normalize(raw) is None:
+            print(f"Error: --{name} {raw!r} is not one of "
+                  f"{', '.join(task_priority.levels())}", file=sys.stderr)
+            return 2
+    if args.due is not None and (task_priority.is_null(args.due)
+                                 or not task_priority.is_valid_due(args.due)):
+        print(f"Error: --due {args.due!r} must be YYYY-MM-DD or YYYY-MM-DDTHH:MM "
+              f"(use --clear-due to remove a deadline)", file=sys.stderr)
+        return 2
+    if not (args.urgency or args.impact or args.due or args.clear_due or args.review):
+        print("Error: nothing to set — give --urgency, --impact, --due, "
+              "--clear-due, or --review", file=sys.stderr)
+        return 2
+
+    path = admin_page.resolve_task(args.wiki_root, args.title)
+    if path is None:
+        return 1
+
+    today = date.today().isoformat()
+    text = path.read_text(encoding="utf-8")
+    fields = admin_page.read_fields(text)
+    if not fields:
+        print(f"Error: {path.name}: no YAML frontmatter", file=sys.stderr)
+        return 1
+
+    updates = plan_change(
+        fields,
+        task_priority.normalize(args.urgency),
+        task_priority.normalize(args.impact),
+        args.due.strip() if args.due else None,
+        args.clear_due,
+        today,
+    )
+    changes = describe(fields, updates)
+
+    index_path = args.wiki_root / "index.md"
+    index_text = new_index = ""
+    index_changed = False
+    if "due" in updates and index_path.is_file():
+        index_text = index_path.read_text(encoding="utf-8")
+        new_due = None if updates["due"] == "null" else updates["due"]
+        new_index, index_changed = rewrite_index_due(index_text, args.title, new_due)
+
+    prefix = "[dry-run] " if args.dry_run else ""
+    print(f"{prefix}{args.title}:")
+    for line in changes or ["  (no field changes; reviewed stays " + today + ")"]:
+        print(line)
+    if index_changed:
+        print("  index.md: due token updated")
+    if args.dry_run:
+        return 0
+
+    path.write_text(admin_page.set_fields(text, updates), encoding="utf-8")
+    paths = [path]
+    if index_changed:
+        index_path.write_text(new_index, encoding="utf-8")
+        paths.append(index_path)
+
+    mneme_log.log_event("update", "ADMIN", args.title, SOURCE)
+    summary = f"{args.title}: priority {updates['priority']}"
+    if "due" in updates:
+        summary += f", due {updates['due']}"
+    wiki_git.commit_wiki_changes(args.wiki_root, paths, "task", summary)
+    return 0
+
+
+def recompute_all(args: argparse.Namespace) -> int:
+    """Re-derive every stored `priority:` from its urgency/impact.
+
+    Not a decision, so `reviewed:` is left alone. Dry-run unless --apply.
+    """
+    today = date.today().isoformat()
+    changed: list[tuple[Path, str]] = []
+    for path in sorted((args.wiki_root / "admin").glob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        fields = admin_page.read_fields(text)
+        if "urgency" not in fields and "impact" not in fields:
+            continue
+        expected = _fmt(task_priority.compute_priority(_value(fields, "urgency"),
+                                                       _value(fields, "impact")))
+        if fields.get("priority") == expected:
+            continue
+        print(f"{'' if args.apply else '[dry-run] '}{path.stem}: priority "
+              f"{fields.get('priority') or '(none)'} -> {expected}")
+        updates: dict[str, str | None] = {"priority": expected}
+        if "updated" in fields:
+            updates["updated"] = today
+        changed.append((path, admin_page.set_fields(text, updates)))
+
+    print(f"{len(changed)} task(s) {'updated' if args.apply else 'would change'}")
+    if not (args.apply and changed):
+        return 0
+    for path, new_text in changed:
+        path.write_text(new_text, encoding="utf-8")
+        mneme_log.log_event("update", "ADMIN", path.stem, SOURCE)
+    wiki_git.commit_wiki_changes(args.wiki_root, [p for p, _ in changed], "task",
+                                 f"recompute priority on {len(changed)} task(s)")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("title", nargs="?", help="admin page filename without .md")
+    parser.add_argument("--urgency", help="LOW | MEDIUM | HIGH | CRITICAL")
+    parser.add_argument("--impact", help="LOW | MEDIUM | HIGH | CRITICAL")
+    due_group = parser.add_mutually_exclusive_group()
+    due_group.add_argument("--due", help="real external deadline: YYYY-MM-DD[THH:MM]")
+    due_group.add_argument("--clear-due", action="store_true",
+                           help="remove the deadline (set due: null)")
+    parser.add_argument("--review", action="store_true",
+                        help="record a decision with no field change (restart the window)")
+    parser.add_argument("--recompute-all", action="store_true",
+                        help="re-derive every stored priority (dry-run unless --apply)")
+    parser.add_argument("--apply", action="store_true",
+                        help="with --recompute-all: write the changes")
+    parser.add_argument("--wiki-root", type=Path, default=DEFAULT_WIKI_ROOT, metavar="DIR",
+                        help=f"wiki root (default: {DEFAULT_WIKI_ROOT})")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="report the intended change without writing")
+    args = parser.parse_args()
+
+    task_priority.reload_model(args.wiki_root)
+    if args.recompute_all:
+        if args.title:
+            parser.error("--recompute-all takes no task title")
+        return recompute_all(args)
+    if not args.title:
+        parser.error("a task title is required (or use --recompute-all)")
+    return set_one(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
