@@ -22,6 +22,7 @@ Importable:
 CLI:
     task_priority.py --compute HIGH MEDIUM   # print the matrix result
     task_priority.py --list-levels           # levels, lowest first
+    task_priority.py --dump-matrix           # "URGENCY IMPACT PRIORITY" lines
 """
 
 from __future__ import annotations
@@ -230,6 +231,8 @@ def main() -> int:
                        help="print the priority for an urgency/impact pair")
     group.add_argument("--list-levels", action="store_true",
                        help="print levels, lowest first, one per line")
+    group.add_argument("--dump-matrix", action="store_true",
+                       help="print every 'URGENCY IMPACT PRIORITY' cell (for bash)")
     parser.add_argument("--wiki-root", type=Path, default=None, metavar="DIR",
                         help="read schema/priority.json from this wiki root")
     args = parser.parse_args()
@@ -240,6 +243,11 @@ def main() -> int:
     if args.list_levels:
         for level in levels():
             print(level)
+        return 0
+    if args.dump_matrix:
+        for urgency in levels():
+            for impact in levels():
+                print(f"{urgency} {impact} {compute_priority(urgency, impact)}")
         return 0
 
     urgency, impact = args.compute

@@ -142,6 +142,39 @@ is_valid_task_status() {
 }
 
 # Counts words in file body (content after frontmatter)
+# load_priority_matrix
+#
+# Cache the urgency x impact -> priority matrix from lib/task_priority.py
+# (schema/priority.json) in _PRIORITY_MATRIX. Call it once in the parent
+# shell before a loop: lookups usually run inside $(...) subshells, where a
+# lazily-filled cache would be thrown away after every call.
+load_priority_matrix() {
+	[[ -n ${_PRIORITY_MATRIX_LOADED:-} ]] && return 0
+	declare -gA _PRIORITY_MATRIX=()
+	local u i p
+	while read -r u i p; do
+		_PRIORITY_MATRIX["$u $i"]=$p
+	done < <(
+		python3 "${BASH_SOURCE%/*}/task_priority.py" --dump-matrix \
+			--wiki-root "$WIKI_DIR" 2>/dev/null)
+	_PRIORITY_MATRIX_LOADED=1
+}
+
+# expected_task_priority <urgency> <impact>
+#
+# Print the matrix result, or nothing when either input is not a level.
+# Levels are case-sensitive here: the schema stores them upper-case.
+expected_task_priority() {
+	load_priority_matrix
+	printf '%s' "${_PRIORITY_MATRIX["$1 $2"]:-}"
+}
+
+# is_priority_level <value> — 0 for LOW|MEDIUM|HIGH|CRITICAL (exact case)
+is_priority_level() {
+	load_priority_matrix
+	[[ -n ${_PRIORITY_MATRIX["$1 $1"]:-} ]]
+}
+
 count_body_words() {
 	local file=$1
 	awk '

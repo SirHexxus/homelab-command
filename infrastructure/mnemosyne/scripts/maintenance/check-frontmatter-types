@@ -32,6 +32,11 @@ Checks:
                      haley|google_keep|triage-enrich
   - ADMIN status:    any active|closed word in schema/statuses.json
   - ADMIN task_type: user|maintenance
+  - ADMIN urgency/impact/priority: LOW|MEDIUM|HIGH|CRITICAL or null;
+                     priority must equal the schema/priority.json matrix
+                     result for urgency x impact (null until both are set)
+  - ADMIN due:       YYYY-MM-DD, YYYY-MM-DDTHH:MM, or null
+  - ADMIN reviewed/closed: YYYY-MM-DD or null
   - PROJECT status:  Not Started|Planned|Active|On Hold|Blocked|Done
   - PERSON follow_up_needed: true|false
   - Date fields:     must be YYYY-MM-DD or null
@@ -58,6 +63,7 @@ readonly DIR_TO_BUCKET=(
 )
 
 readonly DATE_PATTERN='^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+readonly DATETIME_PATTERN='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}$'
 
 # Returns 0 if value is in the provided list
 in_list() {
@@ -91,12 +97,55 @@ validate_date_field() {
 	printf '%s\n' "  - \`${field}\`: invalid date format \`${val}\`"
 }
 
+# Like validate_date_field, but also accepts YYYY-MM-DDTHH:MM (ADMIN due)
+validate_datetime_field() {
+	local file=$1
+	local field=$2
+	local val
+	val=$(get_frontmatter_field "$file" "$field")
+	[[ -z $val || $val == 'null' ]] && return 0
+	[[ $val =~ $DATE_PATTERN || $val =~ $DATETIME_PATTERN ]] && return 0
+	printf '%s\n' "  - \`${field}\`: invalid date/datetime format \`${val}\`"
+}
+
+# Print one violation line per bad urgency/impact/priority value on an
+# ADMIN page; nothing when the page is consistent.
+check_task_priority() {
+	local file=$1
+	local urgency impact priority field val
+	urgency=$(get_frontmatter_field "$file" 'urgency')
+	impact=$(get_frontmatter_field "$file" 'impact')
+	priority=$(get_frontmatter_field "$file" 'priority')
+	[[ $urgency == 'null' ]] && urgency=''
+	[[ $impact == 'null' ]] && impact=''
+	[[ $priority == 'null' ]] && priority=''
+
+	for field in urgency impact priority; do
+		val=${!field}
+		[[ -z $val ]] || is_priority_level "$val" && continue
+		printf '  - `%s`: must be LOW|MEDIUM|HIGH|CRITICAL or null,' \
+			"$field"
+		printf ' got `%s`\n' "$val"
+	done
+
+	local expected=''
+	if is_priority_level "$urgency" && is_priority_level "$impact"; then
+		expected=$(expected_task_priority "$urgency" "$impact")
+	fi
+	[[ $priority == "$expected" ]] && return 0
+	printf '  - `priority`: expected `%s` from urgency x impact,' \
+		"${expected:-null}"
+	printf ' got `%s` (fix with set-task-priority)\n' "${priority:-null}"
+}
+
 main() {
 	local today
 	today=$(date '+%Y-%m-%d')
 
 	local violation_count=0
 	local report_lines=()
+
+	load_priority_matrix
 
 	while IFS= read -r -d '' f; do
 		local relative="${f#"$WIKI_DIR/"}"
@@ -146,9 +195,17 @@ main() {
 						" got \`${task_type}\`"
 					)
 				fi
-				local date_err
-				date_err=$(validate_date_field "$f" 'due')
+				local date_err field
+				date_err=$(validate_datetime_field "$f" 'due')
 				[[ -n $date_err ]] && file_violations+=("$date_err")
+				for field in reviewed closed; do
+					date_err=$(validate_date_field "$f" "$field")
+					[[ -n $date_err ]] && file_violations+=("$date_err")
+				done
+				local prio_line
+				while IFS= read -r prio_line; do
+					[[ -n $prio_line ]] && file_violations+=("$prio_line")
+				done < <(check_task_priority "$f")
 				;;
 			projects)
 				local status
