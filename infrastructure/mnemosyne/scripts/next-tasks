@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""List open ADMIN tasks, ranked by priority — read-only.
+
+The query surface for "what should I do next": the `mneme-tasks` Claude Code
+skill wraps it, and a later Telegram/Haley interface can call it with
+`--json`. Ranking and the window/priority rules live in `lib/admin_tasks.py`
+and `lib/task_priority.py`; this script only filters and prints.
+
+Views (pick one; default is --focus):
+  --focus        open, unblocked tasks by effective priority (deadline-escalated)
+  --checkins     unreviewed or past-window tasks to re-decide, highest impact first
+  --deadlines    tasks with a real `due`, soonest first
+  --blocked      Blocked tasks
+
+Usage:
+  next-tasks                          # top 10 focus tasks, both task types
+  next-tasks --type user --limit 5
+  next-tasks --checkins --unreviewed  # never-triaged only
+  next-tasks --min-priority HIGH --json
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from datetime import date
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+import admin_tasks  # noqa: E402
+import task_priority  # noqa: E402
+import task_status  # noqa: E402
+
+DEFAULT_WIKI_ROOT = task_status.default_wiki_root()
+DEFAULT_LIMIT = 10
+
+
+def select(tasks: list[dict], args: argparse.Namespace) -> list[dict]:
+    """Apply the view and filters, then sort and limit."""
+    if args.blocked:
+        view, sort = [t for t in tasks if t["blocked"]], "focus"
+    elif args.checkins:
+        view = [t for t in tasks if t["past_window"] and not t["blocked"]]
+        if args.unreviewed:
+            view = [t for t in view if t["unreviewed"]]
+        sort = "checkin"
+    elif args.deadlines:
+        view, sort = [t for t in tasks if t["due"]], "due"
+    else:
+        view, sort = [t for t in tasks if not t["blocked"]], "focus"
+
+    if args.type:
+        view = [t for t in view if t["task_type"] == args.type]
+    if args.min_priority:
+        floor = task_priority.rank(args.min_priority)
+        view = [t for t in view if task_priority.rank(t["effective_priority"]) >= floor]
+
+    view.sort(key=admin_tasks.SORTS[sort])
+    return view if args.limit == 0 else view[:args.limit]
+
+
+def format_task(task: dict) -> str:
+    """One human-readable line per task."""
+    level = task["effective_priority"] or "untriaged"
+    if task["priority"] and task["effective_priority"] != task["priority"]:
+        level += f" (stored {task['priority']})"
+    parts = [task["task_type"]]
+    if task["due"]:
+        parts.append(f"due {task['due']}")
+    if task["unreviewed"]:
+        parts.append("unreviewed")
+    elif task["past_window"]:
+        parts.append(f"window ended {task['window_ends']}")
+    else:
+        parts.append(f"reviewed {task['reviewed']}")
+    if task["blocked"]:
+        parts.append("blocked")
+    return f"[{level}] {task['title']} — {' · '.join(parts)}"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    view = parser.add_mutually_exclusive_group()
+    view.add_argument("--focus", action="store_true", help="(default) work-next list")
+    view.add_argument("--checkins", action="store_true",
+                      help="tasks asking to be re-decided")
+    view.add_argument("--deadlines", action="store_true", help="tasks with a real due")
+    view.add_argument("--blocked", action="store_true", help="Blocked tasks")
+    parser.add_argument("--unreviewed", action="store_true",
+                        help="with --checkins: only never-reviewed tasks")
+    parser.add_argument("--type", choices=("user", "maintenance"),
+                        help="only this task_type")
+    parser.add_argument("--min-priority", type=lambda s: s.upper(),
+                        choices=task_priority.levels(),
+                        help="only tasks at or above this effective priority")
+    parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT,
+                        help=f"max tasks (default {DEFAULT_LIMIT}; 0 = all)")
+    parser.add_argument("--json", action="store_true", help="emit JSON")
+    parser.add_argument("--wiki-root", type=Path, default=DEFAULT_WIKI_ROOT, metavar="DIR",
+                        help=f"wiki root (default: {DEFAULT_WIKI_ROOT})")
+    args = parser.parse_args()
+
+    if args.unreviewed and not args.checkins:
+        parser.error("--unreviewed only applies with --checkins")
+    if not (args.wiki_root / "admin").is_dir():
+        print(f"Error: no admin/ under wiki root {args.wiki_root}", file=sys.stderr)
+        return 1
+
+    task_status.reload_vocab(args.wiki_root)
+    task_priority.reload_model(args.wiki_root)
+    today = date.today()
+    tasks = admin_tasks.load_open_tasks(args.wiki_root, today)
+    chosen = select(tasks, args)
+
+    if args.json:
+        print(json.dumps({"today": today.isoformat(), "count": len(chosen),
+                          "tasks": chosen}, indent=2))
+        return 0
+    if not chosen:
+        print("No matching tasks.")
+        return 0
+    for task in chosen:
+        print(format_task(task))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
