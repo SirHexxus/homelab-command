@@ -10,8 +10,11 @@ The target state is validated against the canonical vocabulary
 rather than written, which is what stops typo/case drift at the source. When the
 task is already in the target state the script is a no-op.
 
-On a real change it rewrites the `status:` line, bumps `updated:` to today, and
-records an `update` event in `mneme_log`.
+On a real change it rewrites the `status:` line, bumps `updated:` to today,
+stamps `reviewed:` (a status change is a decision, so it restarts the task's
+attention window — see lib/task_priority.py), sets `closed:` to today when the
+task closes (removing it on reopen, for the throughput metric), and records an
+`update` event in `mneme_log`.
 
 Usage:
   set-task-status "<task-title>" <state> [--dry-run]
@@ -29,6 +32,7 @@ from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+import admin_page  # noqa: E402
 import mneme_log  # noqa: E402
 import task_status  # noqa: E402
 import wiki_git  # noqa: E402
@@ -36,66 +40,32 @@ import wiki_git  # noqa: E402
 DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
 
 
-def resolve_task(wiki_root: Path, title: str) -> Path | None:
-    """Return the admin page for `title`, or None (printing near-matches)."""
-    path = wiki_root / "admin" / f"{title}.md"
-    if path.exists():
-        return path
-    needle = title.lower()
-    hits = [p.stem for p in sorted((wiki_root / "admin").glob("*.md"))
-            if needle in p.stem.lower()]
-    print(f"Error: no admin task named {title!r}.", file=sys.stderr)
-    if hits:
-        print("Did you mean:", file=sys.stderr)
-        for h in hits[:5]:
-            print(f"  {h}", file=sys.stderr)
-    return None
-
-
-def split_frontmatter(text: str) -> tuple[list[str], int, int]:
-    """Return (lines, fm_start, fm_end) — indices of the `---` fences, or (-1,-1)."""
-    lines = text.splitlines(keepends=True)
-    fences = [i for i, ln in enumerate(lines) if ln.rstrip("\n") == "---"]
-    if len(fences) < 2:
-        return lines, -1, -1
-    return lines, fences[0], fences[1]
-
-
 def apply_status(path: Path, new_status: str, today: str,
                  dry_run: bool) -> tuple[bool, str]:
-    """Set status/updated in the frontmatter. Return (changed, current_status).
+    """Set status and its dates in the frontmatter. Return (changed, current_status).
 
     `changed` is False when the task is already in `new_status` (no write). With
     `dry_run` the file is left untouched but the would-be `changed` flag and the
     current status are still reported.
     """
     text = path.read_text(encoding="utf-8")
-    lines, start, end = split_frontmatter(text)
-    if start == -1:
+    if admin_page.split_frontmatter(text)[1] == -1:
         raise ValueError(f"{path.name}: no YAML frontmatter")
-
-    current = ""
-    status_idx = updated_idx = -1
-    for i in range(start + 1, end):
-        key = lines[i].partition(":")[0].strip()
-        if key == "status":
-            status_idx = i
-            current = lines[i].partition(":")[2].strip()
-        elif key == "updated":
-            updated_idx = i
-
-    if status_idx == -1:
+    fields = admin_page.read_fields(text)
+    if "status" not in fields:
         raise ValueError(f"{path.name}: no status field in frontmatter")
 
+    current = fields["status"]
     if current.lower() == new_status.lower():
         return False, current
     if dry_run:
         return True, current
 
-    lines[status_idx] = f"status: {new_status}\n"
-    if updated_idx != -1:
-        lines[updated_idx] = f"updated: {today}\n"
-    path.write_text("".join(lines), encoding="utf-8")
+    updates: dict[str, str | None] = {"status": new_status, "reviewed": today}
+    if "updated" in fields:
+        updates["updated"] = today
+    updates["closed"] = today if task_status.is_closed(new_status) else None
+    path.write_text(admin_page.set_fields(text, updates), encoding="utf-8")
     return True, current
 
 
@@ -117,7 +87,7 @@ def main() -> int:
               file=sys.stderr)
         return 2
 
-    path = resolve_task(args.wiki_root, args.title)
+    path = admin_page.resolve_task(args.wiki_root, args.title)
     if path is None:
         return 1
 
@@ -135,7 +105,8 @@ def main() -> int:
 
     if args.dry_run:
         print(f"[dry-run] {args.title}: {previous or '(none)'} -> {canon}; "
-              f"would bump updated to {today} and log an update event")
+              f"would stamp updated/reviewed{'/closed' if task_status.is_closed(canon) else ''} "
+              f"to {today} and log an update event")
         return 0
 
     mneme_log.log_event("update", "ADMIN", args.title, "set-task-status")
