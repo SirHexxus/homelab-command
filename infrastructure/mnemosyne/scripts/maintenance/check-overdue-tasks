@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 ################################################################################
 # Script Name: check-overdue-tasks
-# Description: Finds open (non-closed) ADMIN tasks past their due date
+# Description: Finds open (non-closed) ADMIN tasks past a real deadline
 # Author: James Stacy
 # Version: 1.0.0
 #
@@ -26,7 +26,9 @@ show_help() {
 	cat << EOF
 Usage: $(basename "$0") [options]
 
-Checks all open (non-closed) ADMIN tasks past their due date.
+Checks all open (non-closed) ADMIN tasks past their due date. \`due\` is
+reserved for real external deadlines (YYYY-MM-DD or YYYY-MM-DDTHH:MM), so
+everything reported here is a missed commitment, not a self-imposed date.
 Writes a report to the reports bucket if any overdue tasks are found.
 
 Options:
@@ -45,8 +47,9 @@ days_between() {
 }
 
 main() {
-	local today
+	local today now
 	today=$(date '+%Y-%m-%d')
+	now=$(date '+%Y-%m-%dT%H:%M')
 
 	local overdue_count=0
 	local user_lines=()
@@ -62,13 +65,20 @@ main() {
 		is_closed_status "$status" && continue
 		[[ -z $due || $due == 'null' ]] && continue
 
-		# ISO date string comparison is lexicographically correct
-		[[ $due < $today ]] || continue
+		# ISO strings compare lexicographically. A dated deadline is past
+		# once the day is over; a timed one once its minute has passed.
+		if [[ $due == *T* ]]; then
+			[[ $due < $now ]] || continue
+		else
+			[[ $due < $today ]] || continue
+		fi
 
-		local days_ago
-		days_ago=$(days_between "$due" "$today")
+		local days_ago ago
+		days_ago=$(days_between "${due%%T*}" "$today")
+		ago="${days_ago} days ago"
+		[[ $days_ago -eq 0 ]] && ago='earlier today'
 		local entry="### [[${title}]]
-- **Due:** ${due} (${days_ago} days ago)
+- **Due:** ${due} (${ago})
 "
 		if [[ $task_type == 'user' ]]; then
 			user_lines+=("$entry")
