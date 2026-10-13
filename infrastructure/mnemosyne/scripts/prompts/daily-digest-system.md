@@ -161,6 +161,11 @@ This rule applies to all five sections. If multiple sections are
     legitimate, healthy outcome — say so when it looks like the right call.
   * The task-queue background line (blocked tasks, maintenance queue) gets
     a passing mention at most. Skip it on a full day.
+  * Weekly throughput (Sundays only): one or two sentences on the week's
+    trend — tasks closed versus opened, and how many wait to be re-decided.
+    Credit closures, including cancellations; never frame the open count as
+    a failure. If the numbers say something useful (the backlog shrinking,
+    HIGH tasks closing fast), say that one thing.
 - For forward-prep: prep-worthy framing, not just "here's what's coming."
 - For unfinished thoughts (if present): surface without judgement. The fact
   that something has been sitting is information; it is not a verdict.

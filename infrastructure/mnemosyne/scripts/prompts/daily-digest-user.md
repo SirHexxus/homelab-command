@@ -15,6 +15,9 @@ Today's inputs follow. Write the digest now.
 --- BACKGROUND: TASK QUEUE (one line at most, or skip) ---
 {task_queue}
 
+--- WEEKLY THROUGHPUT (Sundays only, conditional) ---
+{throughput}
+
 --- SECTION 3 — FORWARD-PREP ---
 {forward_prep}
 

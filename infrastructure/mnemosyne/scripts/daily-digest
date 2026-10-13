@@ -9,6 +9,7 @@ Implements the 5-category content model defined in
                         PERSON follow-ups)
      Focus             (top user tasks by effective priority)
      Check-ins         (user tasks to re-decide: unreviewed or past window)
+     Throughput        (Sundays only: the week's opened/closed task trend)
   3. Forward-prep      (upcoming real deadlines, calendar block)
   4. Unfinished thoughts  (conditional — omit if empty)
   5. Stale-but-now-relevant  (conditional — omit if empty; Layer 3 TODO)
@@ -57,6 +58,7 @@ from weather import fetch_weather  # noqa: E402
 import mneme_log  # noqa: E402
 import task_priority  # noqa: E402
 import task_status  # noqa: E402
+import task_throughput  # noqa: E402
 import wiki_git  # noqa: E402
 
 
@@ -642,6 +644,11 @@ def format_task_queue(blocked: list[str], maintenance_queued: int) -> str:
     return "\n".join(lines) if lines else OMIT
 
 
+def format_throughput(summary: str | None) -> str:
+    """Sunday-only weekly trend. Any other day → OMIT."""
+    return summary or OMIT
+
+
 def format_forward_prep(
     upcoming: list[dict[str, str]],
     lookahead: int,
@@ -712,6 +719,7 @@ def build_user_prompt(
     calendar: list[dict] | None,
     birthdays: list[dict[str, str]],
     tasks: dict,
+    throughput: str | None,
     follow_ups: list[dict[str, str]],
     unfinished: list[dict[str, str]],
     stale: list[dict[str, str]],
@@ -727,6 +735,7 @@ def build_user_prompt(
         focus=format_focus(tasks["focus"]),
         checkins=format_checkins(tasks["checkins"], tasks["checkin_backlog"]),
         task_queue=format_task_queue(tasks["blocked"], tasks["maintenance_queued"]),
+        throughput=format_throughput(throughput),
         forward_prep=format_forward_prep(tasks["upcoming"], lookahead),
         unfinished=format_unfinished(unfinished),
         stale_relevant=format_stale_relevant(stale),
@@ -927,6 +936,10 @@ def main() -> None:
     weekday = today.strftime("%A")
 
     tasks = collect_tasks(wiki_root, today, args.lookahead)
+    # Sunday (weekday 6) carries the weekly trend; dry-run always shows it.
+    throughput = None
+    if today.weekday() == 6 or args.dry_run:
+        throughput = task_throughput.digest_summary(task_throughput.compute(wiki_root, today))
     follow_ups = collect_follow_ups(wiki_root, today)
     birthdays = collect_birthdays(wiki_root, today)
     unfinished = collect_unfinished_thoughts(wiki_root, today)
@@ -953,6 +966,8 @@ def main() -> None:
               f"{tasks['checkin_backlog']}): {checkin_titles}")
         print(f"[dry-run] Blocked ({len(tasks['blocked'])}): {tasks['blocked']}")
         print(f"[dry-run] Maintenance queued: {tasks['maintenance_queued']}")
+        print(f"[dry-run] Throughput (sent on Sundays only):\n  "
+              + throughput.replace("\n", "\n  "))
         print(f"[dry-run] Follow-ups ({len(follow_ups)}): {[f['title'] for f in follow_ups]}")
         print(f"[dry-run] Unfinished thoughts ({len(unfinished)}):")
         for u in unfinished:
@@ -975,6 +990,7 @@ def main() -> None:
         calendar=calendar,
         birthdays=birthdays,
         tasks=tasks,
+        throughput=throughput,
         follow_ups=follow_ups,
         unfinished=unfinished,
         stale=stale,
