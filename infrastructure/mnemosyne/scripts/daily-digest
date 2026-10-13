@@ -5,8 +5,11 @@ Implements the 5-category content model defined in
 `reference/Mnemosyne Retrieval Architecture.md`:
 
   1. Temporal anchors  (birthdays, anniversaries, weather, location)
-  2. Obligations       (ADMIN due/overdue, PERSON follow-ups)
-  3. Forward-prep      (upcoming items, calendar block — calendar TODO)
+  2. Obligations       (real ADMIN deadlines due/missed, CRITICAL tasks,
+                        PERSON follow-ups)
+     Focus             (top user tasks by effective priority)
+     Check-ins         (user tasks to re-decide: unreviewed or past window)
+  3. Forward-prep      (upcoming real deadlines, calendar block)
   4. Unfinished thoughts  (conditional — omit if empty)
   5. Stale-but-now-relevant  (conditional — omit if empty; Layer 3 TODO)
 
@@ -46,11 +49,13 @@ from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+import admin_tasks  # noqa: E402
 import embeddings  # noqa: E402
 import llm_client  # noqa: E402
 from gcal import fetch_calendar  # noqa: E402
 from weather import fetch_weather  # noqa: E402
 import mneme_log  # noqa: E402
+import task_priority  # noqa: E402
 import task_status  # noqa: E402
 import wiki_git  # noqa: E402
 
@@ -62,6 +67,11 @@ DEFAULT_WIKI_ROOT = task_status.default_wiki_root()
 # Lives outside the wiki git repo: operational telemetry, not knowledge.
 TOKEN_LOG = Path.home() / "mneme" / "logs" / "digest-tokens.jsonl"
 DEFAULT_LOOKAHEAD = 3
+# ADMIN task sections. `due` is reserved for real external deadlines, and the
+# rest of the list is ranked by priority (lib/admin_tasks.py). Check-ins drip
+# the re-decide backlog a few at a time so it never becomes a wall of red.
+FOCUS_LIMIT = 5
+CHECKIN_LIMIT = 5
 PERSON_LOOKAHEAD_DAYS = 14
 BIRTHDAY_LOOKAHEAD_DAYS = 7
 
@@ -162,44 +172,77 @@ def body_excerpt(body: str, limit: int = BODY_EXCERPT_LIMIT) -> str:
 
 # ── Collectors — obligations ─────────────────────────────────────────────────
 
-def collect_due_tasks(
+def _digest_task(task: dict) -> dict[str, str]:
+    """Shape an admin_tasks record for the prompt formatters (adds body)."""
+    _, body = split_frontmatter(Path(task["path"]))
+    due = task["due"] or ""
+    return {
+        "title": task["title"],
+        "due": due,
+        "weekday": weekday_name(due[:10]) if due else "",
+        "task_type": task["task_type"],
+        "priority": task["effective_priority"] or "",
+        "impact": task["impact"] or "",
+        "reviewed": task["reviewed"] or "",
+        "body": body_excerpt(body),
+    }
+
+
+def collect_tasks(
     wiki_root: Path,
     today: date,
     lookahead: int,
-) -> dict[str, list[dict[str, str]]]:
-    """ADMIN tasks split into overdue, due-today, and upcoming buckets."""
+) -> dict:
+    """ADMIN tasks for the digest, each task in at most one section.
+
+    Deadlines (overdue / due_today / upcoming) come only from real `due`
+    dates. `critical` is any other CRITICAL user task. `focus` is the top
+    user tasks by effective priority; `checkins` the user tasks asking to be
+    re-decided. Maintenance tasks are reported as a count only — they are the
+    agent's queue, not James's morning.
+    """
     cutoff = today + timedelta(days=lookahead)
-    overdue: list[dict[str, str]] = []
-    due_today: list[dict[str, str]] = []
-    upcoming: list[dict[str, str]] = []
+    tasks = admin_tasks.load_open_tasks(wiki_root, today)
+    user_open = [t for t in tasks if t["task_type"] == "user" and not t["blocked"]]
 
-    for md_file in sorted((wiki_root / "admin").glob("*.md")):
-        fm, body = split_frontmatter(md_file)
-        if task_status.is_closed(fm.get("status", "")):
+    overdue, due_today, upcoming = [], [], []
+    for task in sorted(user_open, key=admin_tasks.due_key):
+        due_date = task_priority.parse_due(task["due"])
+        if due_date is None:
             continue
-        raw_due = fm.get("due", "")
-        if not raw_due or raw_due == "null":
-            continue
-        try:
-            due_date = date.fromisoformat(raw_due)
-        except ValueError:
-            continue
-
-        entry = {
-            "title": md_file.stem,
-            "due": raw_due,
-            "weekday": weekday_name(raw_due),
-            "task_type": fm.get("task_type", "user"),
-            "body": body_excerpt(body),
-        }
         if due_date < today:
-            overdue.append(entry)
+            overdue.append(task)
         elif due_date == today:
-            due_today.append(entry)
+            due_today.append(task)
         elif due_date <= cutoff:
-            upcoming.append(entry)
+            upcoming.append(task)
 
-    return {"overdue": overdue, "due_today": due_today, "upcoming": upcoming}
+    shown = {t["title"] for t in overdue + due_today}
+    critical = [t for t in sorted(user_open, key=admin_tasks.focus_key)
+                if t["effective_priority"] == "CRITICAL" and t["title"] not in shown]
+    shown |= {t["title"] for t in critical}
+
+    focus = [t for t in sorted(user_open, key=admin_tasks.focus_key)
+             if t["title"] not in shown][:FOCUS_LIMIT]
+    shown |= {t["title"] for t in focus}
+
+    checkins = [t for t in sorted(user_open, key=admin_tasks.checkin_key)
+                if t["past_window"] and t["title"] not in shown][:CHECKIN_LIMIT]
+
+    as_digest = lambda items: [_digest_task(t) for t in items]  # noqa: E731
+    return {
+        "overdue": as_digest(overdue),
+        "due_today": as_digest(due_today),
+        "upcoming": as_digest(upcoming),
+        "critical": as_digest(critical),
+        "focus": as_digest(focus),
+        "checkins": as_digest(checkins),
+        "checkin_backlog": sum(1 for t in user_open if t["past_window"]),
+        "blocked": [t["title"] for t in tasks
+                    if t["blocked"] and t["task_type"] == "user"],
+        "maintenance_queued": sum(1 for t in tasks
+                                  if t["task_type"] == "maintenance" and not t["blocked"]),
+    }
 
 
 def collect_follow_ups(wiki_root: Path, today: date) -> list[dict[str, str]]:
@@ -449,9 +492,26 @@ def fetch_calendar_block(today: date) -> list[dict] | None:
 # ── Formatters ───────────────────────────────────────────────────────────────
 
 def _format_task(task: dict[str, str]) -> str:
-    weekday = task.get("weekday", "")
-    when = f"{task['due']} ({weekday})" if weekday else task["due"]
-    line = f"- {task['title']} — due {when}, {task['task_type']}"
+    details = []
+    if task.get("priority"):
+        details.append(f"{task['priority']} priority")
+    if task.get("due"):
+        weekday = task.get("weekday", "")
+        details.append(f"due {task['due']} ({weekday})" if weekday else f"due {task['due']}")
+    line = f"- {task['title']}"
+    if details:
+        line += " — " + ", ".join(details)
+    body = task.get("body", "").strip()
+    if body:
+        line += "\n" + textwrap.indent(body, "    ")
+    return line
+
+
+def _format_checkin(task: dict[str, str]) -> str:
+    impact = task.get("impact") or "not yet set"
+    decided = (f"last decided {task['reviewed']}" if task.get("reviewed")
+               else "not yet reviewed")
+    line = f"- {task['title']} — impact {impact}, {decided}"
     body = task.get("body", "").strip()
     if body:
         line += "\n" + textwrap.indent(body, "    ")
@@ -525,18 +585,22 @@ def format_temporal_anchors(
 def format_obligations(
     overdue: list[dict[str, str]],
     due_today: list[dict[str, str]],
+    critical: list[dict[str, str]],
     follow_ups: list[dict[str, str]],
 ) -> str:
     """Section 2 — obligations. Empty → OMIT."""
-    if not (overdue or due_today or follow_ups):
+    if not (overdue or due_today or critical or follow_ups):
         return OMIT
     parts: list[str] = []
     if overdue:
-        parts.append("Overdue ADMIN tasks (past due — needs attention):")
+        parts.append("Missed real deadlines (external commitments now past due):")
         parts.append(_format_task_list(overdue))
     if due_today:
-        parts.append("Due today:")
+        parts.append("Real deadlines due today:")
         parts.append(_format_task_list(due_today))
+    if critical:
+        parts.append("CRITICAL-priority tasks (act today):")
+        parts.append(_format_task_list(critical))
     if follow_ups:
         parts.append("PERSON follow-ups:")
         for fu in follow_ups:
@@ -551,6 +615,33 @@ def format_obligations(
     return "\n".join(parts)
 
 
+def format_focus(focus: list[dict[str, str]]) -> str:
+    """Focus — top user tasks by priority. Empty → OMIT."""
+    if not focus:
+        return OMIT
+    return ("Highest-priority open tasks, best first:\n"
+            + _format_task_list(focus))
+
+
+def format_checkins(checkins: list[dict[str, str]], backlog: int) -> str:
+    """Check-ins — tasks to re-decide. Empty → OMIT."""
+    if not checkins:
+        return OMIT
+    header = (f"Tasks to re-decide today ({len(checkins)} of {backlog} waiting) — "
+              "for each: do it, change its priority, keep it as-is, or cancel it:")
+    return header + "\n" + "\n".join(_format_checkin(t) for t in checkins)
+
+
+def format_task_queue(blocked: list[str], maintenance_queued: int) -> str:
+    """Background one-liners: blocked tasks and the agent's queue size."""
+    lines = []
+    if blocked:
+        lines.append(f"{len(blocked)} blocked: {'; '.join(blocked)}")
+    if maintenance_queued:
+        lines.append(f"{maintenance_queued} maintenance tasks queued for the agent")
+    return "\n".join(lines) if lines else OMIT
+
+
 def format_forward_prep(
     upcoming: list[dict[str, str]],
     lookahead: int,
@@ -558,7 +649,8 @@ def format_forward_prep(
     """Section 3 — forward-prep. Empty → OMIT."""
     if not upcoming:
         return OMIT
-    return f"Upcoming ADMIN tasks (next {lookahead} days):\n" + _format_task_list(upcoming)
+    return (f"Real deadlines in the next {lookahead} days:\n"
+            + _format_task_list(upcoming))
 
 
 def format_unfinished(items: list[dict[str, str]]) -> str:
@@ -619,10 +711,8 @@ def build_user_prompt(
     weather: dict | None,
     calendar: list[dict] | None,
     birthdays: list[dict[str, str]],
-    overdue: list[dict[str, str]],
-    due_today: list[dict[str, str]],
+    tasks: dict,
     follow_ups: list[dict[str, str]],
-    upcoming: list[dict[str, str]],
     unfinished: list[dict[str, str]],
     stale: list[dict[str, str]],
     yesterday_log: list[str],
@@ -632,8 +722,12 @@ def build_user_prompt(
     yesterday = today - timedelta(days=1)
     return template.format(
         temporal_anchors=format_temporal_anchors(today, weekday, birthdays, weather, calendar),
-        obligations=format_obligations(overdue, due_today, follow_ups),
-        forward_prep=format_forward_prep(upcoming, lookahead),
+        obligations=format_obligations(tasks["overdue"], tasks["due_today"],
+                                       tasks["critical"], follow_ups),
+        focus=format_focus(tasks["focus"]),
+        checkins=format_checkins(tasks["checkins"], tasks["checkin_backlog"]),
+        task_queue=format_task_queue(tasks["blocked"], tasks["maintenance_queued"]),
+        forward_prep=format_forward_prep(tasks["upcoming"], lookahead),
         unfinished=format_unfinished(unfinished),
         stale_relevant=format_stale_relevant(stale),
         yesterday_log=format_yesterday_log(yesterday_log),
@@ -826,12 +920,13 @@ def main() -> None:
         print(f"Error: wiki root not found: {wiki_root}", file=sys.stderr)
         sys.exit(1)
     task_status.reload_vocab(wiki_root)
+    task_priority.reload_model(wiki_root)
 
     today = date.today()
     yesterday = today - timedelta(days=1)
     weekday = today.strftime("%A")
 
-    tasks = collect_due_tasks(wiki_root, today, args.lookahead)
+    tasks = collect_tasks(wiki_root, today, args.lookahead)
     follow_ups = collect_follow_ups(wiki_root, today)
     birthdays = collect_birthdays(wiki_root, today)
     unfinished = collect_unfinished_thoughts(wiki_root, today)
@@ -848,12 +943,16 @@ def main() -> None:
         else:
             print(f"[dry-run] Calendar ({len(calendar)}): {[e['title'] for e in calendar]}")
         print(f"[dry-run] Birthdays ({len(birthdays)}): {[b['title'] for b in birthdays]}")
-        overdue_titles = [t["title"] for t in tasks["overdue"]]
-        due_today_titles = [t["title"] for t in tasks["due_today"]]
-        upcoming_titles = [t["title"] for t in tasks["upcoming"]]
-        print(f"[dry-run] Overdue ({len(overdue_titles)}): {overdue_titles}")
-        print(f"[dry-run] Due today ({len(due_today_titles)}): {due_today_titles}")
-        print(f"[dry-run] Upcoming ({len(upcoming_titles)}): {upcoming_titles}")
+        for key, label in (("overdue", "Missed deadlines"), ("due_today", "Due today"),
+                           ("upcoming", "Upcoming deadlines"), ("critical", "Critical"),
+                           ("focus", "Focus")):
+            titles = [f"{t['title']} [{t['priority'] or 'untriaged'}]" for t in tasks[key]]
+            print(f"[dry-run] {label} ({len(titles)}): {titles}")
+        checkin_titles = [t["title"] for t in tasks["checkins"]]
+        print(f"[dry-run] Check-ins ({len(checkin_titles)} of "
+              f"{tasks['checkin_backlog']}): {checkin_titles}")
+        print(f"[dry-run] Blocked ({len(tasks['blocked'])}): {tasks['blocked']}")
+        print(f"[dry-run] Maintenance queued: {tasks['maintenance_queued']}")
         print(f"[dry-run] Follow-ups ({len(follow_ups)}): {[f['title'] for f in follow_ups]}")
         print(f"[dry-run] Unfinished thoughts ({len(unfinished)}):")
         for u in unfinished:
@@ -875,10 +974,8 @@ def main() -> None:
         weather=weather,
         calendar=calendar,
         birthdays=birthdays,
-        overdue=tasks["overdue"],
-        due_today=tasks["due_today"],
+        tasks=tasks,
         follow_ups=follow_ups,
-        upcoming=tasks["upcoming"],
         unfinished=unfinished,
         stale=stale,
         yesterday_log=yesterday_log,
