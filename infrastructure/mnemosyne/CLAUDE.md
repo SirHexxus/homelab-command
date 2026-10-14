@@ -97,5 +97,6 @@ ansible-playbook -i inventory.ini provision.yml -e mneme_purge_unmanaged=true
 - **Maintenance scripts** at `scripts/maintenance/` already implement most Phase 7.1
   checks (ghost links, orphan files, stub pages, overdue tasks, stale projects, etc.).
   See `ToDo.md` Phase 7 for the inventory and remaining wiring work.
+- **ADMIN tasks are priority-ranked, not date-driven** (2026-10-13 reframe). `due` is for real external deadlines only; change task fields through `set-task-priority` / `set-task-status`, never by hand. Rules: `SCHEMA.md` (`schema/15-admin-task-priority.md`); tools: `scripts/README.md` § ADMIN Tasks.
 - Design doc: `docs/mnemosyne-design-doc.md`
 - IaC conventions: see root `CLAUDE.md`

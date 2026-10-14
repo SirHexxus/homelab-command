@@ -10,6 +10,10 @@ scripts/
 ├── enrich-stubs               # every 6h — enrich stubs, merge candidates, flag issues
 ├── watch-inbox                # daemon — inotifywait trigger for triage-inbox
 ├── daily-digest               # daily 7am — morning briefing via Telegram
+├── next-tasks                 # read-only — rank open ADMIN tasks by priority
+├── set-task-priority          # set urgency / impact / real due; stamps reviewed
+├── set-task-status            # flip status; stamps reviewed / closed
+├── sync-deadlines-gcal        # hourly — real ADMIN deadlines → Google Calendar
 ├── lib/
 │   └── wiki-common.sh         # Shared bash functions; source, do not execute
 └── maintenance/
@@ -17,6 +21,7 @@ scripts/
     ├── check-index-completeness   # daily   — bash only
     ├── check-overdue-tasks        # daily   — bash only
     ├── check-person-followups     # daily   — bash only
+    ├── report-task-throughput     # weekly  — bash + python (always writes)
     ├── check-inbox-drain          # daily   — bash only
     ├── check-frontmatter-types    # weekly  — bash only
     ├── check-updated-drift        # weekly  — bash only
@@ -75,6 +80,27 @@ are found. A clean run logs to stderr and exits 0 without writing a file.
 0 9 * * 0 /path/to/scripts/maintenance/audit-required-fields --enrich
 0 9 * * 0 /path/to/scripts/maintenance/check-stub-pages --enrich
 0 9 * * 0 /path/to/scripts/maintenance/triage-stale-projects --enrich
+```
+
+## ADMIN Tasks
+
+ADMIN tasks are ranked by priority (urgency × impact), dated only by real external deadlines, and re-decided when they outlive their attention window. The rules live in the wiki's `SCHEMA.md` (`schema/15-admin-task-priority.md`, matrix in `schema/priority.json`); `lib/task_priority.py` reads them, and `lib/admin_tasks.py` is the shared query layer behind `next-tasks`, the digest, and the throughput report.
+
+```bash
+./next-tasks --type user --limit 5                       # what to work on
+./next-tasks --checkins                                  # tasks to re-decide
+./set-task-priority "Renew Ariadne SSL Cert" --urgency HIGH --impact HIGH
+./set-task-priority "File Quarterly Taxes" --due 2027-01-15
+./set-task-status "Configure Bazarr" Done
+./sync-deadlines-gcal --calendar-id <id>                 # dry-run; --apply to write
+```
+
+The `mneme-tasks` Claude Code skill wraps these for interactive review sessions.
+
+## Tests
+
+```bash
+python3 -m unittest discover -s tests     # stdlib only — no pytest needed
 ```
 
 ## watch-inbox System Service
