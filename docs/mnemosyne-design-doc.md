@@ -65,12 +65,14 @@ Buckets fall into two structural categories that drive different ingestion and s
 | Bucket | Type | Directory | Purpose | Key Distinction |
 |--------|------|-----------|---------|----------------|
 | IDEA | Atomic | `ideas/` | Abstract thoughts, opinions, insights, interpretations, and questions - your take on the world | Your inner world; subjective |
-| ADMIN | Atomic | `admin/` | Tasks and errands with due dates | Actionable, time-bound |
+| ADMIN | Atomic | `admin/` | Tasks and errands — one deliverable each (milestones make it a PROJECT) | Actionable; ranked by priority, dated only by real deadlines |
 | REFERENCE | Atomic | `reference/` | Concrete facts, sources, data, information - verifiable and/or quantifiable | External, objective reality |
 | JOURNAL | Atomic | `journal/` | Dated personal entries, reflections, daily notes | Time-anchored experience |
 | PERSON | Compound | `people/` | Individuals - contact info, relationship context, interaction history | About *who* |
 | PROJECT | Compound | `projects/` | Multi-step work with a defined end state | Has a finish line |
 | PURSUIT | Compound | `pursuits/` | Ongoing endeavors without a terminal end state | No finish line |
+
+**ADMIN task priority (2026-10-13 reframe):** ADMIN tasks are ordered by **priority** — the urgency × impact matrix — not by dates. `due` is reserved for real external deadlines (clients, family, filings), each mirrored to the "Mnemosyne Deadlines" Google Calendar by `sync-deadlines-gcal`. Every priority level has an **attention window**; a task past its window, or never reviewed, asks to be re-decided (do it, re-prioritize, keep, cancel, or convert to a PROJECT) instead of being called overdue. A weekly throughput report measures whether tasks actually close. The field definitions, rubric, matrix, and windows live in `SCHEMA.md` (source: `schema/15-admin-task-priority.md`, which also records the rationale, and `schema/priority.json`). Invented due dates had turned the digest's overdue list into noise that went unread — this is the fix.
 
 **IDEA vs. REFERENCE disambiguation:** This is the highest-risk classification boundary. When confidence is below threshold at this specific boundary, the classifier must ask rather than guess. If the user declines to clarify, **default to IDEA** - a subjective framing of an objective fact is a less disorienting misclassification than an objective fact filed as a personal insight. See `SCHEMA.md` for worked examples.
 
@@ -361,7 +363,7 @@ Complexity Classification (Ollama self-assesses)
 | `/find {name}` | Hermes reads PERSON entity page in full → formats summary |
 | `/project {name}` | Hermes reads PROJECT entity page → returns status, next action |
 | `/pursuit {name}` | Hermes reads PURSUIT entity page → returns milestone summary |
-| `/remind` | Hermes scans ADMIN pages with `status: Pending` and `due <= today+48h` |
+| `/remind` | Open ADMIN tasks with a real `due` within 48h, plus CRITICAL-priority tasks |
 | `/lint` | Wiki health check - orphans, broken links, stale entities, missing wikilinks |
 
 ### 8.2 Claude Code Direct Retrieval (`/mneme-ask`)
@@ -390,9 +392,10 @@ Offers to file substantial answers as new IDEA or REFERENCE pages
 
 | Report | Schedule | Contents |
 |--------|----------|----------|
-| Daily Digest | Daily, 7:00 AM | Yesterday's captures by bucket; ADMIN due within 48h; PERSON follow-ups due |
+| Daily Digest | Daily, 7:00 AM | Yesterday's captures; real ADMIN deadlines (missed, today, upcoming) and CRITICAL tasks; top-5 focus tasks by priority; up to 5 tasks to re-decide; PERSON follow-ups; Sunday throughput line |
+| Task Throughput | Sunday, 8:00 AM | Per priority: open, unreviewed, past window, opened/closed this week, median days to close (`report-task-throughput`) |
 | Serendipity Engine | Daily, 7:05 AM (opt-in) | 1 IDEA from yesterday + 3 adjacent pages → unexpected connection |
-| Weekly Summary | Sunday, 6:00 PM | Week's captures; active PROJECT next actions; ADMIN due next week |
+| Weekly Summary | Sunday, 6:00 PM | Week's captures; active PROJECT next actions; real ADMIN deadlines next week |
 | Idea Synthesis Report | Sunday, 6:05 PM | Week's IDEAs cross-referenced against full wiki; filed as synthesis page |
 | Monthly Trend Report | 1st of month, 8:00 AM | Topic clusters, recurring themes, stale IDEAs, inactive projects |
 
