@@ -328,7 +328,7 @@ scheduled Lint report and a fix-and-stub-create execution loop.
 
 These items have been identified but are not scheduled. Revisit after Phase 3 is complete.
 
-- **ADMIN recurrence engine** — `recurrence:` (weekly | monthly) is written by capture paths but read by nothing: no script rolls a recurring task forward. Closely related to the 2026-10-13 priority reframe (a recurring task's next occurrence is a fresh decision with its own attention window) but deliberately out of scope for it.
+- **ADMIN recurrence engine** — `recurrence:` (weekly | monthly) is written by capture paths but read by nothing: no script rolls a recurring task forward. Closely related to the 2026-10-13 priority reframe (a recurring task's next occurrence is a fresh decision with its own Review SLA) but deliberately out of scope for it.
 - **Obsidian Dataview dashboards** — dynamic tables for ADMIN tasks, PERSON follow-ups,
   PROJECT status. Requires consistent YAML frontmatter from Hermes wiki writes.
 - **Apple Shortcuts / iOS capture** — shortcut that sends text to the Telegram bot for
