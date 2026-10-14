@@ -42,7 +42,7 @@ When writing, you are the **Custodian** of the wiki. Always read `SCHEMA.md` for
 | Bucket | Directory | What goes there |
 |--------|-----------|-----------------|
 | IDEA | `ideas/` | Subjective interpretations, questions, half-formed thoughts |
-| ADMIN | `admin/` | Tasks, to-dos, reminders, anything with a due date or action required |
+| ADMIN | `admin/` | Tasks and to-dos — one deliverable each (milestones mean PROJECT) |
 | REFERENCE | `reference/` | Objective, verifiable facts, sources, documentation |
 | JOURNAL | `journal/` | Dated personal entries |
 | PERSON | `people/` | People — contact info, relationship context |
@@ -73,7 +73,11 @@ tags: []
 ---
 ```
 
-Bucket-specific additions: see `SCHEMA.md` (ADMIN needs `due`/`status`/`recurrence`/`task_type`; ADMIN entries in `index.md` must include `[User]` or `[Maintenance]` at the start of the summary; PROJECT needs `status`/`next_action`/`deadline`; PURSUIT needs `current_milestone`/`next_milestone`/`last_active`; PERSON needs `relationship`/`last_contact`/`follow_up_*`; JOURNAL gets optional `mood`/`weather`; REFERENCE may carry `source_url`/`file_ref`).
+Bucket-specific additions: see `SCHEMA.md` (ADMIN needs `due`/`status`/`recurrence`/`task_type`/`urgency`/`impact`/`priority` — see **ADMIN priority** below; ADMIN entries in `index.md` must include `[User]` or `[Maintenance]` at the start of the summary; PROJECT needs `status`/`next_action`/`deadline`; PURSUIT needs `current_milestone`/`next_milestone`/`last_active`; PERSON needs `relationship`/`last_contact`/`follow_up_*`; JOURNAL gets optional `mood`/`weather`; REFERENCE may carry `source_url`/`file_ref`).
+
+**ADMIN priority.** Every new ADMIN task gets `urgency:` and `impact:`, each `LOW` | `MEDIUM` | `HIGH` | `CRITICAL` (rubric in `SCHEMA.md`; MEDIUM is the default for a real task, LOW a whim or nice-to-have). `priority:` is never judged — look it up from urgency × impact in `schema/priority.json` (`matrix[urgency][impact]`) and write that value. Never write `reviewed:`; only the user's own decisions set it.
+
+`due:` is for **real external deadlines only** — a client date, a family commitment, a filing date — as `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM`. Otherwise `due: null`. Never invent a date to make something feel urgent; urgency is what `urgency:` is for. ADMIN index lines carry `due YYYY-MM-DD` right after the `[User]`/`[Maintenance]` tag only when such a deadline exists.
 
 **Wikilinks are mandatory.** Any reference to a named entity, concept, or page that has (or should have) its own wiki page MUST use `[[Page Title]]` syntax. Prose references are invisible to the Obsidian graph view. If a target page doesn't exist yet, create a stub — orphan wikilinks are worse than no link.
 
