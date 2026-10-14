@@ -58,19 +58,19 @@ variable "container_hostname" {
 variable "container_cpu_cores" {
   description = "Number of CPU cores"
   type        = number
-  default     = 1
+  default     = 2
 }
 
 variable "container_memory_mb" {
   description = "Memory in megabytes"
   type        = number
-  default     = 512
+  default     = 2048
 }
 
 variable "container_disk_gb" {
   description = "Disk size in gigabytes"
   type        = number
-  default     = 8
+  default     = 20
 }
 
 variable "container_storage" {
