@@ -54,6 +54,7 @@ import admin_tasks  # noqa: E402
 import embeddings  # noqa: E402
 import llm_client  # noqa: E402
 from gcal import fetch_calendar  # noqa: E402
+from gcal import load_credentials as load_calendar_credentials  # noqa: E402
 from weather import fetch_weather  # noqa: E402
 import mneme_log  # noqa: E402
 import task_priority  # noqa: E402
@@ -470,22 +471,17 @@ def collect_stale_relevant(today: date) -> list[dict[str, str]]:
 def fetch_calendar_block(today: date) -> list[dict] | None:
     """Today's events across James's Google Calendars. None on any gap.
 
-    Credentials live in a git-ignored JSON file whose path is given by the
-    GOOGLE_CALENDAR_CREDENTIALS env var (set in ~/.bashrc.local, consistent
-    with OPENWEATHER_API_KEY). The file holds the OAuth client_id,
-    client_secret, and refresh_token.
+    Credentials resolve through gcal.load_credentials(): the file named by
+    GOOGLE_CALENDAR_CREDENTIALS, else ~/.config/mnemosyne/gcal-creds.json
+    (where the inbox_receiver role deploys it for the worker units).
     """
-    creds_path = os.environ.get("GOOGLE_CALENDAR_CREDENTIALS", "").strip()
-    if not creds_path:
-        return None
-    try:
-        creds = json.loads(Path(creds_path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    creds = load_calendar_credentials()
+    if creds is None:
         return None
     return fetch_calendar(
-        creds.get("client_id", ""),
-        creds.get("client_secret", ""),
-        creds.get("refresh_token", ""),
+        creds["client_id"],
+        creds["client_secret"],
+        creds["refresh_token"],
         CALENDAR_IDS,
         today,
     )

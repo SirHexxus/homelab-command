@@ -22,10 +22,12 @@ the safer contract.
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, time, timedelta, tzinfo
+from pathlib import Path
 
 TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 EVENTS_ENDPOINT = "https://www.googleapis.com/calendar/v3/calendars/{cal}/events"
@@ -469,3 +471,110 @@ def apply_calendar_overrides(
         else:
             failed.append(entry)
     return {"applied": applied, "failed": failed, "skipped": skipped}
+
+
+# ── Credentials ──────────────────────────────────────────────────────────────
+
+DEFAULT_CREDENTIALS_PATH = Path.home() / ".config" / "mnemosyne" / "gcal-creds.json"
+
+
+def load_credentials() -> dict | None:
+    """OAuth creds {client_id, client_secret, refresh_token}, or None.
+
+    Path from $GOOGLE_CALENDAR_CREDENTIALS, else the file the inbox_receiver
+    role deploys (~/.config/mnemosyne/gcal-creds.json) — so worker units need
+    no extra environment. None when the file is missing or malformed.
+    """
+    raw = os.environ.get("GOOGLE_CALENDAR_CREDENTIALS", "").strip()
+    path = Path(raw).expanduser() if raw else DEFAULT_CREDENTIALS_PATH
+    try:
+        creds = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    keys = ("client_id", "client_secret", "refresh_token")
+    if not all(creds.get(k) for k in keys):
+        return None
+    return {k: creds[k] for k in keys}
+
+
+def access_token_for(creds: dict) -> str | None:
+    """Short-lived access token for `creds`; None if the exchange fails.
+
+    The usual failure is a dead refresh token (Google `invalid_grant`) —
+    re-run `gcal-authorize --force` and redeploy the vault copy.
+    """
+    return _get_access_token(creds["client_id"], creds["client_secret"],
+                             creds["refresh_token"])
+
+
+# ── Tagged events (deadline sync) ────────────────────────────────────────────
+#
+# The deadline sync owns every event it creates, recognised by a private
+# extended property, so it can reconcile without storing event IDs anywhere
+# else. Same contract as the writes above: result dicts, no exceptions.
+
+def list_tagged_events(
+    calendar_id: str,
+    access_token: str,
+    key: str,
+    value: str,
+) -> list[dict] | None:
+    """Every event carrying private property `key`=`value`, cancelled ones
+    included (showDeleted) so hand-deleted events can be told apart from
+    never-created ones. None on any failure."""
+    items: list[dict] = []
+    page_token = ""
+    while True:
+        params = {
+            "privateExtendedProperty": f"{key}={value}",
+            "showDeleted": "true",
+            "maxResults": "2500",
+        }
+        if page_token:
+            params["pageToken"] = page_token
+        url = (EVENTS_ENDPOINT.format(cal=urllib.parse.quote(calendar_id, safe=""))
+               + "?" + urllib.parse.urlencode(params))
+        payload = _get_json(url, access_token)
+        if payload is None or payload.get("items") is None:
+            return None
+        items.extend(payload["items"])
+        page_token = payload.get("nextPageToken", "")
+        if not page_token:
+            return items
+
+
+def upsert_event(
+    calendar_id: str,
+    access_token: str,
+    body: dict,
+    event_id: str | None = None,
+) -> dict:
+    """Create (event_id None) or fully replace an event."""
+    base = EVENTS_ENDPOINT.format(cal=urllib.parse.quote(calendar_id, safe=""))
+    if event_id:
+        url = f"{base}/{urllib.parse.quote(event_id, safe='')}"
+        status, resp = _request_with_body(url, "PUT", access_token, body)
+    else:
+        status, resp = _request_with_body(base, "POST", access_token, body)
+    if status in (200, 201):
+        return {"status": "applied", "event_id": (resp or {}).get("id")}
+    return {"status": "failed", "reason": f"{'PUT' if event_id else 'POST'} returned "
+            f"{status}", "body": resp}
+
+
+def delete_event(calendar_id: str, access_token: str, event_id: str) -> dict:
+    """Delete one event. A 410 (already gone) counts as success."""
+    url = (EVENTS_ENDPOINT.format(cal=urllib.parse.quote(calendar_id, safe=""))
+           + f"/{urllib.parse.quote(event_id, safe='')}")
+    req = urllib.request.Request(url, method="DELETE",
+                                 headers={"Authorization": f"Bearer {access_token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as resp:
+            status = resp.status
+    except urllib.error.HTTPError as exc:
+        status = exc.code
+    except (urllib.error.URLError, TimeoutError, OSError):
+        status = 0
+    if status in (200, 204, 410):
+        return {"status": "applied"}
+    return {"status": "failed", "reason": f"DELETE returned {status}"}
