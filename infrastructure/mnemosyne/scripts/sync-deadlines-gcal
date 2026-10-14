@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""Mirror real ADMIN deadlines onto the "Mnemosyne Deadlines" Google Calendar.
+
+One-way, wiki -> calendar: the wiki's `due:` is the source of truth. Every
+open ADMIN task with a `due` gets exactly one event (all-day for a date, one
+hour for a YYYY-MM-DDTHH:MM time, America/Los_Angeles). Events for tasks that
+closed, lost their deadline, or vanished are deleted.
+
+Events are owned by private extended properties — `mneme_sync=deadlines`,
+`mneme_task=<title>`, `mneme_due=<due at last sync>` — so the sync needs no
+event IDs in frontmatter and never writes to the wiki pages.
+
+Drift — an event moved or deleted by hand in Google — is detected (start no
+longer matches the `mneme_due` it was written with, or a live task's only
+event is cancelled), reported, and reverted to the wiki's value. If a date
+really changed, change it in the wiki: `set-task-priority "<title>" --due …`.
+A drift report lands in reports/ (one file per day, rewritten each run).
+
+The calendar ID is not a secret; the worker unit passes it from the
+mneme_workers role (mneme_deadlines_calendar_id). Unset -> exit 0 quietly, so
+the timer can ship before the calendar exists. A dead OAuth token exits 1 so
+the unit's OnFailure alert fires instead of the calendar silently going stale.
+
+Usage:
+  sync-deadlines-gcal --calendar-id ID              # dry-run: print the plan
+  sync-deadlines-gcal --calendar-id ID --apply      # create/update/delete
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+import admin_tasks  # noqa: E402
+import gcal  # noqa: E402
+import mneme_log  # noqa: E402
+import task_priority  # noqa: E402
+import task_status  # noqa: E402
+import wiki_git  # noqa: E402
+
+DEFAULT_WIKI_ROOT = task_status.default_wiki_root()
+TIMEZONE = "America/Los_Angeles"
+TAG_KEY = "mneme_sync"
+TAG_VALUE = "deadlines"
+TIMED_EVENT_MINUTES = 60
+
+
+def event_body(task: dict) -> dict:
+    """The full event resource for one task's deadline."""
+    due = task["due"]
+    if "T" in due:
+        start = datetime.fromisoformat(due)
+        end = start + timedelta(minutes=TIMED_EVENT_MINUTES)
+        when = {
+            "start": {"dateTime": start.isoformat(timespec="seconds"), "timeZone": TIMEZONE},
+            "end": {"dateTime": end.isoformat(timespec="seconds"), "timeZone": TIMEZONE},
+        }
+    else:
+        day = date.fromisoformat(due)
+        # Google's all-day end.date is exclusive.
+        when = {"start": {"date": day.isoformat()},
+                "end": {"date": (day + timedelta(days=1)).isoformat()}}
+    priority = task["effective_priority"] or "untriaged"
+    description = (f"Mnemosyne ADMIN deadline — {priority} priority, impact "
+                   f"{task['impact'] or 'not set'}, {task['task_type']} task.\n"
+                   f"Page: admin/{task['title']}.md\n"
+                   f"Change the date in the wiki, not here (set-task-priority --due); "
+                   f"edits made here are reverted on the next sync.")
+    return {
+        "summary": f"Due: {task['title']}",
+        "description": description,
+        **when,
+        "reminders": {"useDefault": True},
+        "extendedProperties": {"private": {
+            TAG_KEY: TAG_VALUE, "mneme_task": task["title"], "mneme_due": due,
+        }},
+    }
+
+
+def event_due(event: dict) -> str | None:
+    """The `due` value an event's current start corresponds to."""
+    start = event.get("start") or {}
+    if "date" in start:
+        return start["date"]
+    raw = start.get("dateTime")
+    if not raw:
+        return None
+    parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    # Compare in the sync's own zone, minute precision, as `due` is written.
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(ZoneInfo(TIMEZONE))
+    return parsed.strftime("%Y-%m-%dT%H:%M")
+
+
+def _private(event: dict) -> dict:
+    return (event.get("extendedProperties") or {}).get("private") or {}
+
+
+def plan_sync(tasks: list[dict], events: list[dict]) -> tuple[list[tuple], list[str]]:
+    """Reconcile desired deadlines with existing tagged events.
+
+    Returns (actions, drift). Each action is (verb, title, event_id, body)
+    with verb in create | update | delete.
+    """
+    desired = {t["title"]: t for t in tasks if t["due"]}
+    live: dict[str, list[dict]] = {}
+    cancelled: set[str] = set()
+    for event in events:
+        title = _private(event).get("mneme_task", "")
+        if event.get("status") == "cancelled":
+            cancelled.add(title)
+        else:
+            live.setdefault(title, []).append(event)
+
+    actions: list[tuple] = []
+    drift: list[str] = []
+    for title, task in sorted(desired.items()):
+        body = event_body(task)
+        existing = live.get(title, [])
+        if not existing:
+            if title in cancelled:
+                drift.append(f"[[{title}]] — its event was deleted in Google Calendar; "
+                             f"recreated for due {task['due']}")
+            actions.append(("create", title, None, body))
+            continue
+        keep, extras = existing[0], existing[1:]
+        for extra in extras:
+            actions.append(("delete", title, extra["id"], None))
+        written_due = _private(keep).get("mneme_due")
+        shown_due = event_due(keep)
+        if written_due and shown_due and shown_due != written_due:
+            drift.append(f"[[{title}]] — event moved by hand to {shown_due}; reverted "
+                         f"to the wiki's due {task['due']}")
+        unchanged = (keep.get("summary") == body["summary"]
+                     and keep.get("description") == body["description"]
+                     and shown_due == task["due"]
+                     and written_due == task["due"])
+        if not unchanged:
+            actions.append(("update", title, keep["id"], body))
+
+    for title, existing in sorted(live.items()):
+        if title not in desired:
+            for event in existing:
+                actions.append(("delete", title, event["id"], None))
+    return actions, drift
+
+
+def write_drift_report(wiki_root: Path, today: str, drift: list[str]) -> None:
+    """Report hand edits to the deadline calendar (rewritten each run)."""
+    path = wiki_root / "reports" / f"deadline-sync-report-{today}.md"
+    lines = ["---", "report: deadline-sync", f"generated: {today}",
+             "source: maintenance-script", "---", "",
+             f"# Deadline Sync Report — {today}", "",
+             f"**Issues found:** {len(drift)} calendar events edited by hand", "",
+             "The wiki's `due:` is the source of truth; these were reverted. If a "
+             "date really changed, set it in the wiki with "
+             "`set-task-priority \"<title>\" --due …`.", ""]
+    lines += [f"- {item}" for item in drift]
+    lines += ["", "---", "*Generated by sync-deadlines-gcal*", ""]
+    path.parent.mkdir(exist_ok=True)
+    path.write_text("\n".join(lines), encoding="utf-8")
+    mneme_log.log_event("report", "—", f"Deadline Sync Report — {today}",
+                        "maintenance-script")
+    wiki_git.commit_wiki_changes(wiki_root, [path], "report",
+                                 f"Deadline Sync for {today}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--calendar-id",
+                        default=os.environ.get("MNEME_DEADLINES_CALENDAR_ID", ""),
+                        help="target calendar ID (default: $MNEME_DEADLINES_CALENDAR_ID)")
+    parser.add_argument("--apply", action="store_true",
+                        help="create/update/delete events (default: dry-run)")
+    parser.add_argument("--wiki-root", type=Path, default=DEFAULT_WIKI_ROOT, metavar="DIR",
+                        help=f"wiki root (default: {DEFAULT_WIKI_ROOT})")
+    args = parser.parse_args()
+
+    calendar_id = args.calendar_id.strip()
+    if not calendar_id:
+        print("Deadline calendar not configured (no --calendar-id); nothing to do.",
+              file=sys.stderr)
+        return 0
+    creds = gcal.load_credentials()
+    if creds is None:
+        print("Error: no Google Calendar credentials (GOOGLE_CALENDAR_CREDENTIALS or "
+              f"{gcal.DEFAULT_CREDENTIALS_PATH})", file=sys.stderr)
+        return 1
+    token = gcal.access_token_for(creds)
+    if token is None:
+        print("Error: Google token exchange failed — refresh token likely expired or "
+              "revoked. Re-run gcal-authorize --force and redeploy the vault copy.",
+              file=sys.stderr)
+        return 1
+
+    task_status.reload_vocab(args.wiki_root)
+    task_priority.reload_model(args.wiki_root)
+    tasks = admin_tasks.load_open_tasks(args.wiki_root, date.today())
+    events = gcal.list_tagged_events(calendar_id, token, TAG_KEY, TAG_VALUE)
+    if events is None:
+        print(f"Error: could not list events on calendar {calendar_id}", file=sys.stderr)
+        return 1
+
+    actions, drift = plan_sync(tasks, events)
+    prefix = "" if args.apply else "[dry-run] "
+    for verb, title, _, body in actions:
+        due = body["extendedProperties"]["private"]["mneme_due"] if body else ""
+        print(f"{prefix}{verb} {title}{' — due ' + due if due else ''}")
+    for item in drift:
+        print(f"{prefix}drift: {item}")
+    print(f"{prefix}{len(actions)} change(s), {len(drift)} drift item(s), "
+          f"{sum(1 for t in tasks if t['due'])} deadline(s) in the wiki")
+    if not args.apply:
+        return 0
+
+    failures = 0
+    for verb, title, event_id, body in actions:
+        if verb == "delete":
+            result = gcal.delete_event(calendar_id, token, event_id)
+        else:
+            result = gcal.upsert_event(calendar_id, token, body, event_id)
+        if result["status"] != "applied":
+            failures += 1
+            print(f"Error: {verb} {title}: {result.get('reason')}", file=sys.stderr)
+    if drift:
+        write_drift_report(args.wiki_root, date.today().isoformat(), drift)
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

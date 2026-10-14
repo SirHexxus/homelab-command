@@ -6,7 +6,7 @@
 # source of truth for both.
 
 # Where the scripts land. The deployed units reference this path literally,
-# so changing it re-templates all 40 units in the same run.
+# so changing it re-templates all 42 units in the same run.
 mneme_root: /opt/mnemosyne/homelab-command
 mneme_scripts_dir: "{{ mneme_root }}/infrastructure/mnemosyne/scripts"
 mneme_wiki_root: /opt/inbox-receiver/wiki
@@ -23,6 +23,11 @@ mneme_home: /opt/inbox-receiver
 
 # Optional; units load it with `-` so a missing file is not an error.
 mneme_telegram_env: "{{ mneme_home }}/.config/mnemosyne/telegram.env"
+
+# The "Mnemosyne Deadlines" Google Calendar that sync-deadlines-gcal mirrors
+# real ADMIN `due:` dates onto. Not a secret. Empty = sync disabled: the
+# timer still runs and exits 0 without touching anything.
+mneme_deadlines_calendar_id: "385afe04d9e2afaec116477da3d6d8a0949fa76506a23a996646eb7a4fae5e29@group.calendar.google.com"
 
 # Remove mneme-* units on the host that this role does not declare. Off by
 # default: an incomplete list would silently tear down live workers.
@@ -77,6 +82,12 @@ mneme_workers:
   - name: task-throughput
     exec: "{{ mneme_scripts_dir }}/maintenance/report-task-throughput"
     schedule: "Sun *-*-* 08:00:00"
+  - name: sync-deadlines
+    exec: >-
+      {{ mneme_scripts_dir }}/sync-deadlines-gcal --apply
+      --wiki-root {{ mneme_wiki_root }}
+      --calendar-id '{{ mneme_deadlines_calendar_id }}'
+    schedule: "*-*-* *:20:00"
   - name: orphan-enrich
     exec: "{{ mneme_scripts_dir }}/maintenance/check-orphan-files --enrich"
     schedule: "Sun *-*-* 09:00:00"
