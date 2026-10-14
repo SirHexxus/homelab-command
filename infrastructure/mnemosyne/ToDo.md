@@ -195,8 +195,7 @@ n8n owns the Telegram surface; Hermes off hold).
   PURSUIT: current milestone, next milestone.*
 
 - [ ] **3.4** Implement `/remind` command  
-  *Query ADMIN pages with `status: Pending` and `due_date <= today + 48h`. Return formatted
-  list to Telegram. Use a Dataview-equivalent frontmatter scan.*
+  *Real deadlines within 48h plus CRITICAL tasks: `next-tasks --deadlines` and `next-tasks --min-priority CRITICAL --json` already return this — the command only needs the Telegram wrapper.*
 
 - [ ] **3.5** Configure n8n Chat Trigger as secondary retrieval interface  
   *Does NOT route through Hermes for Read operations. n8n Chat Trigger connects directly
@@ -206,12 +205,16 @@ n8n owns the Telegram surface; Hermes off hold).
   may route through Hermes; Read operations go direct.*  
   **Depends on:** Nothing (independent of 3.1–3.4)
 
+- [ ] **3.6** Telegram task commands — a two-way channel for the priority reframe  
+  *Slash commands in the Telegram ingestion pipeline that wrap the existing CLIs: `/next` → `next-tasks --type user --limit 5`; `/review` → walk `next-tasks --checkins` one task at a time with do / re-prioritize / keep / cancel replies → `set-task-priority` / `set-task-status`; `/done <title>` → `set-task-status Done`. Mirrors the `mneme-tasks` Claude Code skill. Needs per-chat conversation state (Redis) and the n8n → LXC 103 call path. Deferred from the 2026-10-13 ADMIN reframe so it would not block the rest.*  
+  **Depends on:** 2026-10-13 ADMIN reframe deployed
+
 ---
 
 ## Phase 4 — Scheduled Reports
 **Status:** Daily Digest live; remaining reports not started
 
-- [x] **4.1** Daily Digest *(live as of 2026-05-19 with Google Calendar block)*  
+- [x] **4.1** Daily Digest *(live as of 2026-05-19 with Google Calendar block; reworked 2026-10-13 around ADMIN priority — focus list, check-ins, real deadlines only, Sunday throughput line)*  
   *Cron `claude -p` reads log.md (yesterday's entries) + ADMIN pages (due within 48h,
   overdue) + PERSON pages (follow-up due) + Google Calendar block. Composes and sends
   digest. Currently runs `claude -p` (~31k tokens overhead per run); swap to direct
@@ -288,7 +291,8 @@ scheduled Lint report and a fix-and-stub-create execution loop.
 | `check-orphan-files` | Pages with no inbound wikilinks |
 | `check-stub-pages` | Pages with negligible content |
 | `check-person-followups` | PERSON pages with overdue follow-ups |
-| `check-overdue-tasks` | ADMIN pages past `due_date` |
+| `check-overdue-tasks` | ADMIN pages past a real `due` deadline (date or date-time) |
+| `report-task-throughput` | Weekly per-priority opened / closed / waiting counts and median days to close |
 | `triage-stale-projects` | PROJECT/PURSUIT pages with no activity 90+ days |
 | `check-index-completeness` | Pages on disk but missing from `index.md` |
 | `check-log-coverage` | Activity gaps in `log.md` |
@@ -324,6 +328,7 @@ scheduled Lint report and a fix-and-stub-create execution loop.
 
 These items have been identified but are not scheduled. Revisit after Phase 3 is complete.
 
+- **ADMIN recurrence engine** — `recurrence:` (weekly | monthly) is written by capture paths but read by nothing: no script rolls a recurring task forward. Closely related to the 2026-10-13 priority reframe (a recurring task's next occurrence is a fresh decision with its own attention window) but deliberately out of scope for it.
 - **Obsidian Dataview dashboards** — dynamic tables for ADMIN tasks, PERSON follow-ups,
   PROJECT status. Requires consistent YAML frontmatter from Hermes wiki writes.
 - **Apple Shortcuts / iOS capture** — shortcut that sends text to the Telegram bot for
