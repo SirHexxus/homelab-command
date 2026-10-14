@@ -1,0 +1,531 @@
+#!/usr/bin/env python3
+"""One-time migration of open ADMIN tasks to the urgency x impact priority model.
+
+Two stages, run separately:
+
+1. Propose (the default; no task page is touched). For each open task a Claude
+   model (Haiku by default, through the `claude` CLI, several calls in parallel)
+   proposes urgency, impact, a verdict on any existing `due` (keep it, naming
+   the external anchor, or drop it), a recommended action (keep / cancel /
+   convert-to-project / likely-done), and a one-line reason. The rubric the
+   model reads is the live `schema/15-admin-task-priority.md`. Proposals are
+   saved to a JSON file as they arrive, so an interrupted run resumes where it
+   stopped (`--refresh` re-asks). A readable report is written to
+   `reports/admin-migration-proposals-<date>.md`.
+
+2. Apply (`--apply`, previewed with `--dry-run`). Refused until James has
+   approved the due verdicts (`"due_verdicts_approved": true` in the JSON).
+   Writes urgency, impact, and the derived priority, and leaves `reviewed`
+   empty, so every task stays a proposal until James decides it. A dropped date
+   is set to null and recorded in a note at the end of the page body. The
+   task's index.md line is normalized: `[User]`/`[Maintenance]`, then
+   `due <date>` only for a kept deadline, then the summary, with no status
+   word. Recommended actions are not applied; they guide the review session.
+   Tasks James has reviewed since the proposal (a `reviewed` date) are skipped.
+   One wiki commit.
+
+Usage:
+  migrate-admin-priority                         # propose (resumes)
+  migrate-admin-priority --model sonnet --workers 4
+  migrate-admin-priority --only "Renew Ariadne SSL Cert" --refresh
+  migrate-admin-priority --apply --dry-run
+  migrate-admin-priority --apply
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+import admin_page  # noqa: E402
+import mneme_log  # noqa: E402
+import task_priority  # noqa: E402
+import task_status  # noqa: E402
+import wiki_git  # noqa: E402
+
+DEFAULT_WIKI_ROOT = task_status.default_wiki_root()
+DEFAULT_PROPOSALS = Path.home() / ".local" / "state" / "mnemosyne" / "admin-migration-proposals.json"
+CLAUDE_BIN = Path.home() / ".local" / "bin" / "claude"
+DEFAULT_MODEL = "haiku"
+DEFAULT_WORKERS = 8
+CALL_TIMEOUT = 180
+MAX_PAGE_CHARS = 6000
+SOURCE = "migrate-admin-priority"
+ACTIONS = ("keep", "cancel", "convert-to-project", "likely-done")
+VERDICTS = ("keep", "drop")
+SCHEMA_SECTION = Path("schema") / "15-admin-task-priority.md"
+
+TAG_RE = re.compile(r"\[(?:User|Maintenance)\]")
+DUE_TOKEN_RE = re.compile(r" ?\bdue (?:null|\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2})?)")
+
+SYSTEM_PROMPT = """\
+You are helping James migrate the ADMIN tasks in his personal knowledge wiki \
+(Mnemosyne) to a priority model. Today is {today}. Judge each task as of today, \
+not as of when it was captured. Mnemosyne is an executive-function aid for \
+ADHD and time blindness, so honest, calibrated proposals matter more than \
+dramatic ones.
+
+The authoritative rules:
+
+<schema>
+{schema}
+</schema>
+
+You will be given one task page. Reply with ONLY a JSON object, no prose and no \
+code fence:
+
+{{"urgency": "LOW|MEDIUM|HIGH|CRITICAL", "impact": "LOW|MEDIUM|HIGH|CRITICAL", \
+"due_verdict": "keep|drop|null", "due_anchor": "string or null", \
+"action": "keep|cancel|convert-to-project|likely-done", "reason": "string"}}
+
+Guidance:
+- MEDIUM/MEDIUM is the default for a real task. Use CRITICAL only for an \
+active incident (urgency) or severe, irreversible harm such as a security \
+breach, data loss or exposure, safety, legal or financial exposure (impact).
+- task_type "maintenance" is wiki or system upkeep queued for an agent; its \
+impact is usually LOW unless the page shows real risk.
+- due_verdict is null when the task has no due date. Otherwise "keep" only \
+when the page names something outside James's own intentions that fixes the \
+date: a client commitment, a family obligation, an appointment, a booking, a \
+filing date, an expiry. Put that anchor in due_anchor, briefly. A date James \
+set to pace himself is "drop". When unsure, choose "drop" and say why.
+- action: "likely-done" when the page itself says the work is finished; \
+"cancel" when it is obsolete or superseded; "convert-to-project" when it has \
+milestones or several dated steps; otherwise "keep".
+- reason: one specific sentence, at most 25 words.
+"""
+
+
+# ── Task loading ─────────────────────────────────────────────────────────────
+
+def _value(fields: dict[str, str], key: str) -> str | None:
+    """Frontmatter value with quotes stripped; None for absent/empty/null."""
+    raw = fields.get(key)
+    if task_priority.is_null(raw):
+        return None
+    return raw.strip().strip("'\"")
+
+
+def load_open_tasks(wiki_root: Path) -> list[dict]:
+    """Every open admin page: title, path, key fields, and page text."""
+    tasks = []
+    for path in sorted((wiki_root / "admin").glob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        fields = admin_page.read_fields(text)
+        status = _value(fields, "status") or "Pending"
+        if task_status.is_closed(status):
+            continue
+        tasks.append({
+            "title": path.stem,
+            "path": path,
+            "status": status,
+            "task_type": _value(fields, "task_type") or "user",
+            "due": _value(fields, "due"),
+            "text": text,
+        })
+    return tasks
+
+
+# ── Proposing ────────────────────────────────────────────────────────────────
+
+def strip_fence(text: str) -> str:
+    """Remove a surrounding ``` / ```json fence, if the model added one."""
+    match = re.match(r"^```(?:json)?\s*\n(.*)\n```\s*$", text.strip(), re.DOTALL)
+    return match.group(1).strip() if match else text.strip()
+
+
+def parse_proposal(raw: str, has_due: bool) -> dict:
+    """Validate the model's JSON reply into a clean proposal.
+
+    Raises:
+        ValueError: If the reply is not JSON or a field is out of vocabulary.
+    """
+    try:
+        data = json.loads(strip_fence(raw))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"reply is not JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("reply is not a JSON object")
+
+    urgency = task_priority.normalize(str(data.get("urgency") or ""))
+    impact = task_priority.normalize(str(data.get("impact") or ""))
+    if urgency is None or impact is None:
+        raise ValueError(f"bad levels: urgency={data.get('urgency')!r} "
+                         f"impact={data.get('impact')!r}")
+
+    action = str(data.get("action") or "").strip().lower()
+    if action not in ACTIONS:
+        raise ValueError(f"bad action: {data.get('action')!r}")
+
+    verdict = data.get("due_verdict")
+    verdict = None if verdict is None else str(verdict).strip().lower()
+    if verdict in ("", "null", "none"):
+        verdict = None
+    if has_due and verdict not in VERDICTS:
+        raise ValueError(f"task has a due date but due_verdict is {verdict!r}")
+    if not has_due:
+        verdict = None
+
+    anchor = data.get("due_anchor")
+    anchor = str(anchor).strip() if anchor and verdict == "keep" else None
+    return {
+        "urgency": urgency,
+        "impact": impact,
+        "priority": task_priority.compute_priority(urgency, impact),
+        "due_verdict": verdict,
+        "due_anchor": anchor,
+        "action": action,
+        "reason": str(data.get("reason") or "").strip(),
+    }
+
+
+def build_user_prompt(task: dict) -> str:
+    """The task page as the model sees it (long pages are truncated)."""
+    text = task["text"]
+    if len(text) > MAX_PAGE_CHARS:
+        text = text[:MAX_PAGE_CHARS] + "\n… (page truncated)"
+    return f"Task title: {task['title']}\n\n<page>\n{text}\n</page>"
+
+
+def call_model(system_prompt: str, user_prompt: str, model: str) -> str:
+    """One `claude -p` call with no tools, settings, or session. Returns text.
+
+    Raises:
+        RuntimeError: If the CLI fails or times out.
+    """
+    cmd = [str(CLAUDE_BIN), "-p", "--model", model, "--tools", "",
+           "--no-session-persistence", "--disable-slash-commands",
+           "--strict-mcp-config", "--system-prompt", system_prompt, user_prompt]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=CALL_TIMEOUT)
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        raise RuntimeError(f"claude call failed: {exc}") from exc
+    if proc.returncode != 0:
+        raise RuntimeError(f"claude exited {proc.returncode}: {proc.stderr.strip()[:300]}")
+    return proc.stdout
+
+
+def propose_one(task: dict, system_prompt: str, model: str) -> dict:
+    """Ask the model about one task (one retry on a bad reply)."""
+    base = {"title": task["title"], "task_type": task["task_type"],
+            "status": task["status"], "due": task["due"], "model": model}
+    user_prompt = build_user_prompt(task)
+    error = ""
+    for _ in range(2):
+        try:
+            raw = call_model(system_prompt, user_prompt, model)
+            return {**base, **parse_proposal(raw, task["due"] is not None)}
+        except (RuntimeError, ValueError) as exc:
+            error = str(exc)
+    return {**base, "error": error}
+
+
+def load_proposals(path: Path) -> dict:
+    """The proposals file, or a fresh skeleton."""
+    if path.is_file():
+        return json.loads(path.read_text(encoding="utf-8"))
+    return {"due_verdicts_approved": False, "proposals": {}}
+
+
+def save_proposals(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def propose(args: argparse.Namespace, all_tasks: list[dict], tasks: list[dict]) -> int:
+    """Fill in proposals for `tasks` that have none (or all, with --refresh).
+
+    The report always covers every open task (`all_tasks`).
+    """
+    schema_path = args.wiki_root / SCHEMA_SECTION
+    try:
+        schema = schema_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"Error: cannot read the rubric at {schema_path}: {exc}", file=sys.stderr)
+        return 1
+    system_prompt = SYSTEM_PROMPT.format(today=date.today().isoformat(), schema=schema)
+
+    data = load_proposals(args.proposals)
+    store = data["proposals"]
+    todo = [t for t in tasks
+            if args.refresh or t["title"] not in store or "error" in store[t["title"]]]
+    if args.limit:
+        todo = todo[:args.limit]
+    print(f"{len(tasks)} open task(s); asking {args.model} about {len(todo)} "
+          f"with {args.workers} worker(s)")
+
+    if todo:
+        data["due_verdicts_approved"] = False
+    done = 0
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futures = {pool.submit(propose_one, t, system_prompt, args.model): t for t in todo}
+        for future in as_completed(futures):
+            result = future.result()
+            store[result["title"]] = result
+            save_proposals(args.proposals, data)
+            done += 1
+            mark = "ERROR " + result["error"][:80] if "error" in result else (
+                f"{result['priority']} ({result['urgency']}/{result['impact']}) "
+                f"{result['action']}")
+            print(f"  [{done}/{len(todo)}] {result['title']}: {mark}")
+
+    report = render_report(data, all_tasks, date.today().isoformat())
+    report_path = args.wiki_root / "reports" / f"admin-migration-proposals-{date.today()}.md"
+    report_path.write_text(report, encoding="utf-8")
+    errors = sum(1 for t in todo if "error" in store.get(t["title"], {}))
+    print(f"Proposals: {args.proposals}\nReport: {report_path}")
+    if errors:
+        print(f"{errors} task(s) failed; re-run to retry them", file=sys.stderr)
+        return 1
+    return 0
+
+
+# ── Report ───────────────────────────────────────────────────────────────────
+
+def _cell(text: str | None) -> str:
+    return (text or "").replace("|", "\\|").replace("\n", " ")
+
+
+def render_report(data: dict, tasks: list[dict], today: str) -> str:
+    """Markdown report of the proposals for the open tasks."""
+    store = data["proposals"]
+    rows = [store[t["title"]] for t in tasks if t["title"] in store]
+    ok = [r for r in rows if "error" not in r]
+    dated = sorted((r for r in ok if r["due"]), key=lambda r: r["due"])
+    acting = [r for r in ok if r["action"] != "keep"]
+    missing = [t["title"] for t in tasks if t["title"] not in store or "error" in store[t["title"]]]
+
+    out = [f"# ADMIN Migration Proposals — {today}", "",
+           f"{len(ok)} of {len(tasks)} open tasks have a proposal. Nothing has been "
+           "written to any task page. Due verdicts approved: "
+           f"**{'yes' if data.get('due_verdicts_approved') else 'no'}**.", ""]
+
+    out += ["## Priority mix", "", "| Priority | User | Maintenance |", "|---|---|---|"]
+    mix = Counter((r["priority"], r["task_type"]) for r in ok)
+    for level in reversed(task_priority.levels()):
+        out.append(f"| {level} | {mix[(level, 'user')]} | {mix[(level, 'maintenance')]} |")
+    out.append("")
+
+    out += [f"## Due-date verdicts ({len(dated)})", "",
+            "| Task | Due | Verdict | Anchor | Reason |", "|---|---|---|---|---|"]
+    for r in dated:
+        out.append(f"| [[{r['title']}]] | {r['due']} | **{r['due_verdict']}** | "
+                   f"{_cell(r['due_anchor'])} | {_cell(r['reason'])} |")
+    out.append("")
+
+    out += [f"## Recommended actions other than keep ({len(acting)})", "",
+            "| Task | Action | Priority | Reason |", "|---|---|---|---|"]
+    for r in sorted(acting, key=lambda r: (r["action"], r["title"].lower())):
+        out.append(f"| [[{r['title']}]] | {r['action']} | {r['priority']} | {_cell(r['reason'])} |")
+    out.append("")
+
+    out += ["## All proposals", "",
+            "| Task | Type | Urgency | Impact | Priority | Action | Reason |",
+            "|---|---|---|---|---|---|---|"]
+    order = sorted(ok, key=lambda r: (-task_priority.rank(r["priority"]), r["title"].lower()))
+    for r in order:
+        out.append(f"| [[{r['title']}]] | {r['task_type']} | {r['urgency']} | {r['impact']} | "
+                   f"{r['priority']} | {r['action']} | {_cell(r['reason'])} |")
+    if missing:
+        out += ["", f"## No proposal yet ({len(missing)})", ""]
+        out += [f"- [[{title}]]" for title in missing]
+    return "\n".join(out) + "\n"
+
+
+# ── Applying ─────────────────────────────────────────────────────────────────
+
+def dropped_due_note(old_due: str, today: str) -> str:
+    return f"*Former due date {old_due} removed {today} — not an external deadline.*"
+
+
+def append_note(text: str, note: str) -> str:
+    """Append `note` as its own paragraph at the end of the page."""
+    return text.rstrip("\n") + "\n\n" + note + "\n"
+
+
+def normalize_index_summary(summary: str, due: str | None) -> str:
+    """An ADMIN index summary in the new form: tag, optional due, summary.
+
+    Drops every `due …` token and a leading status word (`Pending —`), then
+    re-inserts `due <date>` after the tag when a real deadline is kept. A
+    summary with no `[User]`/`[Maintenance]` tag is returned unchanged.
+    """
+    match = TAG_RE.search(summary)
+    if match is None:
+        return summary
+    head, rest = summary[:match.end()], summary[match.end():]
+    rest = DUE_TOKEN_RE.sub("", rest).strip()
+    status_word = re.match(r"([A-Za-z]+)\s*(?=[—–:;\-]|$)", rest)
+    if status_word and task_status.canonical(status_word.group(1)) is not None:
+        rest = rest[status_word.end():].strip()
+    rest = re.sub(r"^[—–:;,\-]+\s*", "", rest).strip()
+    parts = [head.rstrip()]
+    if due:
+        parts.append(f"due {due}" + (" —" if rest else ""))
+    if rest:
+        parts.append(rest)
+    trailing = "\n" if summary.endswith("\n") else ""
+    return " ".join(parts) + trailing
+
+
+def rewrite_index(index_text: str, dues: dict[str, str | None]) -> tuple[str, list[str]]:
+    """Normalize the ADMIN index lines of the titles in `dues`.
+
+    Returns (new_text, changed_titles).
+    """
+    lines = index_text.splitlines(keepends=True)
+    changed = []
+    for i, line in enumerate(lines):
+        if not line.startswith("- [[") or "]] | ADMIN |" not in line:
+            continue
+        title = line[4:line.index("]] | ADMIN |")]
+        if title not in dues:
+            continue
+        cut = line.index("]] | ADMIN |") + len("]] | ADMIN |")
+        new_line = line[:cut] + " " + normalize_index_summary(line[cut:].lstrip(), dues[title])
+        if new_line != line:
+            lines[i] = new_line
+            changed.append(title)
+    return "".join(lines), changed
+
+
+def plan_page(text: str, proposal: dict, today: str) -> tuple[str, list[str], str | None]:
+    """The migrated page text, a description of the changes, and the kept due.
+
+    Raises:
+        ValueError: If the page has been reviewed or its due changed since the
+            proposal (James's own decision wins; re-run the proposal).
+    """
+    fields = admin_page.read_fields(text)
+    if _value(fields, "reviewed"):
+        raise ValueError("already reviewed — skipped")
+    current_due = _value(fields, "due")
+    if current_due != proposal["due"]:
+        raise ValueError(f"due changed since the proposal ({proposal['due']} -> {current_due})")
+
+    updates: dict[str, str | None] = {
+        "urgency": proposal["urgency"],
+        "impact": proposal["impact"],
+        "priority": task_priority.compute_priority(proposal["urgency"], proposal["impact"]),
+    }
+    if "updated" in fields:
+        updates["updated"] = today
+    notes = [f"{proposal['urgency']}/{proposal['impact']} -> {updates['priority']}"]
+    kept_due = current_due
+    if current_due and proposal["due_verdict"] == "drop":
+        updates["due"] = "null"
+        kept_due = None
+        notes.append(f"due {current_due} dropped")
+    new_text = admin_page.set_fields(text, updates)
+    if kept_due is None and current_due:
+        new_text = append_note(new_text, dropped_due_note(current_due, today))
+    return new_text, notes, kept_due
+
+
+def apply(args: argparse.Namespace, tasks: list[dict]) -> int:
+    """Write the approved proposals to the task pages and index."""
+    if not args.proposals.is_file():
+        print(f"Error: no proposals at {args.proposals}; run without --apply first",
+              file=sys.stderr)
+        return 1
+    data = load_proposals(args.proposals)
+    store = data["proposals"]
+    ready = [t for t in tasks if t["title"] in store and "error" not in store[t["title"]]]
+    needs_verdict = any(store[t["title"]]["due"] for t in ready)
+    if needs_verdict and not data.get("due_verdicts_approved"):
+        print("Error: due verdicts are not approved. Review them in the report, then set "
+              f'"due_verdicts_approved": true in {args.proposals}', file=sys.stderr)
+        return 1
+
+    today = date.today().isoformat()
+    writes: list[tuple[Path, str]] = []
+    dues: dict[str, str | None] = {}
+    skipped = 0
+    for task in ready:
+        try:
+            new_text, notes, kept_due = plan_page(task["text"], store[task["title"]], today)
+        except ValueError as exc:
+            print(f"  skip {task['title']}: {exc}")
+            skipped += 1
+            continue
+        writes.append((task["path"], new_text))
+        dues[task["title"]] = kept_due
+        print(f"  {task['title']}: {'; '.join(notes)}")
+
+    index_path = args.wiki_root / "index.md"
+    index_text = index_path.read_text(encoding="utf-8")
+    new_index, index_changed = rewrite_index(index_text, dues)
+    unproposed = len(tasks) - len(ready)
+    print(f"{len(writes)} page(s) {'would be ' if args.dry_run else ''}migrated, "
+          f"{len(index_changed)} index line(s) normalized, {skipped} skipped, "
+          f"{unproposed} without a proposal")
+    if args.dry_run or not writes:
+        return 0
+
+    for path, new_text in writes:
+        path.write_text(new_text, encoding="utf-8")
+        mneme_log.log_event("update", "ADMIN", path.stem, SOURCE)
+    paths = [p for p, _ in writes]
+    if index_changed:
+        index_path.write_text(new_index, encoding="utf-8")
+        paths.append(index_path)
+    wiki_git.commit_wiki_changes(args.wiki_root, paths, "task",
+                                 f"migrate {len(writes)} ADMIN task(s) to urgency x impact")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--apply", action="store_true",
+                        help="write the approved proposals (default: propose)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="with --apply: show the changes without writing")
+    parser.add_argument("--model", default=DEFAULT_MODEL,
+                        help=f"claude model alias or ID (default: {DEFAULT_MODEL})")
+    parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS,
+                        help=f"parallel model calls (default: {DEFAULT_WORKERS})")
+    parser.add_argument("--only", action="append", default=[], metavar="TITLE",
+                        help="limit to this task (repeatable)")
+    parser.add_argument("--limit", type=int, default=0,
+                        help="propose for at most N tasks (0 = all)")
+    parser.add_argument("--refresh", action="store_true",
+                        help="re-ask the model even for tasks that have a proposal")
+    parser.add_argument("--proposals", type=Path, default=DEFAULT_PROPOSALS, metavar="FILE",
+                        help=f"proposals JSON (default: {DEFAULT_PROPOSALS})")
+    parser.add_argument("--wiki-root", type=Path, default=DEFAULT_WIKI_ROOT, metavar="DIR",
+                        help=f"wiki root (default: {DEFAULT_WIKI_ROOT})")
+    args = parser.parse_args()
+
+    if args.dry_run and not args.apply:
+        parser.error("--dry-run only applies with --apply (proposing never writes pages)")
+    if not (args.wiki_root / "admin").is_dir():
+        print(f"Error: no admin/ under wiki root {args.wiki_root}", file=sys.stderr)
+        return 1
+
+    task_status.reload_vocab(args.wiki_root)
+    task_priority.reload_model(args.wiki_root)
+    all_tasks = tasks = load_open_tasks(args.wiki_root)
+    if args.only:
+        wanted = set(args.only)
+        tasks = [t for t in tasks if t["title"] in wanted]
+        unknown = wanted - {t["title"] for t in tasks}
+        if unknown:
+            print(f"Error: not an open admin task: {', '.join(sorted(unknown))}",
+                  file=sys.stderr)
+            return 1
+    return apply(args, tasks) if args.apply else propose(args, all_tasks, tasks)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
