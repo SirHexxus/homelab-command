@@ -189,7 +189,9 @@ def build_stub_frontmatter(
         if file_ref:
             lines.append(f"file_ref: {file_ref}")
     elif bucket == "ADMIN":
-        lines += ["due: null", "status: Pending", "recurrence: null", "task_type: user"]
+        # urgency/impact stay null: an imported note is untriaged until reviewed.
+        lines += ["due: null", "status: Pending", "recurrence: null", "task_type: user",
+                  "urgency: null", "impact: null", "priority: null"]
     elif bucket == "PERSON":
         lines += ["relationship: acquaintance", "last_contact: null",
                   "follow_up_needed: false", "follow_up_date: null"]

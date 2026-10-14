@@ -288,6 +288,9 @@ def write_admin_task(wiki_root: Path, review: dict) -> bool:
         "status: Pending",
         "recurrence: null",
         "task_type: maintenance",
+        "urgency: LOW",
+        "impact: LOW",
+        "priority: LOW",
         "tags: [google-keep, import, transcription, backlog]",
         'title: "Google Keep import - media and links to process"',
         "---",
@@ -335,7 +338,7 @@ def write_admin_task(wiki_root: Path, review: dict) -> bool:
     summary_line = f"{n_url} links + {n_aud} audio + {n_img} images need a processing pass"
     index_line = (
         f"- [[Google Keep import - media and links to process]] | ADMIN | "
-        f"[Maintenance] due null — {summary_line}"
+        f"[Maintenance] — {summary_line}"
     )
     append_index(wiki_root, "ADMIN", index_line)
     log_line = (
