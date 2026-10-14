@@ -33,8 +33,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+import admin_page  # noqa: E402
 import embeddings  # noqa: E402
 import mneme_log  # noqa: E402
+import task_priority  # noqa: E402
 import wiki_git  # noqa: E402
 
 
@@ -125,13 +127,21 @@ Fact-check age threshold: {fact_check_age} days
       words OR substantively incomplete, set `status: draft` and add `unfinished` to tags;
       otherwise remove any `status: draft` line and the `unfinished` tag. Never apply this
       to ADMIN pages (their status vocabulary is controlled).
+    - ADMIN PRIORITY (ADMIN pages only): set `urgency:` and `impact:` to LOW, MEDIUM,
+      HIGH, or CRITICAL using the schema's rubric — MEDIUM is the default for a real task;
+      LOW is a whim or nice-to-have. Do NOT write `priority:` (the wrapper calculates it)
+      or `reviewed:` (only James sets that). Set `due:` ONLY when the source names a real
+      external deadline (a client date, a family commitment, a filing date), as YYYY-MM-DD
+      or YYYY-MM-DDTHH:MM; otherwise `due: null`. Never invent a date to signal urgency.
 4. Optionally create ADMIN task pages by WRITING the page file only (never index/log):
    a. USER CLARIFICATION NEEDED → admin/User Clarification - {title}.md
       frontmatter: bucket: ADMIN, task_type: user, status: Pending, due: null,
+                   urgency: MEDIUM, impact: LOW,
                    created: {today}, updated: {today}, source: triage-enrich, tags: []
    b. FACT-CHECK (a REFERENCE page created > {fact_check_age} days ago AND time-sensitive)
       → admin/Fact-Check {title}.md
       frontmatter: bucket: ADMIN, task_type: maintenance, status: Pending, due: null,
+                   urgency: LOW, impact: LOW,
                    created: {today}, updated: {today}, source: triage-enrich, tags: []
 
 IMPORTANT: You may ONLY Read/Edit/Write page files under the bucket directories. Do NOT
@@ -352,6 +362,29 @@ def append_log(wiki_root: Path, action: str, bucket: str, title: str) -> None:
     mneme_log.log_event(action, bucket, title, "triage-enrich")
 
 
+def stamp_priority(wiki_root: Path, title: str) -> None:
+    """Derive `priority:` for an ADMIN page the agent just wrote.
+
+    The agent proposes urgency/impact; the matrix result is never left to the
+    model. `reviewed:` stays unset — these are proposals until James decides.
+    """
+    path = wiki_root / BUCKET_DIRS["ADMIN"] / f"{title}.md"
+    if not path.is_file():
+        return
+    text = path.read_text(encoding="utf-8")
+    fields = admin_page.read_fields(text)
+    if not fields:
+        return
+    priority = task_priority.compute_priority(fields.get("urgency"), fields.get("impact"))
+    updates = {"priority": priority or "null"}
+    for key in ("urgency", "impact"):
+        level = task_priority.normalize(fields.get(key))
+        updates[key] = level or "null"
+    new_text = admin_page.set_fields(text, updates)
+    if new_text != text:
+        path.write_text(new_text, encoding="utf-8")
+
+
 # ── Manifest parsing + application ────────────────────────────────────────────
 
 def extract_manifest(output: str) -> dict | None:
@@ -391,6 +424,8 @@ def apply_manifest(wiki_root: Path, stub_title: str, manifest: dict) -> bool:
     elif action == "enrich":
         prefix = (manifest.get("prefix") or "").strip()
         set_stub_index_line(wiki_root, stub_title, bucket, prefix, summary)
+        if bucket == "ADMIN":
+            stamp_priority(wiki_root, stub_title)
         append_log(wiki_root, "update", bucket, stub_title)
     else:
         return False  # unknown/skip — leave the stub untouched
@@ -404,6 +439,7 @@ def apply_manifest(wiki_root: Path, stub_title: str, manifest: dict) -> bool:
             (task.get("prefix") or "").strip(),
             (task.get("summary") or "").strip()[:120],
         )
+        stamp_priority(wiki_root, at_title)
         append_log(wiki_root, "ingest", "ADMIN", at_title)
     return True
 
