@@ -63,13 +63,13 @@ class AdminTasksTests(unittest.TestCase):
         self.assertIsNone(old["priority"])
         self.assertIsNone(old["due"])
         self.assertTrue(old["unreviewed"])
-        self.assertTrue(old["past_window"])
+        self.assertTrue(old["sla_breached"])
 
-    def test_windows(self) -> None:
+    def test_review_sla(self) -> None:
         tasks = self._tasks()
-        self.assertTrue(tasks["Scored High"]["past_window"])   # 7-day window
-        self.assertFalse(tasks["Scored Low"]["past_window"])   # 90-day window
-        self.assertEqual(tasks["Scored High"]["window_ends"], "2026-10-08")
+        self.assertTrue(tasks["Scored High"]["sla_breached"])   # 7-day Review SLA
+        self.assertFalse(tasks["Scored Low"]["sla_breached"])   # 90-day Review SLA
+        self.assertEqual(tasks["Scored High"]["sla_due"], "2026-10-08")
 
     def test_deadline_escalates_effective_priority(self) -> None:
         deadline = self._tasks()["Real Deadline"]
@@ -84,7 +84,7 @@ class AdminTasksTests(unittest.TestCase):
 
     def test_checkin_order_untriaged_first(self) -> None:
         tasks = [t for t in self._tasks().values()
-                 if t["past_window"] and not t["blocked"]]
+                 if t["sla_breached"] and not t["blocked"]]
         tasks.sort(key=admin_tasks.checkin_key)
         self.assertEqual([t["title"] for t in tasks], ["Old Style", "Scored High"])
 

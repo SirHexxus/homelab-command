@@ -84,7 +84,7 @@ are found. A clean run logs to stderr and exits 0 without writing a file.
 
 ## ADMIN Tasks
 
-ADMIN tasks are ranked by priority (urgency × impact), dated only by real external deadlines, and re-decided when they outlive their attention window. The rules live in the wiki's `SCHEMA.md` (`schema/15-admin-task-priority.md`, matrix in `schema/priority.json`); `lib/task_priority.py` reads them, and `lib/admin_tasks.py` is the shared query layer behind `next-tasks`, the digest, and the throughput report.
+ADMIN tasks are ranked by priority (urgency × impact), dated only by real external deadlines, and re-decided when they breach their Review SLA. The rules live in the wiki's `SCHEMA.md` (`schema/15-admin-task-priority.md`, matrix in `schema/priority.json`); `lib/task_priority.py` reads them, and `lib/admin_tasks.py` is the shared query layer behind `next-tasks`, the digest, and the throughput report.
 
 ```bash
 ./next-tasks --type user --limit 5                       # what to work on

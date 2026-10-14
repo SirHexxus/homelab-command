@@ -2,7 +2,7 @@
 """ADMIN task throughput — are tasks actually getting done?
 
 The metric behind the priority reframe (Rule #9: measure the result that
-matters). Per priority level: open, unreviewed, and past-window counts now;
+matters). Per priority level: open, unreviewed, and Review-SLA-breached counts now;
 tasks opened and closed in the last week; and median days from `created` to
 `closed` over a rolling four weeks.
 
@@ -137,7 +137,7 @@ def compute(wiki_root: Path, today: date, use_postgres: bool = True) -> dict:
     open_tasks = admin_tasks.load_open_tasks(wiki_root, today)
     closed, complete = collect_closed(wiki_root, median_start, use_postgres)
 
-    rows = {level: {"open": 0, "unreviewed": 0, "past_window": 0, "opened": 0,
+    rows = {level: {"open": 0, "unreviewed": 0, "sla_breached": 0, "opened": 0,
                     "closed": 0, "cancelled": 0, "close_days": []}
             for level in [*reversed(task_priority.levels()), UNTRIAGED]}
 
@@ -145,7 +145,7 @@ def compute(wiki_root: Path, today: date, use_postgres: bool = True) -> dict:
         row = rows[task["priority"] or UNTRIAGED]
         row["open"] += 1
         row["unreviewed"] += task["unreviewed"]
-        row["past_window"] += task["past_window"] and not task["unreviewed"]
+        row["sla_breached"] += task["sla_breached"] and not task["unreviewed"]
         created = _parse_date(task["created"])
         row["opened"] += bool(created and created > week_start)
 
@@ -165,7 +165,7 @@ def compute(wiki_root: Path, today: date, use_postgres: bool = True) -> dict:
         row["median_days"] = statistics.median(days) if days else None
 
     totals = {key: sum(r[key] for r in rows.values())
-              for key in ("open", "unreviewed", "past_window", "opened", "closed",
+              for key in ("open", "unreviewed", "sla_breached", "opened", "closed",
                           "cancelled")}
     return {"today": today, "rows": rows, "totals": totals, "complete": complete}
 
@@ -180,15 +180,15 @@ def to_markdown(stats: dict) -> str:
         f"**This week:** {t['opened']} opened, {t['closed']} closed "
         f"({t['cancelled']} of them cancelled or skipped) · "
         f"**Open now:** {t['open']} · **To re-decide:** "
-        f"{t['unreviewed']} unreviewed, {t['past_window']} past their window",
+        f"{t['unreviewed']} unreviewed, {t['sla_breached']} past their Review SLA",
         "",
-        "| Priority | Open | Unreviewed | Past window | Opened (7d) | Closed (7d) "
+        "| Priority | Open | Unreviewed | SLA breached | Opened (7d) | Closed (7d) "
         "| Median days to close (28d) |",
         "|---|---|---|---|---|---|---|",
     ]
     for level, r in stats["rows"].items():
         median = "—" if r["median_days"] is None else f"{r['median_days']:g}"
-        lines.append(f"| {level} | {r['open']} | {r['unreviewed']} | {r['past_window']} "
+        lines.append(f"| {level} | {r['open']} | {r['unreviewed']} | {r['sla_breached']} "
                      f"| {r['opened']} | {r['closed']} | {median} |")
     lines += [
         "",
@@ -208,7 +208,7 @@ def digest_summary(stats: dict) -> str:
     t = stats["totals"]
     parts = [f"Last 7 days: {t['opened']} tasks opened, {t['closed']} closed "
              f"({t['cancelled']} cancelled or skipped). {t['open']} open now; "
-             f"{t['unreviewed'] + t['past_window']} waiting to be re-decided."]
+             f"{t['unreviewed'] + t['sla_breached']} waiting to be re-decided."]
     medians = [f"{level} {r['median_days']:g} days"
                for level, r in stats["rows"].items()
                if r["median_days"] is not None]

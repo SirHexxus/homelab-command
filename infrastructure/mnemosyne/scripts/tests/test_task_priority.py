@@ -72,20 +72,20 @@ class DueTests(unittest.TestCase):
         self.assertIsNone(tp.effective_priority(None, None, None, TODAY))
 
 
-class WindowTests(unittest.TestCase):
-    def test_unreviewed_is_past_window(self) -> None:
+class ReviewSlaTests(unittest.TestCase):
+    def test_unreviewed_breaches_sla(self) -> None:
         self.assertTrue(tp.is_unreviewed(""))
-        self.assertTrue(tp.is_past_window("LOW", None, TODAY))
-        self.assertTrue(tp.is_past_window("LOW", "null", TODAY))
+        self.assertTrue(tp.is_sla_breached("LOW", None, TODAY))
+        self.assertTrue(tp.is_sla_breached("LOW", "null", TODAY))
 
-    def test_window_boundaries(self) -> None:
-        self.assertFalse(tp.is_past_window("HIGH", "2026-10-06", TODAY))
-        self.assertTrue(tp.is_past_window("HIGH", "2026-10-05", TODAY))
-        self.assertFalse(tp.is_past_window("CRITICAL", "2026-10-12", TODAY))
-        self.assertTrue(tp.is_past_window("CRITICAL", "2026-10-11", TODAY))
+    def test_sla_boundaries(self) -> None:
+        self.assertFalse(tp.is_sla_breached("HIGH", "2026-10-06", TODAY))
+        self.assertTrue(tp.is_sla_breached("HIGH", "2026-10-05", TODAY))
+        self.assertFalse(tp.is_sla_breached("CRITICAL", "2026-10-12", TODAY))
+        self.assertTrue(tp.is_sla_breached("CRITICAL", "2026-10-11", TODAY))
 
-    def test_unset_priority_uses_default_window(self) -> None:
-        self.assertEqual(tp.window_days(None), tp.window_days("MEDIUM"))
+    def test_unset_priority_uses_default_sla(self) -> None:
+        self.assertEqual(tp.review_sla_days(None), tp.review_sla_days("MEDIUM"))
 
 
 class AdminPageTests(unittest.TestCase):

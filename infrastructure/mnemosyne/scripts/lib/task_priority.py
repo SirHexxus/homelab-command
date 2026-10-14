@@ -4,7 +4,7 @@
 The model lives in the vault at `schema/priority.json` (machine-readable
 companion to `schema/15-admin-task-priority.md`): the LOW < MEDIUM < HIGH <
 CRITICAL scale, the urgency x impact -> priority matrix, the per-priority
-attention windows, and the deadline-escalation thresholds. Every reader of
+Review SLAs, and the deadline-escalation thresholds. Every reader of
 `urgency:` / `impact:` / `priority:` / `reviewed:` — `set-task-priority`,
 `next-tasks`, `daily-digest`, `check-frontmatter-types`,
 `report-task-throughput` — resolves them through this module, so the matrix
@@ -17,7 +17,7 @@ vault hiccup.
 Importable:
     import task_priority
     task_priority.compute_priority("HIGH", "MEDIUM")        # -> "MEDIUM"
-    task_priority.is_past_window("MEDIUM", "2026-09-01", today)
+    task_priority.is_sla_breached("MEDIUM", "2026-09-01", today)
 
 CLI:
     task_priority.py --compute HIGH MEDIUM   # print the matrix result
@@ -51,7 +51,7 @@ _FALLBACK = {
         },
     },
     # Days from `reviewed:` before a task asks to be re-decided.
-    "attention_window_days": {"CRITICAL": 1, "HIGH": 7, "MEDIUM": 30, "LOW": 90},
+    "review_sla_days": {"CRITICAL": 1, "HIGH": 7, "MEDIUM": 30, "LOW": 90},
     # A real deadline raises effective urgency (computed, never written back).
     "escalation": {
         "high_within_days": 7,
@@ -185,10 +185,10 @@ def effective_priority(
     return compute_priority(eff_u, imp)
 
 
-def window_days(priority: str | None) -> int:
-    """Attention window for `priority`; the default level's when unset."""
+def review_sla_days(priority: str | None) -> int:
+    """Review SLA, in days, for `priority`; the default level's when unset."""
     level = normalize(priority) or _MODEL["default"]
-    return int(_MODEL["attention_window_days"][level])
+    return int(_MODEL["review_sla_days"][level])
 
 
 def parse_reviewed(raw: str | None) -> date | None:
@@ -206,21 +206,21 @@ def is_unreviewed(reviewed: str | None) -> bool:
     return parse_reviewed(reviewed) is None
 
 
-def window_ends(priority: str | None, reviewed: str | None) -> date | None:
-    """Last day inside the attention window; None when unreviewed."""
+def sla_due(priority: str | None, reviewed: str | None) -> date | None:
+    """Last day the Review SLA is met; None when unreviewed."""
     reviewed_on = parse_reviewed(reviewed)
     if reviewed_on is None:
         return None
-    return reviewed_on + timedelta(days=window_days(priority))
+    return reviewed_on + timedelta(days=review_sla_days(priority))
 
 
-def is_past_window(priority: str | None, reviewed: str | None, today: date) -> bool:
+def is_sla_breached(priority: str | None, reviewed: str | None, today: date) -> bool:
     """True when the task should ask to be re-decided.
 
-    Unreviewed tasks count as past their window.
+    Unreviewed tasks count as breached.
     """
-    ends = window_ends(priority, reviewed)
-    return ends is None or today > ends
+    due = sla_due(priority, reviewed)
+    return due is None or today > due
 
 
 def main() -> int:

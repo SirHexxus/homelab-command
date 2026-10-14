@@ -2,11 +2,11 @@
 
 `next-tasks` (CLI), `daily-digest`, and `report-task-throughput` all read the
 admin/ bucket through this module, so "what counts as open", "what is past
-its window", and "what order do tasks come in" have one implementation.
+its Review SLA", and "what order do tasks come in" have one implementation.
 
 Every task is annotated with values derived through `lib/task_priority.py`:
 effective priority (deadline-escalated, reports only), unreviewed, and
-past-window. Pages written before the priority reframe (no urgency/impact/
+Review-SLA-breached. Pages written before the priority reframe (no urgency/impact/
 reviewed) load fine: they are simply unscored and unreviewed.
 """
 
@@ -50,8 +50,8 @@ def load_task(path: Path, today: date) -> dict:
         "reviewed": reviewed,
         "closed": _clean(fields.get("closed")),
         "unreviewed": task_priority.is_unreviewed(reviewed),
-        "past_window": task_priority.is_past_window(priority, reviewed, today),
-        "window_ends": (str(task_priority.window_ends(priority, reviewed))
+        "sla_breached": task_priority.is_sla_breached(priority, reviewed, today),
+        "sla_due": (str(task_priority.sla_due(priority, reviewed))
                         if reviewed else None),
         "blocked": status.lower() == "blocked",
     }

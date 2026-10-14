@@ -12,7 +12,7 @@ task is already in the target state the script is a no-op.
 
 On a real change it rewrites the `status:` line, bumps `updated:` to today,
 stamps `reviewed:` (a status change is a decision, so it restarts the task's
-attention window — see lib/task_priority.py), sets `closed:` to today when the
+Review SLA — see lib/task_priority.py), sets `closed:` to today when the
 task closes (removing it on reopen, for the throughput metric), and records an
 `update` event in `mneme_log`.
 

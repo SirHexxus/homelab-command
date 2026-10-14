@@ -8,7 +8,7 @@ Implements the 5-category content model defined in
   2. Obligations       (real ADMIN deadlines due/missed, CRITICAL tasks,
                         PERSON follow-ups)
      Focus             (top user tasks by effective priority)
-     Check-ins         (user tasks to re-decide: unreviewed or past window)
+     Check-ins         (user tasks to re-decide: unreviewed or Review SLA breached)
      Throughput        (Sundays only: the week's opened/closed task trend)
   3. Forward-prep      (upcoming real deadlines, calendar block)
   4. Unfinished thoughts  (conditional — omit if empty)
@@ -230,7 +230,7 @@ def collect_tasks(
     shown |= {t["title"] for t in focus}
 
     checkins = [t for t in sorted(user_open, key=admin_tasks.checkin_key)
-                if t["past_window"] and t["title"] not in shown][:CHECKIN_LIMIT]
+                if t["sla_breached"] and t["title"] not in shown][:CHECKIN_LIMIT]
 
     as_digest = lambda items: [_digest_task(t) for t in items]  # noqa: E731
     return {
@@ -240,7 +240,7 @@ def collect_tasks(
         "critical": as_digest(critical),
         "focus": as_digest(focus),
         "checkins": as_digest(checkins),
-        "checkin_backlog": sum(1 for t in user_open if t["past_window"]),
+        "checkin_backlog": sum(1 for t in user_open if t["sla_breached"]),
         "blocked": [t["title"] for t in tasks
                     if t["blocked"] and t["task_type"] == "user"],
         "maintenance_queued": sum(1 for t in tasks

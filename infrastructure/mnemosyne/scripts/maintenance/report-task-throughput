@@ -27,7 +27,7 @@ show_help() {
 Usage: $(basename "$0") [options]
 
 Writes the weekly task throughput report: per priority, open / unreviewed /
-past-window counts, tasks opened and closed this week, and median days to
+Review-SLA-breached counts, tasks opened and closed this week, and median days to
 close over four weeks. Unlike the check-* scripts it always writes a report —
 the trend is the point, so a quiet week is still a data point.
 

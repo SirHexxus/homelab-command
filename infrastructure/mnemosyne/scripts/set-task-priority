@@ -4,7 +4,7 @@
 `priority:` is never typed by hand: it is the urgency x impact matrix result
 from `lib/task_priority.py` (`schema/priority.json`), recomputed here on every
 write. A change also stamps `reviewed:` to today, which restarts the task's
-attention window, bumps `updated:`, logs an `update` event in `mneme_log`, and
+Review SLA, bumps `updated:`, logs an `update` event in `mneme_log`, and
 commits the page.
 
 `--due` is for real, externally anchored deadlines only (a client date, a
@@ -238,7 +238,7 @@ def main() -> int:
     due_group.add_argument("--clear-due", action="store_true",
                            help="remove the deadline (set due: null)")
     parser.add_argument("--review", action="store_true",
-                        help="record a decision with no field change (restart the window)")
+                        help="record a decision with no field change (restart the Review SLA)")
     parser.add_argument("--recompute-all", action="store_true",
                         help="re-derive every stored priority (dry-run unless --apply)")
     parser.add_argument("--apply", action="store_true",
