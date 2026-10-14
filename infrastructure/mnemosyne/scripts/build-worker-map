@@ -1,0 +1,454 @@
+#!/usr/bin/env python3
+"""Generate the wiki inventory page for the Mnemosyne worker fleet and ingest workflows.
+
+Reads three sources, all read-only, and writes a REFERENCE system map:
+
+- the IaC: the `mneme_workers` role defaults (every timer-driven worker, its
+  schedule and command) and the `inbox_receiver` group_vars (paths, port, mc pin);
+- the inbox-receiver host (LXC 103) over ssh: which mneme-* units are on disk and
+  Ansible-managed, timer enablement, long-running service state, credential-file
+  modes, runtime tool versions, the receiver's /health, and whether the deployed
+  script tree matches this workstation's checkout (rsync dry run);
+- the n8n public API: every workflow named "Mnemosyne", its trigger, active flag,
+  and whether the export in infrastructure/mnemosyne/n8n/ matches live.
+
+Volatile values (last and next run times, inbox depth, execution counts) are left
+out so --check fails only on real drift: a unit added, removed or disabled, a
+schedule or command changed, a tool upgraded, a credential file's mode changed, a
+workflow deactivated or its export gone stale, the script tree out of sync.
+
+The curated companion page (flow, operating rules, secrets, known issues) is
+hand-written and links here; this page is never edited by hand.
+
+Usage:
+    build-worker-map              # write the wiki page
+    build-worker-map --dry-run    # print the page, write nothing
+    build-worker-map --check      # exit 1 if the page has drifted
+"""
+
+import argparse
+import datetime
+import json
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+import yaml
+
+DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
+PAGE_RELPATH = Path("reference") / "Mnemosyne Worker Fleet Inventory.md"
+CURATED_PAGE = "Mnemosyne Ingest Pipeline"
+FRESH_DAYS = 14
+
+MNEMOSYNE_DIR = Path.home() / "projects" / "homelab-command" / "infrastructure" / "mnemosyne"
+WORKER_DEFAULTS = MNEMOSYNE_DIR / "ansible" / "roles" / "mneme_workers" / "defaults" / "main.yml"
+RECEIVER_VARS = MNEMOSYNE_DIR / "inbox-receiver" / "ansible" / "group_vars" / "inbox_receiver.yml"
+SCRIPTS_DIR = MNEMOSYNE_DIR / "scripts"
+EXPORT_DIR = MNEMOSYNE_DIR / "n8n"
+
+HOST = "root@10.0.50.19"
+SSH_KEY = Path.home() / ".ssh" / "id_rsa"
+SSH_TIMEOUT_SECONDS = 60
+
+N8N_BASE = "https://automation.hexxusweb.com/api/v1"
+N8N_ENV = Path.home() / ".config" / "hexxus" / "n8n.env"
+HTTP_TIMEOUT_SECONDS = 30
+WORKFLOW_PATTERN = re.compile(r"mnemosyne", re.IGNORECASE)
+
+# Units the role declares outside the mneme_workers list.
+FIXED_UNITS = ("mneme-alert@.service", "mneme-watch-inbox.service")
+# rsync filters mirroring the role's synchronize task, so the dry run sees
+# exactly what a provision run would change.
+RSYNC_EXCLUDES = ("__pycache__", "*.pyc", ".env", "*.bak-*")
+
+BANNER = (
+    "<!-- GENERATED FILE — DO NOT EDIT.\n"
+    "     Source of truth: the mneme_workers / inbox_receiver Ansible roles, LXC 103 (ssh),\n"
+    "     and the n8n API. Regenerate with: build-worker-map  (homelab-command/\n"
+    "     infrastructure/mnemosyne/scripts). -->\n"
+)
+
+# Runs on LXC 103 as root. Prints one JSON document; reads only.
+REMOTE_PROBE = r"""
+import json, pathlib, subprocess
+def sh(*a):
+    return subprocess.run(a, capture_output=True, text=True).stdout.strip()
+def as_app(cmd):
+    return sh('sudo', '-u', 'inbox-receiver', 'env', 'PATH=/usr/local/bin:/usr/bin:/bin',
+              'bash', '-c', cmd)
+units = {}
+for path in sorted(pathlib.Path('/etc/systemd/system').glob('mneme-*')):
+    if not path.is_file():
+        continue
+    text = path.read_text()
+    keys = {}
+    for line in text.splitlines():
+        if '=' in line and not line.startswith('#'):
+            k, v = line.split('=', 1)
+            keys.setdefault(k.strip(), v.strip())
+    units[path.name] = {
+        'managed': 'Ansible managed' in text.splitlines()[0],
+        'on_calendar': keys.get('OnCalendar', ''),
+        'exec': keys.get('ExecStart', ''),
+        'enabled': sh('systemctl', 'is-enabled', path.name) if path.suffix == '.timer' else '',
+    }
+services = {s: sh('systemctl', 'is-active', s) for s in ('inbox-receiver', 'mneme-watch-inbox')}
+creds = {}
+for p in sorted(pathlib.Path('/opt/inbox-receiver/.config/mnemosyne').glob('*')):
+    st = p.stat()
+    creds['~/.config/mnemosyne/' + p.name] = oct(st.st_mode & 0o777)[2:]
+mc_cfg = pathlib.Path('/opt/inbox-receiver/.mc/config.json')
+creds['~/.mc/config.json'] = oct(mc_cfg.stat().st_mode & 0o777)[2:] if mc_cfg.exists() else ''
+tools = {
+    'os': sh('bash', '-c', '. /etc/os-release; echo $PRETTY_NAME'),
+    'python3': sh('python3', '--version').split()[-1],
+    'mc': as_app('mc --version 2>/dev/null | head -1').split(' ')[2:3],
+    'yt-dlp': as_app('yt-dlp --version 2>/dev/null || echo missing'),
+    'ffmpeg': as_app("ffmpeg -version 2>/dev/null | head -1 | cut -d' ' -f3 || echo missing"),
+    'inotifywait': 'present' if as_app('command -v inotifywait') else 'missing',
+    'claude CLI': 'present' if as_app('command -v claude') else 'missing',
+    'google-genai': sh('python3', '-c', 'import google.genai as g; print(g.__version__)'),
+    'psycopg2': sh('python3', '-c', 'import psycopg2; print(psycopg2.__version__.split()[0])'),
+}
+tools['mc'] = tools['mc'][0] if tools['mc'] else 'missing'
+health = sh('curl', '-s', '-m', '5', 'http://127.0.0.1:8080/health')
+print(json.dumps({'units': units, 'services': services, 'creds': creds, 'tools': tools,
+                  'health': health}))
+"""
+
+
+class SourceError(Exception):
+    """A source could not be read."""
+
+
+def read_env_value(path: Path, key: str) -> str:
+    """Return one KEY=value from an env file without sourcing it."""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith(f"{key}="):
+            return line.split("=", 1)[1].strip()
+    raise SourceError(f"{key} not found in {path}")
+
+
+def n8n_get(api_key: str, path: str) -> dict:
+    """GET one n8n public-API path and return the decoded JSON."""
+    request = urllib.request.Request(
+        f"{N8N_BASE}{path}", headers={"X-N8N-API-KEY": api_key, "Accept": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
+            return json.load(response)
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise SourceError(f"n8n GET {path} failed: {exc}") from exc
+
+
+def short_exec(command: str, variables: dict[str, str]) -> str:
+    """Render a role exec string and shorten it to a scripts-relative command."""
+    for name, value in variables.items():
+        command = command.replace("{{ " + name + " }}", value)
+    command = " ".join(command.split())
+    command = command.replace(variables["mneme_scripts_dir"] + "/", "")
+    command = command.replace(f"--wiki-root {variables['mneme_wiki_root']}", "")
+    command = re.sub(r"--calendar-id '[^']*'", "--calendar-id <deadlines calendar>", command)
+    return " ".join(command.split())
+
+
+def collect_iac() -> dict:
+    """Read the worker list and the receiver host vars from the Ansible roles."""
+    try:
+        defaults = yaml.safe_load(WORKER_DEFAULTS.read_text(encoding="utf-8"))
+        receiver = yaml.safe_load(RECEIVER_VARS.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise SourceError(f"cannot read the Ansible roles: {exc}") from exc
+
+    root = defaults["mneme_root"]
+    variables = {
+        "mneme_root": root,
+        "mneme_scripts_dir": f"{root}/infrastructure/mnemosyne/scripts",
+        "mneme_wiki_root": defaults["mneme_wiki_root"],
+        "mneme_deadlines_calendar_id": defaults["mneme_deadlines_calendar_id"],
+    }
+    workers = [
+        {
+            "name": worker["name"],
+            "schedule": worker["schedule"],
+            "command": short_exec(worker["exec"], variables),
+        }
+        for worker in defaults["mneme_workers"]
+    ]
+    return {"workers": workers, "variables": variables, "defaults": defaults,
+            "receiver": receiver}
+
+
+def collect_host() -> dict:
+    """Probe LXC 103 over ssh."""
+    try:
+        result = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-i", str(SSH_KEY),
+             HOST, "python3", "-"],
+            input=REMOTE_PROBE, capture_output=True, text=True, timeout=SSH_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise SourceError(f"ssh {HOST} timed out") from exc
+    if result.returncode != 0:
+        raise SourceError(f"ssh {HOST} failed: {result.stderr.strip()}")
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise SourceError(f"bad probe output from {HOST}: {exc}") from exc
+
+
+def collect_tree_drift(remote_dir: str) -> list[str]:
+    """Files a provision run would change on the host (rsync dry run, checksums)."""
+    command = ["rsync", "-n", "-rc", "--delete", "--out-format=%n"]
+    command += [f"--exclude={pattern}" for pattern in RSYNC_EXCLUDES]
+    command += ["-e", f"ssh -o BatchMode=yes -i {SSH_KEY}", f"{SCRIPTS_DIR}/",
+                f"{HOST}:{remote_dir}/"]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True,
+                                timeout=SSH_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        raise SourceError("rsync dry run timed out") from exc
+    if result.returncode != 0:
+        raise SourceError(f"rsync dry run failed: {result.stderr.strip()}")
+    return sorted(line for line in result.stdout.splitlines() if line and not line.endswith("/"))
+
+
+def describe_trigger(workflow: dict) -> str:
+    """A short, stable description of a workflow's trigger node."""
+    known = {
+        "telegramTrigger": "Telegram bot (messages)",
+        "emailReadImap": "IMAP mailbox poll",
+        "executeWorkflowTrigger": "called as sub-workflow",
+        "errorTrigger": "error workflow",
+    }
+    for node in workflow.get("nodes", []):
+        short = node.get("type", "").rsplit(".", 1)[-1]
+        if short in known:
+            return known[short]
+        if "trigger" in short.lower():
+            return short
+    return "none"
+
+
+def export_status(workflow: dict) -> str:
+    """Whether an export in infrastructure/mnemosyne/n8n/ exists and matches live."""
+    for path in sorted(EXPORT_DIR.glob("*.json")):
+        try:
+            exported = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if exported.get("id") != workflow["id"] and exported.get("name") != workflow["name"]:
+            continue
+        if exported.get("versionId") and exported.get("versionId") == workflow.get("versionId"):
+            return f"`{path.name}` current"
+        if exported.get("nodes") == workflow.get("nodes"):
+            return f"`{path.name}` nodes match"
+        return f"`{path.name}` **stale**"
+    return "**none**"
+
+
+def collect_n8n() -> list[dict]:
+    """Every Mnemosyne workflow on the n8n instance."""
+    api_key = read_env_value(N8N_ENV, "N8NAPIKEY")
+    workflows: list[dict] = []
+    cursor = ""
+    while True:
+        suffix = f"&cursor={cursor}" if cursor else ""
+        page = n8n_get(api_key, f"/workflows?limit=250{suffix}")
+        workflows += [w for w in page.get("data", []) if WORKFLOW_PATTERN.search(w["name"])]
+        cursor = page.get("nextCursor") or ""
+        if not cursor:
+            break
+    return sorted(workflows, key=lambda w: (not w.get("active"), w["name"]))
+
+
+def unit_cell(units: dict, name: str) -> str:
+    """Live state of one declared unit file."""
+    unit = units.get(name)
+    if unit is None:
+        return "**missing**"
+    return "yes" if unit["managed"] else "**hand-made**"
+
+
+def render(iac: dict, host: dict, drift: list[str], workflows: list[dict],
+           created: str, today: str) -> str:
+    """Build the page text."""
+    units = host["units"]
+    receiver = iac["receiver"]
+    defaults = iac["defaults"]
+    declared = set(FIXED_UNITS)
+    for worker in iac["workers"]:
+        declared |= {f"mneme-{worker['name']}.service", f"mneme-{worker['name']}.timer"}
+    undeclared = sorted(set(units) - declared)
+
+    lines = [
+        "---",
+        "bucket: REFERENCE",
+        f"created: {created}",
+        f"updated: {today}",
+        "source: claude_code",
+        "tags: [mnemosyne, homelab, inventory, systemd, n8n, generated]",
+        "source_url: null",
+        'source_of_truth: "~/projects/homelab-command/infrastructure/mnemosyne/ (mneme_workers'
+        ' + inbox_receiver Ansible roles, n8n exports) + LXC 103 over ssh + the n8n public API"',
+        f"verified: {today}",
+        f"fresh_days: {FRESH_DAYS}",
+        "generated_by: ~/projects/homelab-command/infrastructure/mnemosyne/scripts/"
+        "build-worker-map",
+        "---",
+        "",
+        BANNER,
+        "# Mnemosyne Worker Fleet Inventory",
+        "",
+        f"Generated inventory of the Mnemosyne ingest and worker fleet. What each part is for, "
+        f"how items flow, operating rules, secrets and known issues are on the curated "
+        f"[[{CURATED_PAGE}]]; host sizing is on [[Homelab Host Inventory]].",
+        "",
+        "## Host (LXC 103, inbox-receiver)",
+        "",
+        f"- **Receiver:** gunicorn, 1 worker, port {receiver['app_port']}, "
+        f"`/health` → `{host['health'] or 'no answer'}`",
+        f"- **Long-running services:** "
+        + ", ".join(f"`{name}` {state}" for name, state in host["services"].items()),
+        f"- **Run-as user:** `{defaults['mneme_user']}` (home `{defaults['mneme_home']}`)",
+        f"- **Wiki clone:** `{defaults['mneme_wiki_root']}` → `{receiver['wiki_repo']}`",
+        f"- **Script tree:** `{iac['variables']['mneme_scripts_dir']}`, rsynced from the "
+        "workstation checkout by the role: "
+        + ("matches this workstation" if not drift
+           else f"**{len(drift)} file(s) differ**: " + ", ".join(f"`{f}`" for f in drift[:10])),
+        f"- **Unit files:** {len(units)} `mneme-*` on disk, {len(declared)} declared by the role"
+        + (f"; **undeclared:** {', '.join(f'`{u}`' for u in undeclared)}" if undeclared else ""),
+        "",
+        "## Timer-driven workers",
+        "",
+        "Each is `mneme-<name>.service` (oneshot, `OnFailure=mneme-alert@%n`) plus "
+        "`mneme-<name>.timer`. Commands are relative to the script tree; `--wiki-root` "
+        "is omitted.",
+        "",
+        "| Worker | Schedule (OnCalendar) | Command | Units on host | Timer |",
+        "|--------|-----------------------|---------|---------------|-------|",
+    ]
+    for worker in iac["workers"]:
+        timer = units.get(f"mneme-{worker['name']}.timer", {})
+        live_cal = timer.get("on_calendar", "")
+        schedule = f"`{worker['schedule']}`"
+        if live_cal and live_cal != worker["schedule"]:
+            schedule += f" (**host: `{live_cal}`**)"
+        both = [unit_cell(units, f"mneme-{worker['name']}.{kind}") for kind in ("service", "timer")]
+        lines.append(
+            f"| `{worker['name']}` | {schedule} | `{worker['command']}` | "
+            f"{both[0] if both[0] == both[1] else ' / '.join(both)} | "
+            f"{timer.get('enabled') or '—'} |"
+        )
+    lines += [
+        "",
+        "Plus `mneme-watch-inbox.service` (long-running, inotify on `inbox/`, calls "
+        f"`triage-inbox --file`; on host: {unit_cell(units, 'mneme-watch-inbox.service')}) "
+        "and `mneme-alert@.service` (Telegram alert template; on host: "
+        f"{unit_cell(units, 'mneme-alert@.service')}).",
+        "",
+        "## Credential files on the host",
+        "",
+        "Names and modes only. Every file is written by the `inbox_receiver` role from "
+        "`vault_*` variables; see the curated page for what each is for.",
+        "",
+        "| File (home `/opt/inbox-receiver`) | Mode |",
+        "|------|------|",
+    ]
+    for name, mode in host["creds"].items():
+        lines.append(f"| `{name}` | {mode or '**missing**'} |")
+    lines += [
+        "",
+        "## Runtime tools on the host",
+        "",
+        f"Pinned in IaC: only `mc` (`{receiver['mc_version']}`). Everything else was "
+        "installed by hand.",
+        "",
+        "| Tool | Version |",
+        "|------|---------|",
+    ]
+    for name, version in host["tools"].items():
+        lines.append(f"| {name} | {version or '**missing**'} |")
+    lines += [
+        "",
+        "## n8n workflows (Mnemosyne)",
+        "",
+        "| Workflow | ID | Trigger | Active | Error workflow | Export |",
+        "|----------|----|---------|--------|----------------|--------|",
+    ]
+    for workflow in workflows:
+        error_wf = workflow.get("settings", {}).get("errorWorkflow") or "—"
+        lines.append(
+            f"| {workflow['name']} | `{workflow['id']}` | {describe_trigger(workflow)} | "
+            f"{'yes' if workflow.get('active') else '**no**'} | `{error_wf}` | "
+            f"{export_status(workflow)} |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _strip_dates(text: str) -> str:
+    """Drop the lines that change on every run, for --check comparison."""
+    return re.sub(r"^(updated|verified): .*\n", "", text, flags=re.MULTILINE)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--wiki-root",
+        type=Path,
+        default=DEFAULT_WIKI_ROOT,
+        help=f"wiki root (default: {DEFAULT_WIKI_ROOT})",
+    )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="print the page; write nothing")
+    mode.add_argument(
+        "--check", action="store_true", help="exit 1 if the page differs from the live system"
+    )
+    args = parser.parse_args()
+
+    page_path = args.wiki_root / PAGE_RELPATH
+    current = page_path.read_text(encoding="utf-8") if page_path.exists() else ""
+    today = datetime.date.today().isoformat()
+    created_match = re.search(r"^created: (\S+)", current, re.MULTILINE)
+    created = created_match.group(1) if created_match else today
+
+    try:
+        iac = collect_iac()
+        generated = render(
+            iac,
+            collect_host(),
+            collect_tree_drift(iac["variables"]["mneme_scripts_dir"]),
+            collect_n8n(),
+            created,
+            today,
+        )
+    except (SourceError, OSError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.dry_run:
+        sys.stdout.write(generated)
+        return 0
+
+    if args.check:
+        if _strip_dates(current) == _strip_dates(generated):
+            print(f"{page_path.name} matches the live system")
+            return 0
+        print(
+            f"{page_path.name} has DRIFTED from the live system — run build-worker-map",
+            file=sys.stderr,
+        )
+        return 1
+
+    page_path.write_text(generated, encoding="utf-8")
+    print(f"Wrote {page_path}: {len(generated)} bytes.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
