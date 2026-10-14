@@ -191,6 +191,24 @@ def _digest_task(task: dict) -> dict[str, str]:
     }
 
 
+def _hard_breach(task: dict, today: date) -> bool:
+    """A breached Review SLA on a CRITICAL-priority or CRITICAL-impact task.
+
+    The one daily exception to the digest's gentle framing (see the system
+    prompt). For a never-reviewed task the SLA clock runs from `created`, so a
+    task captured today is not called breached before anyone could review it.
+    """
+    if "CRITICAL" not in (task["priority"], task["impact"]) or not task["sla_breached"]:
+        return False
+    if not task["unreviewed"]:
+        return True
+    try:
+        created = date.fromisoformat((task["created"] or "")[:10])
+    except ValueError:
+        return True
+    return (today - created).days > task_priority.review_sla_days(task["priority"])
+
+
 def collect_tasks(
     wiki_root: Path,
     today: date,
@@ -199,7 +217,9 @@ def collect_tasks(
     """ADMIN tasks for the digest, each task in at most one section.
 
     Deadlines (overdue / due_today / upcoming) come only from real `due`
-    dates. `critical` is any other CRITICAL user task. `focus` is the top
+    dates. `breached_critical` is any open task — maintenance included —
+    whose Review SLA is breached and whose priority or impact is CRITICAL.
+    `critical` is any other CRITICAL user task. `focus` is the top
     user tasks by effective priority; `checkins` the user tasks asking to be
     re-decided. Maintenance tasks are reported as a count only — they are the
     agent's queue, not James's morning.
@@ -221,6 +241,9 @@ def collect_tasks(
             upcoming.append(task)
 
     shown = {t["title"] for t in overdue + due_today}
+    breached_critical = [t for t in sorted(tasks, key=admin_tasks.focus_key)
+                         if _hard_breach(t, today) and t["title"] not in shown]
+    shown |= {t["title"] for t in breached_critical}
     critical = [t for t in sorted(user_open, key=admin_tasks.focus_key)
                 if t["effective_priority"] == "CRITICAL" and t["title"] not in shown]
     shown |= {t["title"] for t in critical}
@@ -237,10 +260,12 @@ def collect_tasks(
         "overdue": as_digest(overdue),
         "due_today": as_digest(due_today),
         "upcoming": as_digest(upcoming),
+        "breached_critical": as_digest(breached_critical),
         "critical": as_digest(critical),
         "focus": as_digest(focus),
         "checkins": as_digest(checkins),
-        "checkin_backlog": sum(1 for t in user_open if t["sla_breached"]),
+        "checkin_backlog": sum(1 for t in user_open
+                               if t["sla_breached"] and t["title"] not in shown),
         "blocked": [t["title"] for t in tasks
                     if t["blocked"] and t["task_type"] == "user"],
         "maintenance_queued": sum(1 for t in tasks
@@ -505,6 +530,18 @@ def _format_task(task: dict[str, str]) -> str:
     return line
 
 
+def _format_breach(task: dict[str, str]) -> str:
+    decided = (f"last decided {task['reviewed']}" if task.get("reviewed")
+               else "never reviewed")
+    line = (f"- {task['title']} — {task.get('priority') or 'unscored'} priority, "
+            f"impact {task.get('impact') or 'not set'}, {task['task_type']} task, "
+            f"Review SLA breached ({decided})")
+    body = task.get("body", "").strip()
+    if body:
+        line += "\n" + textwrap.indent(body, "    ")
+    return line
+
+
 def _format_checkin(task: dict[str, str]) -> str:
     impact = task.get("impact") or "not yet set"
     decided = (f"last decided {task['reviewed']}" if task.get("reviewed")
@@ -583,13 +620,17 @@ def format_temporal_anchors(
 def format_obligations(
     overdue: list[dict[str, str]],
     due_today: list[dict[str, str]],
+    breached_critical: list[dict[str, str]],
     critical: list[dict[str, str]],
     follow_ups: list[dict[str, str]],
 ) -> str:
     """Section 2 — obligations. Empty → OMIT."""
-    if not (overdue or due_today or critical or follow_ups):
+    if not (overdue or due_today or breached_critical or critical or follow_ups):
         return OMIT
     parts: list[str] = []
+    if breached_critical:
+        parts.append("BREACHED Review SLAs on CRITICAL tasks (state plainly, unsoftened):")
+        parts.append("\n".join(_format_breach(t) for t in breached_critical))
     if overdue:
         parts.append("Missed real deadlines (external commitments now past due):")
         parts.append(_format_task_list(overdue))
@@ -727,7 +768,8 @@ def build_user_prompt(
     return template.format(
         temporal_anchors=format_temporal_anchors(today, weekday, birthdays, weather, calendar),
         obligations=format_obligations(tasks["overdue"], tasks["due_today"],
-                                       tasks["critical"], follow_ups),
+                                       tasks["breached_critical"], tasks["critical"],
+                                       follow_ups),
         focus=format_focus(tasks["focus"]),
         checkins=format_checkins(tasks["checkins"], tasks["checkin_backlog"]),
         task_queue=format_task_queue(tasks["blocked"], tasks["maintenance_queued"]),
@@ -952,7 +994,8 @@ def main() -> None:
         else:
             print(f"[dry-run] Calendar ({len(calendar)}): {[e['title'] for e in calendar]}")
         print(f"[dry-run] Birthdays ({len(birthdays)}): {[b['title'] for b in birthdays]}")
-        for key, label in (("overdue", "Missed deadlines"), ("due_today", "Due today"),
+        for key, label in (("breached_critical", "BREACHED (critical)"),
+                           ("overdue", "Missed deadlines"), ("due_today", "Due today"),
                            ("upcoming", "Upcoming deadlines"), ("critical", "Critical"),
                            ("focus", "Focus")):
             titles = [f"{t['title']} [{t['priority'] or 'untriaged'}]" for t in tasks[key]]
