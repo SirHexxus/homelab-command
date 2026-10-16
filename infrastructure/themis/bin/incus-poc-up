@@ -37,6 +37,7 @@ readonly IMAGE='images:debian/13'
 readonly SWAPFILE='/swapfile'
 readonly SWAP_SIZE='4G'
 readonly IP_WAIT_SECONDS=60
+readonly STARTUP_DROPIN='/etc/systemd/system/incus-startup.service.d/start-daemon.conf'
 
 ################################################################################
 # Global Variables
@@ -141,6 +142,25 @@ ensure_incus_init() {
 	run incus admin init --minimal
 }
 
+# incusd is socket-activated, and the boot-time check that should wake it
+# (incus-startup: incusd activateifneeded) exited without doing so on
+# 2026-10-12 and 2026-10-15, with boot.autostart set. Pull the daemon in at
+# boot instead; incusd then starts the autostart container itself.
+ensure_daemon_at_boot() {
+	if [[ -f "$STARTUP_DROPIN" ]]; then
+		log_skip "incus daemon already pulled in at boot"
+		return 0
+	fi
+	log_info "Starting the incus daemon at boot ($STARTUP_DROPIN)"
+	if [[ "$dry_run" == true ]]; then
+		echo "[DRY-RUN] write '[Unit] Wants=incus.service' to $STARTUP_DROPIN" >&2
+		return 0
+	fi
+	mkdir -p "${STARTUP_DROPIN%/*}" || return 1
+	printf '[Unit]\nWants=incus.service\n' > "$STARTUP_DROPIN" || return 1
+	systemctl daemon-reload
+}
+
 container_ipv4() {
 	incus list "$CONTAINER" -c 4 -f csv | cut -d' ' -f1
 }
@@ -153,8 +173,8 @@ ensure_container() {
 		run incus launch "$IMAGE" "$CONTAINER" || return 1
 	fi
 
-	# Without this, incus restores only the last power state, and a laptop
-	# shutdown can record STOPPED, leaving the tablets' server down after boot.
+	# Without this, incus restores only the last power state. It takes effect
+	# only once the daemon runs; ensure_daemon_at_boot makes sure it does.
 	if [[ "$(incus config get "$CONTAINER" boot.autostart 2> /dev/null)" \
 		== true ]]; then
 		log_skip "boot.autostart already set on $CONTAINER"
@@ -237,6 +257,7 @@ main() {
 	install_packages || return 1
 	ensure_swap || return 1
 	ensure_incus_init || return 1
+	ensure_daemon_at_boot || return 1
 	ensure_container || return 1
 	ensure_ssh || return 1
 	ensure_proxy_device https 443 || return 1
