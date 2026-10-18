@@ -37,6 +37,9 @@ import sys
 from datetime import date
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+from wiki_pages import bucket_pages  # noqa: E402
+
 DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
 DEFAULT_OUT = Path.home() / ".cache" / "mnemosyne" / "catalog.json"
 INDEX_FILENAME = "index.md"
@@ -107,7 +110,7 @@ def build(wiki_root: Path, rich: bool) -> dict:
         if not bucket_dir.is_dir():
             continue
         entries: list = []
-        for md_file in sorted(bucket_dir.glob("*.md")):
+        for md_file in bucket_pages(bucket_dir):
             stem = md_file.stem
             if rich:
                 fm = read_frontmatter(md_file)

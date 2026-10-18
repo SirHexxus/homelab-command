@@ -37,13 +37,17 @@ log_error() {
 	echo "[ERROR] $(date '+%Y-%m-%d %H:%M:%S') $*" >&2
 }
 
-# Outputs null-delimited paths to all .md files in the 7 bucket directories
+# Outputs null-delimited paths to all .md files in the 7 bucket directories.
+# reference/ may hold one level of subfolders (reference/problems/); this
+# mirrors bucket_pages() in lib/wiki_pages.py, the rule's home.
 find_wiki_files() {
-	local bucket
+	local bucket depth
 	for bucket in "${BUCKET_DIRS[@]}"; do
 		local dir="$WIKI_DIR/$bucket"
 		[[ -d $dir ]] || continue
-		find "$dir" -maxdepth 1 -name '*.md' -print0
+		depth=1
+		[[ $bucket == reference ]] && depth=2
+		find "$dir" -maxdepth "$depth" -name '*.md' -print0
 	done
 }
 

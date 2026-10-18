@@ -15,6 +15,7 @@ scripts/
 ├── set-task-status            # flip status; stamps reviewed / closed
 ├── sync-deadlines-gcal        # hourly — real ADMIN deadlines → Google Calendar
 ├── lib/
+│   ├── wiki_pages.py          # Which files are wiki pages (reference/ may nest one level)
 │   └── wiki-common.sh         # Shared bash functions; source, do not execute
 └── maintenance/
     ├── check-ghost-links          # daily   — bash + optional haiku

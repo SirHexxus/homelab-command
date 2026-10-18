@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 from task_status import default_wiki_root  # noqa: E402
 import wiki_git  # noqa: E402
+from wiki_pages import bucket_pages  # noqa: E402
 
 DEFAULT_WIKI_ROOT = default_wiki_root()
 BUCKET_DIRS = ["ideas", "admin", "reference", "journal", "people",
@@ -25,7 +26,7 @@ ENTRY_RE = re.compile(r"^- \[\[([^\]]+?)\]\]")
 def active_titles(wiki: Path) -> set[str]:
     titles: set[str] = set()
     for bdir in BUCKET_DIRS:
-        for p in (wiki / bdir).glob("*.md"):
+        for p in bucket_pages(wiki / bdir):
             titles.add(p.stem)
     return titles
 

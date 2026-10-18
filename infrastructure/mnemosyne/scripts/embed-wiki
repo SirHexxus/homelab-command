@@ -26,6 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 import embeddings  # noqa: E402
+from wiki_pages import bucket_pages  # noqa: E402
 
 
 DEFAULT_WIKI_ROOT = Path.home() / "mneme" / "wiki"
@@ -97,7 +98,7 @@ def iter_pages(wiki_root: Path):
         bucket_dir = wiki_root / dir_name
         if not bucket_dir.is_dir():
             continue
-        for md_file in sorted(bucket_dir.glob("*.md")):
+        for md_file in bucket_pages(bucket_dir):
             fm, body = split_frontmatter(md_file)
             bucket = (fm.get("bucket") or default_bucket).strip() or default_bucket
             title = (fm.get("title") or "").strip() or md_file.stem
