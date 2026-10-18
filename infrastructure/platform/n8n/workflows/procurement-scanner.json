@@ -235,9 +235,7 @@
             "response_deadline": "={{ $json.response_deadline }}",
             "found_date": "={{ $json.found_date }}",
             "sam_link": "={{ $json.sam_link }}",
-            "status": "={{ $json.status }}",
-            "practice_price": 0,
-            "award_amount": 0
+            "status": "={{ $json.status }}"
           },
           "matchingColumns": [],
           "schema": [
@@ -478,5 +476,5 @@
       "name": "Claude"
     }
   ],
-  "versionId": "9fa38a34-5322-4e4d-b15d-2c7631bc0afc"
+  "versionId": "c4aea576-8d3f-443c-beee-3e239ffa03e1"
 }
