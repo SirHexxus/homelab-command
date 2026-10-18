@@ -109,7 +109,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const laDay = d => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(d);\nconst today = new Date(`${laDay(new Date())}T00:00:00Z`);\nconst yesterday = new Date(today.getTime() - 86400000);\nconst mm = String(yesterday.getUTCMonth() + 1).padStart(2, '0');\nconst dd = String(yesterday.getUTCDate()).padStart(2, '0');\nconst posted = `${mm}/${dd}/${yesterday.getUTCFullYear()}`;\n\n// One request per notice type: o = Solicitation, k = Combined Synopsis/Solicitation\nreturn ['o', 'k'].map(ptype => ({ json: { ptype, postedFrom: posted, postedTo: posted } }));\n"
+        "jsCode": "const laDay = d => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(d);\nconst today = new Date(`${laDay(new Date())}T00:00:00Z`);\nconst samDate = daysBack => {\n  const d = new Date(today.getTime() - daysBack * 86400000);\n  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');\n  const dd = String(d.getUTCDate()).padStart(2, '0');\n  return `${mm}/${dd}/${d.getUTCFullYear()}`;\n};\n\n// Two-day window so one rate-limited run self-heals on the next; dedupe absorbs the overlap.\nconst postedFrom = samDate(2);\nconst postedTo = samDate(1);\n\n// One request per notice type: o = Solicitation, k = Combined Synopsis/Solicitation\nreturn ['o', 'k'].map(ptype => ({ json: { ptype, postedFrom, postedTo } }));\n"
       },
       "name": "Scan Window",
       "type": "n8n-nodes-base.code",
@@ -168,9 +168,10 @@
         "operation": "get",
         "dataTableId": {
           "__rl": true,
-          "mode": "id",
           "value": "FFTtTMRnDWj2miL1",
-          "cachedResultName": "procurement"
+          "mode": "list",
+          "cachedResultName": "procurement",
+          "cachedResultUrl": "/projects/RhtRioSgJlfhzOI3/datatables/FFTtTMRnDWj2miL1"
         },
         "returnAll": true
       },
@@ -234,10 +235,183 @@
             "response_deadline": "={{ $json.response_deadline }}",
             "found_date": "={{ $json.found_date }}",
             "sam_link": "={{ $json.sam_link }}",
-            "status": "={{ $json.status }}"
+            "status": "={{ $json.status }}",
+            "practice_price": 0,
+            "award_amount": 0
           },
           "matchingColumns": [],
-          "schema": [],
+          "schema": [
+            {
+              "id": "notice_id",
+              "displayName": "notice_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "solicitation_number",
+              "displayName": "solicitation_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "agency",
+              "displayName": "agency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "notice_type",
+              "displayName": "notice_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "naics",
+              "displayName": "naics",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "psc",
+              "displayName": "psc",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "set_aside",
+              "displayName": "set_aside",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "posted_date",
+              "displayName": "posted_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "response_deadline",
+              "displayName": "response_deadline",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "found_date",
+              "displayName": "found_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "sam_link",
+              "displayName": "sam_link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "practice_price",
+              "displayName": "practice_price",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "award_amount",
+              "displayName": "award_amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "awardee",
+              "displayName": "awardee",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
           "attemptToConvertTypes": false,
           "convertFieldsToString": false
         },
@@ -304,5 +478,5 @@
       "name": "Claude"
     }
   ],
-  "versionId": "846baed1-0cfc-46c4-b2aa-b6c49857c7fc"
+  "versionId": "9fa38a34-5322-4e4d-b15d-2c7631bc0afc"
 }
