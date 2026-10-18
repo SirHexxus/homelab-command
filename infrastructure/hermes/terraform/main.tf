@@ -11,6 +11,11 @@ resource "proxmox_virtual_environment_container" "hermes" {
   started      = true
   tags         = local.all_tags
 
+  # Boot order (see the startup-order ADMIN task): consumer tier: needs the platform tier up first
+  startup {
+    order = 3
+  }
+
   # OS template
   operating_system {
     template_file_id = var.lxc_template

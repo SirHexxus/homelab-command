@@ -20,6 +20,11 @@ resource "proxmox_virtual_environment_container" "npm" {
   started      = true
   tags         = local.npm_tags
 
+  # Boot order (see the startup-order ADMIN task): last tier: front door / boot-time workers that need consumers up
+  startup {
+    order = 4
+  }
+
   operating_system {
     template_file_id = var.lxc_template
     type             = "ubuntu"
@@ -82,6 +87,11 @@ resource "proxmox_virtual_environment_container" "authelia" {
   started      = true
   tags         = local.authelia_tags
 
+  # Boot order (see the startup-order ADMIN task): consumer tier: needs the platform tier up first
+  startup {
+    order = 3
+  }
+
   operating_system {
     template_file_id = var.lxc_template
     type             = "ubuntu"
@@ -142,6 +152,11 @@ resource "proxmox_virtual_environment_container" "umami" {
   unprivileged = true
   started      = true
   tags         = local.umami_tags
+
+  # Boot order (see the startup-order ADMIN task): consumer tier: needs the platform tier up first
+  startup {
+    order = 3
+  }
 
   operating_system {
     template_file_id = var.lxc_template

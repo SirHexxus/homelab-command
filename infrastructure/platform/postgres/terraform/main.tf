@@ -9,6 +9,12 @@ resource "proxmox_virtual_environment_container" "postgres" {
   started      = true
   tags         = local.all_tags
 
+  # Boot order (see the startup-order ADMIN task): platform tier: other guests connect to this at boot
+  startup {
+    order    = 1
+    up_delay = 30
+  }
+
   operating_system {
     template_file_id = var.lxc_template
     type             = "ubuntu"

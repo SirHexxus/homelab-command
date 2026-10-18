@@ -17,7 +17,7 @@ resource "proxmox_virtual_environment_vm" "pfsense" {
 
   # pfSense must start first — VLANs and routing must be up before other VMs
   startup {
-    order    = 1
+    order    = 0
     up_delay = 60
   }
 

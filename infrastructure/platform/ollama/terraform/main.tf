@@ -15,6 +15,12 @@ resource "proxmox_virtual_environment_container" "ollama" {
   started = true
   tags    = local.all_tags
 
+  # Boot order (see the startup-order ADMIN task): compute tier: no platform dependencies at boot
+  startup {
+    order    = 2
+    up_delay = 15
+  }
+
   # OS template - Ubuntu 22.04 is chosen for stability and Ollama compatibility
   operating_system {
     template_file_id = var.lxc_template

@@ -12,6 +12,11 @@ resource "proxmox_virtual_environment_container" "inbox_receiver" {
   started      = true
   tags         = local.all_tags
 
+  # Boot order (see the startup-order ADMIN task): last tier: front door / boot-time workers that need consumers up
+  startup {
+    order = 4
+  }
+
   operating_system {
     template_file_id = var.lxc_template
     type             = "ubuntu"
