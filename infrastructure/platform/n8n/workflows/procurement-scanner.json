@@ -1,0 +1,308 @@
+{
+  "active": true,
+  "connections": {
+    "Daily at 6am": {
+      "main": [
+        [
+          {
+            "node": "Scan Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scan Window": {
+      "main": [
+        [
+          {
+            "node": "Search SAM.gov",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search SAM.gov": {
+      "main": [
+        [
+          {
+            "node": "Get Procurement Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Procurement Rows": {
+      "main": [
+        [
+          {
+            "node": "Filter Product Buys",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Product Buys": {
+      "main": [
+        [
+          {
+            "node": "Explode Rows",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Explode Rows": {
+      "main": [
+        [
+          {
+            "node": "Insert Listings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "id": "xIwANC3S8vd3EWpv",
+  "meta": null,
+  "name": "Procurement Scanner (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 6
+            }
+          ]
+        }
+      },
+      "name": "Daily at 6am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        304
+      ],
+      "id": "a6013408-8f3b-46f4-afb2-a243fe847acf"
+    },
+    {
+      "parameters": {
+        "jsCode": "const laDay = d => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(d);\nconst today = new Date(`${laDay(new Date())}T00:00:00Z`);\nconst yesterday = new Date(today.getTime() - 86400000);\nconst mm = String(yesterday.getUTCMonth() + 1).padStart(2, '0');\nconst dd = String(yesterday.getUTCDate()).padStart(2, '0');\nconst posted = `${mm}/${dd}/${yesterday.getUTCFullYear()}`;\n\n// One request per notice type: o = Solicitation, k = Combined Synopsis/Solicitation\nreturn ['o', 'k'].map(ptype => ({ json: { ptype, postedFrom: posted, postedTo: posted } }));\n"
+      },
+      "name": "Scan Window",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        304
+      ],
+      "id": "0b9e6680-e106-46f8-9b73-56127f9988d8"
+    },
+    {
+      "parameters": {
+        "url": "https://api.sam.gov/opportunities/v2/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "ptype",
+              "value": "={{ $json.ptype }}"
+            },
+            {
+              "name": "postedFrom",
+              "value": "={{ $json.postedFrom }}"
+            },
+            {
+              "name": "postedTo",
+              "value": "={{ $json.postedTo }}"
+            },
+            {
+              "name": "limit",
+              "value": "1000"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Search SAM.gov",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        304
+      ],
+      "id": "833931dd-7203-4334-9c04-758152d4c86d",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "d8REsS05Nacz5CPE",
+          "name": "SAM.gov API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "FFTtTMRnDWj2miL1",
+          "cachedResultName": "procurement"
+        },
+        "returnAll": true
+      },
+      "name": "Get Procurement Rows",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        304
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "id": "6c423027-4833-4706-a25e-add7438b1e60"
+    },
+    {
+      "parameters": {
+        "jsCode": "const KEEP_SET_ASIDES = ['', 'SBA', 'SBP'];\nconst MIN_LEAD_DAYS = 7;\nconst PAGE_LIMIT = 1000;\n\nconst laDay = d => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(d);\nconst todayStr = laDay(new Date());\nconst cutoffStr = laDay(new Date(Date.parse(`${todayStr}T12:00:00Z`) + MIN_LEAD_DAYS * 86400000));\nconst isoDay = s => `${s}T00:00:00.000Z`;\n\nconst pages = $('Search SAM.gov').all().map(i => i.json);\nconst seen = new Set($input.all().map(i => i.json.notice_id).filter(Boolean));\n\nlet scanned = 0;\nlet truncated = 0;\nconst rows = [];\nfor (const page of pages) {\n  const opps = page.opportunitiesData || [];\n  scanned += opps.length;\n  if ((page.totalRecords || 0) > PAGE_LIMIT) truncated += page.totalRecords - PAGE_LIMIT;\n  for (const o of opps) {\n    if (!o.noticeId || seen.has(o.noticeId)) continue;\n    if (o.active !== 'Yes') continue;\n    if (!/^[0-9]/.test(o.classificationCode || '')) continue;\n    if (!KEEP_SET_ASIDES.includes(o.typeOfSetAside || o.setAsideCode || '')) continue;\n    if (!o.responseDeadLine) continue;\n    const deadline = new Date(o.responseDeadLine);\n    if (isNaN(deadline) || laDay(deadline) < cutoffStr) continue;\n    seen.add(o.noticeId);\n    rows.push({\n      notice_id: o.noticeId,\n      title: o.title || '',\n      solicitation_number: o.solicitationNumber || '',\n      agency: o.fullParentPathName || '',\n      notice_type: o.type || '',\n      naics: o.naicsCode || '',\n      psc: o.classificationCode || '',\n      set_aside: o.typeOfSetAside || o.setAsideCode || '',\n      posted_date: o.postedDate ? isoDay(String(o.postedDate).slice(0, 10)) : null,\n      response_deadline: deadline.toISOString(),\n      found_date: isoDay(todayStr),\n      sam_link: `https://sam.gov/opp/${o.noticeId}/view`,\n      status: 'New',\n    });\n  }\n}\n\nreturn [{ json: { rows, scanned, kept: rows.length, truncated, today: todayStr } }];\n"
+      },
+      "name": "Filter Product Buys",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        304
+      ],
+      "id": "c8d07dad-79ef-4e8d-99a2-a5be26cb2fa2"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.first().json.rows.map(r => ({ json: r }));"
+      },
+      "name": "Explode Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        208
+      ],
+      "id": "c783a6b6-2881-45c6-90fd-4c53303aa730"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "FFTtTMRnDWj2miL1",
+          "cachedResultName": "procurement"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "notice_id": "={{ $json.notice_id }}",
+            "title": "={{ $json.title }}",
+            "solicitation_number": "={{ $json.solicitation_number }}",
+            "agency": "={{ $json.agency }}",
+            "notice_type": "={{ $json.notice_type }}",
+            "naics": "={{ $json.naics }}",
+            "psc": "={{ $json.psc }}",
+            "set_aside": "={{ $json.set_aside }}",
+            "posted_date": "={{ $json.posted_date }}",
+            "response_deadline": "={{ $json.response_deadline }}",
+            "found_date": "={{ $json.found_date }}",
+            "sam_link": "={{ $json.sam_link }}",
+            "status": "={{ $json.status }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "name": "Insert Listings",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1328,
+        208
+      ],
+      "id": "b1b79833-239b-4d0b-9340-a96d82f0efe9"
+    },
+    {
+      "parameters": {
+        "jsCode": "const { rows, scanned, kept, truncated, today } = $input.first().json;\nconst day = d => d ? String(d).slice(0, 10) : '?';\n\nlet msg = `🏛 Procurement Scan — ${today}\\n`;\n\nif (!kept) {\n  msg += `\\nNothing new. ${scanned} notices scanned, none were biddable product buys with 7+ days of lead time.`;\n} else {\n  msg += `\\n${kept} new product listing${kept === 1 ? '' : 's'} (of ${scanned} scanned). Soonest deadlines:\\n`;\n  const soonest = [...rows].sort((a, b) => a.response_deadline.localeCompare(b.response_deadline)).slice(0, 5);\n  for (const r of soonest) {\n    msg += `• ${r.title} · ${r.agency.split('.').slice(0, 2).join(' / ')} · due ${day(r.response_deadline)}\\n  ${r.sam_link}\\n`;\n  }\n  msg += '\\n— Pick 1 to price this week.';\n}\n\nif (truncated) msg += `\\n\\n⚠ ${truncated} notices past SAM's 1000-per-request cap were not scanned.`;\n\nreturn [{ json: { summary: msg } }];\n"
+      },
+      "name": "Build Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        432
+      ],
+      "id": "d86c8fea-2921-40b3-b62f-bb7bac1b1504"
+    },
+    {
+      "parameters": {
+        "chatId": "1135813646",
+        "text": "={{ $json.summary }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "name": "Send Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1328,
+        432
+      ],
+      "id": "46a85412-d8a1-4042-bf72-00e051c565a8",
+      "webhookId": "e88a5186-edc8-4974-93e9-cbc0d4945c46",
+      "credentials": {
+        "telegramApi": {
+          "id": "jfhTkDLLipHkDAGz",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "vXSYJNLnQlyeQ79i",
+    "timezone": "America/Los_Angeles",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "tags": [
+    {
+      "id": "CGimnfcrf7NhL7yQ",
+      "name": "Claude"
+    }
+  ],
+  "versionId": "846baed1-0cfc-46c4-b2aa-b6c49857c7fc"
+}
